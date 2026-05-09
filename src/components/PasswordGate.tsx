@@ -81,10 +81,6 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
             </button>
           </form>
         </div>
-
-        <p className="text-center text-[10px] text-slate-600 mt-6 font-medium">
-          Password: hhce2026
-        </p>
       </div>
     </div>
   );
