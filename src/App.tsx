@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppProvider, useAppContext } from './context/AppContext';
+import { AppProvider } from './context/AppContext';
 import { PasswordGate } from './components/PasswordGate';
 import { CleanerManager } from './components/CleanerManager';
 import { ClientManager } from './components/ClientManager';
@@ -20,7 +20,6 @@ function App() {
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare'>('dashboard');
-  const { cleaners, clients } = useAppContext();
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24">
