@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
-import { Calendar, Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Users, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon } from 'lucide-react';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon } from 'lucide-react';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, isSameMonth, isSameDay, getDay, startOfWeek, endOfWeek
@@ -26,7 +26,6 @@ export const ScheduleBoard: React.FC = () => {
   const violations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
   const getViolationsForVisit = (visitId: string) => violations.filter(v => v.visitId === visitId);
 
-  // Navigation helpers
   const goPrev = () => {
     if (viewMode === 'month') {
       setCurrentMonth(subMonths(currentMonth, 1));
@@ -53,12 +52,10 @@ export const ScheduleBoard: React.FC = () => {
     setCurrentMonth(now);
   };
 
-  // Week strip days
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 0 });
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
-  // Month calendar days
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -86,7 +83,6 @@ export const ScheduleBoard: React.FC = () => {
 
   return (
     <div className="space-y-4 animate-slide-up">
-      {/* View Mode Toggle */}
       <div className="bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm flex gap-1">
         {(['day', 'week', 'month'] as ViewMode[]).map(mode => (
           <button
@@ -106,7 +102,6 @@ export const ScheduleBoard: React.FC = () => {
         ))}
       </div>
 
-      {/* Date Navigation Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <button onClick={goPrev} className="p-2 rounded-xl hover:bg-slate-100 active:scale-95 transition-all">
@@ -131,7 +126,6 @@ export const ScheduleBoard: React.FC = () => {
           </button>
         </div>
 
-        {/* Today button */}
         {!isSameDay(selectedDate, new Date()) && viewMode !== 'month' && (
           <div className="text-center mb-2">
             <button onClick={goToday} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors">
@@ -140,7 +134,6 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
-        {/* Week Strip (shown in Day & Week views) */}
         {(viewMode === 'day' || viewMode === 'week') && (
           <div className="flex justify-between gap-1">
             {weekDays.map(d => {
@@ -171,7 +164,6 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
-        {/* Month Calendar Grid (shown in Month view) */}
         {viewMode === 'month' && (
           <>
             <div className="grid grid-cols-7 gap-1 mb-1">
@@ -218,7 +210,6 @@ export const ScheduleBoard: React.FC = () => {
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-4 gap-2">
         <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
           <div className="text-lg font-black text-slate-800">{stats.total}</div>
@@ -238,7 +229,6 @@ export const ScheduleBoard: React.FC = () => {
         </div>
       </div>
 
-      {/* Visit Cards - Time Order */}
       {dayVisits.length === 0 && (
         <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
           <Clock className="mx-auto mb-3 text-slate-300" size={40} />
@@ -319,7 +309,6 @@ export const ScheduleBoard: React.FC = () => {
                 )}
               </div>
 
-              {/* Assigned Cleaners (1-5) */}
               {!visit.cancelled && (
                 <div className="flex flex-wrap gap-1.5">
                   {assignedCleaners.slice(0, 5).map(c => (
@@ -360,7 +349,6 @@ export const ScheduleBoard: React.FC = () => {
         })}
       </div>
 
-      {/* Detail Modal */}
       {modalVisit && (
         <VisitDetailModal
           visit={modalVisit}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Visit } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Calendar, Clock, Users, ChevronLeft, ChevronRight, AlertCircle, Upload, X } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Upload, X } from 'lucide-react';
 import { format, addDays, subDays, isSameDay } from 'date-fns';
 import { checkConstraints } from '../utils/scheduler';
 import { parseVisitsCSV } from '../utils/csvParser';
@@ -101,7 +101,6 @@ export const ScheduleBuilder: React.FC = () => {
     });
   };
 
-  // Preview violations for the new visit
   const previewViolations = (() => {
     if (!newVisit.clientId || !newVisit.assignedTeamId) return [];
     const client = clients.find(c => c.id === newVisit.clientId);
@@ -144,7 +143,6 @@ export const ScheduleBuilder: React.FC = () => {
         </div>
       </div>
 
-      {/* CSV Preview Modal */}
       {csvPreview && (
         <div className="bg-white rounded-2xl border border-purple-200 p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
@@ -179,7 +177,6 @@ export const ScheduleBuilder: React.FC = () => {
         </div>
       )}
 
-      {/* Date strip */}
       <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <button onClick={() => setSelectedDate(subDays(selectedDate, 7))} className="p-1.5 rounded-lg hover:bg-slate-100">
@@ -212,7 +209,6 @@ export const ScheduleBuilder: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Visit Form */}
       {showAdd && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-700">Add Visit for {format(selectedDate, 'EEEE, MMM d')}</h3>
@@ -262,7 +258,6 @@ export const ScheduleBuilder: React.FC = () => {
             </div>
           </div>
 
-          {/* Assigned Cleaners (1-5) */}
           {teamCleaners.length > 0 && (
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
@@ -313,7 +308,6 @@ export const ScheduleBuilder: React.FC = () => {
         </div>
       )}
 
-      {/* Day's visits */}
       <div className="space-y-2">
         {dayVisits.length === 0 && (
           <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-300">

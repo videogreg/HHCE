@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, UserPlus, Car, Clock, Ban, Phone, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Car, Phone, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 
 const COLORS = [
   { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
@@ -55,7 +55,6 @@ export const CleanerManager: React.FC = () => {
       if (c.id === cleanerId) {
         return { ...c, cannotWorkWith: has ? c.cannotWorkWith.filter(x => x !== targetId) : [...c.cannotWorkWith, targetId] };
       }
-      // Also update the target cleaner's list for bidirectional
       if (c.id === targetId) {
         const targetHas = c.cannotWorkWith.includes(cleanerId);
         return { ...c, cannotWorkWith: targetHas ? c.cannotWorkWith.filter(x => x !== cleanerId) : [...c.cannotWorkWith, cleanerId] };
@@ -198,7 +197,7 @@ export const CleanerManager: React.FC = () => {
                   )}
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <Ban size={10} /> Cannot work with
+                      Cannot work with
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {cleaners.filter(c => c.id !== cleaner.id).map(other => {

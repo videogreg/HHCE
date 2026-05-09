@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { AlertTriangle, UserX, Home, CheckCircle2, MessageSquare, Zap, RotateCcw, Phone, ChevronRight, AlertCircle, Users, Clock, MapPin } from 'lucide-react';
+import { AlertTriangle, UserX, Home, CheckCircle2, MessageSquare, Zap, RotateCcw, Phone, ChevronRight, AlertCircle, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { reoptimizeSchedule, checkConstraints, generateCallList } from '../utils/scheduler';
 import type { ScheduleChange, CallItem } from '../types';
@@ -51,7 +51,6 @@ export const ReorganizeModal: React.FC = () => {
     setShowResults(false);
   };
 
-  // Affected visits (teams with inactive members)
   const affectedVisits = activeTodaysVisits.filter(visit => {
     const team = teams.find(t => t.id === visit.assignedTeamId);
     if (!team) return false;
@@ -60,7 +59,6 @@ export const ReorganizeModal: React.FC = () => {
 
   return (
     <div className="space-y-4 animate-slide-up">
-      {/* Header */}
       <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-5 text-white shadow-xl">
         <div className="flex items-center gap-3 mb-2">
           <div className="relative">
@@ -88,9 +86,7 @@ export const ReorganizeModal: React.FC = () => {
         )}
       </div>
 
-      {/* Quick Actions Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Sick Cleaner */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
           <h3 className="flex items-center gap-2 font-bold text-sm text-red-600 mb-3">
             <UserX size={16} /> Cleaner Called In Sick
@@ -116,7 +112,6 @@ export const ReorganizeModal: React.FC = () => {
           </div>
         </div>
 
-        {/* Client Cancel */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
           <h3 className="flex items-center gap-2 font-bold text-sm text-amber-600 mb-3">
             <Home size={16} /> Client Cancelled
@@ -143,7 +138,6 @@ export const ReorganizeModal: React.FC = () => {
         </div>
       </div>
 
-      {/* Affected Visits Alert */}
       {affectedVisits.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
           <h3 className="text-sm font-bold text-red-700 flex items-center gap-2 mb-3">
@@ -168,7 +162,6 @@ export const ReorganizeModal: React.FC = () => {
         </div>
       )}
 
-      {/* AUTO-FIX Button */}
       <button
         onClick={handleAutoFix}
         className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-indigo-200 transition-all active:scale-[0.98]"
@@ -176,7 +169,6 @@ export const ReorganizeModal: React.FC = () => {
         <Zap className="fill-current" size={24} /> AUTO-FIX SCHEDULE
       </button>
 
-      {/* Results */}
       {showResults && (
         <div className="space-y-4 animate-slide-up">
           {lastChanges.length > 0 ? (
@@ -239,7 +231,6 @@ export const ReorganizeModal: React.FC = () => {
         </div>
       )}
 
-      {/* Reset */}
       <div className="text-center pt-2">
         <button onClick={resetAll} className="text-xs text-slate-400 hover:text-slate-600 font-medium underline underline-offset-2">
           Reset all for tomorrow (restore all cleaners & visits)

@@ -20,12 +20,11 @@ function App() {
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare'>('dashboard');
-  const { cleaners, clients, visits, loadDemoData } = useAppContext();
+  const { cleaners, clients, loadDemoData } = useAppContext();
   const isEmpty = cleaners.length === 0 && clients.length === 0;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24">
-      {/* Header */}
       <header className="bg-hhce-dark border-b border-slate-800 sticky top-0 z-30 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -63,7 +62,6 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {isEmpty && activeTab !== 'nightmare' ? (
           <div className="flex flex-col items-center justify-center py-20 text-center animate-slide-up">
@@ -102,7 +100,6 @@ function AppContent() {
         )}
       </main>
 
-      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 sm:px-6 py-2 flex justify-around items-center shadow-[0_-4px_24px_-6px_rgba(0,0,0,0.12)] z-30">
         <NavButton
           active={activeTab === 'dashboard'}
