@@ -89,7 +89,6 @@ export const ReorganizeModal: React.FC = () => {
 
       <div className="space-y-2">
         {dayVisits.map(visit => {
-          const client = clients.find(c => c.id === visit.clientId);
           const team = teams.find(t => t.id === visit.assignedTeamId);
           const visitVios = violations.filter(v => v.visitId === visit.id);
           return (

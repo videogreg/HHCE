@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Visit, Cleaner, Client, Team, ConstraintViolation } from '../types';
 import { formatTotalHours } from '../utils/hours';
-import { X, Phone, MapPin, Clock, Users, AlertCircle, AlertTriangle, FileText, Ban } from 'lucide-react';
+import { X, Phone, MapPin, Users, AlertCircle, AlertTriangle, FileText, Ban } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 interface Props {
@@ -26,7 +26,6 @@ export const VisitDetailModal: React.FC<Props> = ({ visit, cleaners, clients, te
     .filter(Boolean);
 
   const hasError = violations.some(v => v.severity === 'error');
-  const hasWarning = violations.some(v => v.severity === 'warning');
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
