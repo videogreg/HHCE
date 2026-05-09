@@ -18,6 +18,7 @@ interface AppContextType extends AppState {
   setTeams: React.Dispatch<React.SetStateAction<Team[]>>;
   resetAllData: () => void;
   loadDemoData: () => void;
+  loadDemoCleaners: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -83,7 +84,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [loaded, setLoaded] = useState(false);
   const skipNextSave = useRef(false);
 
-  // 1. Load from Supabase on mount
   useEffect(() => {
     const load = async () => {
       const { data, error } = await supabase
@@ -110,7 +110,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     load();
   }, []);
 
-  // 2. Real-time subscription — sync changes from other devices instantly
   useEffect(() => {
     const channel = supabase
       .channel('app_state_changes')
@@ -119,7 +118,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { event: 'UPDATE', schema: 'public', table: 'app_state', filter: 'key=eq.main' },
         (payload) => {
           const parsed = payload.new.data as AppState;
-          skipNextSave.current = true; // Prevent echo back to Supabase
+          skipNextSave.current = true;
           if (parsed.cleaners) setCleaners(parsed.cleaners);
           if (parsed.clients) setClients(parsed.clients);
           if (parsed.visits) setVisits(parsed.visits);
@@ -133,7 +132,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
-  // 3. Save to Supabase whenever state changes (debounced)
   useEffect(() => {
     if (!loaded) return;
     if (skipNextSave.current) {
@@ -148,7 +146,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .from('app_state')
         .update({ data, updated_at: new Date().toISOString() })
         .eq('key', 'main');
-    }, 500); // 500ms debounce
+    }, 500);
 
     return () => clearTimeout(timeout);
   }, [cleaners, clients, visits, teams, loaded]);
@@ -172,6 +170,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTeams(demo.teams);
   };
 
+  const loadDemoCleaners = () => {
+    if (cleaners.length > 0 && !confirm('Load demo cleaners?')) return;
+    const demo = createDemoData();
+    setCleaners(demo.cleaners);
+    const demoCleanerIds = demo.cleaners.map(c => c.id);
+    const demoTeams = demo.teams.filter(t => t.cleanerIds.some(id => demoCleanerIds.includes(id)));
+    setTeams(demoTeams);
+  };
+
   return (
     <AppContext.Provider value={{
       cleaners, setCleaners,
@@ -179,7 +186,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       visits, setVisits,
       teams, setTeams,
       resetAllData,
-      loadDemoData
+      loadDemoData,
+      loadDemoCleaners
     }}>
       {children}
     </AppContext.Provider>

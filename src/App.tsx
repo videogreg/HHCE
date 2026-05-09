@@ -6,7 +6,7 @@ import { ClientManager } from './components/ClientManager';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 import { ReorganizeModal } from './components/ReorganizeModal';
-import { LayoutDashboard, Users, UserCheck, AlertTriangle, Sparkles, CalendarPlus, Database } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, AlertTriangle, Sparkles, CalendarPlus } from 'lucide-react';
 
 function App() {
   return (
@@ -20,8 +20,7 @@ function App() {
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare'>('dashboard');
-  const { cleaners, clients, loadDemoData } = useAppContext();
-  const isEmpty = cleaners.length === 0 && clients.length === 0;
+  const { cleaners, clients } = useAppContext();
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24">
@@ -38,14 +37,6 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            {isEmpty && (
-              <button
-                onClick={loadDemoData}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors border border-slate-700"
-              >
-                <Database size={14} /> Load Demo
-              </button>
-            )}
             <button
               onClick={() => setActiveTab('nightmare')}
               className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs sm:text-sm transition-all active:scale-95 ${
@@ -63,40 +54,14 @@ function AppContent() {
       </header>
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        {isEmpty && activeTab !== 'nightmare' ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center animate-slide-up">
-            <div className="w-20 h-20 bg-slate-200 rounded-2xl flex items-center justify-center mb-6">
-              <Sparkles size={40} className="text-slate-400" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Welcome to HHCE Scheduler</h2>
-            <p className="text-slate-500 max-w-md mb-8">Add your cleaners and clients, or load demo data to see how the app works.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={loadDemoData}
-                className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
-              >
-                Load Demo Data
-              </button>
-              <button
-                onClick={() => setActiveTab('cleaners')}
-                className="px-6 py-3 bg-white text-slate-700 border border-slate-300 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors"
-              >
-                Add Cleaners
-              </button>
-            </div>
+        {activeTab === 'dashboard' && <ScheduleBoard />}
+        {activeTab === 'builder' && <ScheduleBuilder />}
+        {activeTab === 'cleaners' && <CleanerManager />}
+        {activeTab === 'clients' && <ClientManager />}
+        {activeTab === 'nightmare' && (
+          <div className="max-w-3xl mx-auto">
+            <ReorganizeModal />
           </div>
-        ) : (
-          <>
-            {activeTab === 'dashboard' && <ScheduleBoard />}
-            {activeTab === 'builder' && <ScheduleBuilder />}
-            {activeTab === 'cleaners' && <CleanerManager />}
-            {activeTab === 'clients' && <ClientManager />}
-            {activeTab === 'nightmare' && (
-              <div className="max-w-3xl mx-auto">
-                <ReorganizeModal />
-              </div>
-            )}
-          </>
         )}
       </main>
 

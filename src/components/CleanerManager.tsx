@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, UserPlus, Car, Phone, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Car, Phone, FileText, ChevronDown, ChevronUp, Database } from 'lucide-react';
 
 const COLORS = [
   { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
@@ -14,7 +14,7 @@ const COLORS = [
 ];
 
 export const CleanerManager: React.FC = () => {
-  const { cleaners, setCleaners } = useAppContext();
+  const { cleaners, setCleaners, loadDemoCleaners } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
     name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', notes: ''
@@ -70,12 +70,22 @@ export const CleanerManager: React.FC = () => {
         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
           <UserPlus className="text-blue-600" size={24} /> Cleaners ({cleaners.length})
         </h2>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-md active:scale-95 flex items-center gap-2"
-        >
-          <Plus size={16} /> {showAdd ? 'Close' : 'Add'}
-        </button>
+        <div className="flex items-center gap-2">
+          {cleaners.length === 0 && (
+            <button
+              onClick={loadDemoCleaners}
+              className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors active:scale-95 flex items-center gap-1.5 border border-slate-200"
+            >
+              <Database size={14} /> Load Demo
+            </button>
+          )}
+          <button
+            onClick={() => setShowAdd(!showAdd)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-md active:scale-95 flex items-center gap-2"
+          >
+            <Plus size={16} /> {showAdd ? 'Close' : 'Add'}
+          </button>
+        </div>
       </div>
 
       {showAdd && (
