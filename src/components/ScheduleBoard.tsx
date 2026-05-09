@@ -171,7 +171,8 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
-        {(viewMode === 'day' || viewMode === 'week') && (
+        {/* DAY VIEW — small horizontal day selector */}
+        {viewMode === 'day' && (
           <div className="flex justify-between gap-1">
             {weekDays.map(d => {
               const isSelected = isSameDay(d, selectedDate);
@@ -205,6 +206,52 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
+        {/* WEEK VIEW — 7 day cards like month view */}
+        {viewMode === 'week' && (
+          <>
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider py-1">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {weekDays.map(day => {
+                const isSelected = isSameDay(day, selectedDate);
+                const isToday = isSameDay(day, new Date());
+                const count = getDayVisitCount(day);
+                const hasError = getDayHasError(day);
+
+                return (
+                  <button
+                    key={day.toISOString()}
+                    onClick={() => { setSelectedDate(day); setViewMode('day'); }}
+                    className={`aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 relative ${
+                      isSelected
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : isToday
+                        ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                        : hasError
+                        ? 'bg-red-50 text-red-600 border border-red-100'
+                        : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className={`text-sm font-bold ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
+                    {count > 0 && (
+                      <span className={`text-[9px] font-bold px-1 rounded ${
+                        isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {count}
+                      </span>
+                    )}
+                    {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* MONTH VIEW — full calendar grid */}
         {viewMode === 'month' && (
           <>
             <div className="grid grid-cols-7 gap-1 mb-1">
@@ -272,148 +319,152 @@ export const ScheduleBoard: React.FC = () => {
         </div>
       </div>
 
-      {/* Visit Cards */}
-      {dayVisits.length === 0 && (
-        <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
-          <Clock className="mx-auto mb-3 text-slate-300" size={40} />
-          <p className="text-slate-500 font-medium">No visits scheduled for this day.</p>
-          <p className="text-xs text-slate-400 mt-1">Go to "Build" tab to add visits or import from Jobber.</p>
-        </div>
-      )}
+      {/* Visit Cards — ONLY in Day view */}
+      {viewMode === 'day' && (
+        <>
+          {dayVisits.length === 0 && (
+            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
+              <Clock className="mx-auto mb-3 text-slate-300" size={40} />
+              <p className="text-slate-500 font-medium">No visits scheduled for this day.</p>
+              <p className="text-xs text-slate-400 mt-1">Go to "Build" tab to add visits or import from Jobber.</p>
+            </div>
+          )}
 
-      <div className="space-y-3">
-        {dayVisits.map(visit => {
-          const visitViolations = getViolationsForVisit(visit.id);
-          const hasError = visitViolations.some(v => v.severity === 'error');
-          const hasWarning = visitViolations.some(v => v.severity === 'warning');
-          const team = teams.find(t => t.id === visit.assignedTeamId);
-          const client = clients.find(c => c.id === visit.clientId);
+          <div className="space-y-3">
+            {dayVisits.map(visit => {
+              const visitViolations = getViolationsForVisit(visit.id);
+              const hasError = visitViolations.some(v => v.severity === 'error');
+              const hasWarning = visitViolations.some(v => v.severity === 'warning');
+              const team = teams.find(t => t.id === visit.assignedTeamId);
+              const client = clients.find(c => c.id === visit.clientId);
 
-          let assignedCleanerIds = visit.assignedCleanerIds || [];
-          if (assignedCleanerIds.length === 0 && team) {
-            assignedCleanerIds = team.cleanerIds;
-          }
-          const assignedCleaners = assignedCleanerIds
-            .map(id => cleaners.find(c => c.id === id))
-            .filter(Boolean);
+              let assignedCleanerIds = visit.assignedCleanerIds || [];
+              if (assignedCleanerIds.length === 0 && team) {
+                assignedCleanerIds = team.cleanerIds;
+              }
+              const assignedCleaners = assignedCleanerIds
+                .map(id => cleaners.find(c => c.id === id))
+                .filter(Boolean);
 
-          const cleanerCount = assignedCleaners.length;
-          const totalHours = formatTotalHours(visit.durationMinutes);
-          const onSiteHours = formatOnSiteHours(visit.durationMinutes, cleanerCount);
+              const cleanerCount = assignedCleaners.length;
+              const totalHours = formatTotalHours(visit.durationMinutes);
+              const onSiteHours = formatOnSiteHours(visit.durationMinutes, cleanerCount);
 
-          return (
-            <div
-              key={visit.id}
-              className={`bg-white rounded-2xl border-2 p-4 transition-all ${
-                visit.cancelled
-                  ? 'border-slate-200 opacity-50 grayscale'
-                  : hasError
-                  ? 'border-red-300 shadow-sm shadow-red-100'
-                  : hasWarning
-                  ? 'border-amber-300 shadow-sm shadow-amber-100'
-                  : 'border-white shadow-sm hover:shadow-md'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <button
-                  onClick={() => setModalVisitId(visit.id)}
-                  className="text-left min-w-0 flex-1"
+              return (
+                <div
+                  key={visit.id}
+                  className={`bg-white rounded-2xl border-2 p-4 transition-all ${
+                    visit.cancelled
+                      ? 'border-slate-200 opacity-50 grayscale'
+                      : hasError
+                      ? 'border-red-300 shadow-sm shadow-red-100'
+                      : hasWarning
+                      ? 'border-amber-300 shadow-sm shadow-amber-100'
+                      : 'border-white shadow-sm hover:shadow-md'
+                  }`}
                 >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className={`font-bold text-sm ${visit.cancelled ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                      {visit.clientName}
-                    </h3>
-                    {client?.preferredCleaners.length ? <Star size={12} className="text-amber-400 shrink-0" /> : null}
-                    {client?.avoidCleaners.length ? <Ban size={12} className="text-red-400 shrink-0" /> : null}
+                  <div className="flex items-start justify-between mb-3">
+                    <button
+                      onClick={() => setModalVisitId(visit.id)}
+                      className="text-left min-w-0 flex-1"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className={`font-bold text-sm ${visit.cancelled ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                          {visit.clientName}
+                        </h3>
+                        {client?.preferredCleaners.length ? <Star size={12} className="text-amber-400 shrink-0" /> : null}
+                        {client?.avoidCleaners.length ? <Ban size={12} className="text-red-400 shrink-0" /> : null}
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate mt-0.5">{visit.clientAddress}</p>
+                    </button>
+                    <div className="flex gap-1 shrink-0">
+                      {visitViolations.map((v, i) => (
+                        v.severity === 'error'
+                          ? <AlertCircle key={i} size={18} className="text-red-500" />
+                          : <AlertTriangle key={i} size={18} className="text-amber-500" />
+                      ))}
+                    </div>
                   </div>
-                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{visit.clientAddress}</p>
-                </button>
-                <div className="flex gap-1 shrink-0">
-                  {visitViolations.map((v, i) => (
-                    v.severity === 'error'
-                      ? <AlertCircle key={i} size={18} className="text-red-500" />
-                      : <AlertTriangle key={i} size={18} className="text-amber-500" />
-                  ))}
-                </div>
-              </div>
 
-              <button onClick={() => setModalVisitId(visit.id)} className="text-left w-full">
-                <div className="flex items-center gap-3 text-xs text-slate-600 mb-3 flex-wrap">
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={13} className="text-slate-400" />
-                    <span className="font-bold">{visit.startTime}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-lg">
-                    <span className="text-slate-500 font-medium">{totalHours}</span>
-                    <span className="text-slate-300">|</span>
-                    <span className="text-purple-600 font-bold">{onSiteHours}</span>
-                  </div>
-                  {visit.clientZone && (
-                    <div className="flex items-center gap-1.5">
-                      <MapPin size={13} className="text-slate-400" />
-                      <span className="text-slate-500">{visit.clientZone}</span>
+                  <button onClick={() => setModalVisitId(visit.id)} className="text-left w-full">
+                    <div className="flex items-center gap-3 text-xs text-slate-600 mb-3 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <Clock size={13} className="text-slate-400" />
+                        <span className="font-bold">{visit.startTime}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-lg">
+                        <span className="text-slate-500 font-medium">{totalHours}</span>
+                        <span className="text-slate-300">|</span>
+                        <span className="text-purple-600 font-bold">{onSiteHours}</span>
+                      </div>
+                      {visit.clientZone && (
+                        <div className="flex items-center gap-1.5">
+                          <MapPin size={13} className="text-slate-400" />
+                          <span className="text-slate-500">{visit.clientZone}</span>
+                        </div>
+                      )}
+                    </div>
+                  </button>
+
+                  {!visit.cancelled && (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {assignedCleaners.map(c => (
+                          <button
+                            key={c!.id}
+                            onClick={() => markCleanerSick(c!.id)}
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1 hover:bg-red-50 hover:text-red-600 transition-colors active:scale-95 border border-transparent hover:border-red-200"
+                            title="Tap to mark sick"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.active ? (c!.color || '#94a3b8') : '#ef4444' }} />
+                            {c!.name}
+                            {!c!.active && <span className="text-red-600 font-black">(SICK)</span>}
+                          </button>
+                        ))}
+                        {assignedCleaners.length === 0 && team && (
+                          <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-600">No active cleaners assigned</span>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          onClick={() => cancelVisit(visit.id)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-amber-200 hover:bg-amber-100 transition-colors active:scale-95"
+                        >
+                          <XCircle size={12} /> Cancel Visit
+                        </button>
+                        <button
+                          onClick={() => setModalVisitId(visit.id)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-blue-200 hover:bg-blue-100 transition-colors active:scale-95"
+                        >
+                          <Phone size={12} /> Details
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {visitViolations.length > 0 && !visit.cancelled && (
+                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
+                      {visitViolations.map((v, i) => (
+                        <p key={i} className={`text-[11px] font-medium flex items-center gap-1 ${v.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                          {v.severity === 'error' ? <AlertCircle size={10} /> : <AlertTriangle size={10} />}
+                          {v.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {visit.cancelled && (
+                    <div className="mt-2 text-center">
+                      <span className="inline-block px-3 py-1 bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-full">Cancelled</span>
                     </div>
                   )}
                 </div>
-              </button>
-
-              {!visit.cancelled && (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {assignedCleaners.map(c => (
-                      <button
-                        key={c!.id}
-                        onClick={() => markCleanerSick(c!.id)}
-                        className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1 hover:bg-red-50 hover:text-red-600 transition-colors active:scale-95 border border-transparent hover:border-red-200"
-                        title="Tap to mark sick"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.active ? (c!.color || '#94a3b8') : '#ef4444' }} />
-                        {c!.name}
-                        {!c!.active && <span className="text-red-600 font-black">(SICK)</span>}
-                      </button>
-                    ))}
-                    {assignedCleaners.length === 0 && team && (
-                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-600">No active cleaners assigned</span>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => cancelVisit(visit.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-amber-200 hover:bg-amber-100 transition-colors active:scale-95"
-                    >
-                      <XCircle size={12} /> Cancel Visit
-                    </button>
-                    <button
-                      onClick={() => setModalVisitId(visit.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-blue-200 hover:bg-blue-100 transition-colors active:scale-95"
-                    >
-                      <Phone size={12} /> Details
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {visitViolations.length > 0 && !visit.cancelled && (
-                <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
-                  {visitViolations.map((v, i) => (
-                    <p key={i} className={`text-[11px] font-medium flex items-center gap-1 ${v.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                      {v.severity === 'error' ? <AlertCircle size={10} /> : <AlertTriangle size={10} />}
-                      {v.message}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              {visit.cancelled && (
-                <div className="mt-2 text-center">
-                  <span className="inline-block px-3 py-1 bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-full">Cancelled</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {modalVisit && (
         <VisitDetailModal
