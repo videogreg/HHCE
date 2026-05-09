@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { Cleaner, Client, Visit, Team } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../utils/supabase';
 
 interface AppState {
   cleaners: Cleaner[];
@@ -20,7 +21,6 @@ interface AppContextType extends AppState {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-const STORAGE_KEY = 'hhce_scheduler_data_v2';
 
 const TEAM_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0891b2', '#be185d'];
 const CLEANER_COLORS = ['#dbeafe', '#d1fae5', '#fef3c7', '#ede9fe', '#fee2e2', '#cffafe', '#fce7f3'];
@@ -81,36 +81,85 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [visits, setVisits] = useState<Visit[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const skipNextSave = useRef(false);
 
+  // 1. Load from Supabase on mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('app_state')
+        .select('data')
+        .eq('key', 'main')
+        .single();
+
+      if (error) {
+        console.error('Supabase load error:', error);
+        setLoaded(true);
+        return;
+      }
+
+      if (data?.data) {
+        const parsed = data.data as AppState;
         if (parsed.cleaners) setCleaners(parsed.cleaners);
         if (parsed.clients) setClients(parsed.clients);
         if (parsed.visits) setVisits(parsed.visits);
         if (parsed.teams) setTeams(parsed.teams);
-      } catch (e) {
-        console.error('Failed to parse saved data', e);
       }
-    }
-    setLoaded(true);
+      setLoaded(true);
+    };
+    load();
   }, []);
 
+  // 2. Real-time subscription — sync changes from other devices instantly
+  useEffect(() => {
+    const channel = supabase
+      .channel('app_state_changes')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'app_state', filter: 'key=eq.main' },
+        (payload) => {
+          const parsed = payload.new.data as AppState;
+          skipNextSave.current = true; // Prevent echo back to Supabase
+          if (parsed.cleaners) setCleaners(parsed.cleaners);
+          if (parsed.clients) setClients(parsed.clients);
+          if (parsed.visits) setVisits(parsed.visits);
+          if (parsed.teams) setTeams(parsed.teams);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // 3. Save to Supabase whenever state changes (debounced)
   useEffect(() => {
     if (!loaded) return;
-    const data = { cleaners, clients, visits, teams };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+
+    const data: AppState = { cleaners, clients, visits, teams };
+
+    const timeout = setTimeout(async () => {
+      await supabase
+        .from('app_state')
+        .update({ data, updated_at: new Date().toISOString() })
+        .eq('key', 'main');
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeout);
   }, [cleaners, clients, visits, teams, loaded]);
 
   const resetAllData = () => {
-    if (confirm('Erase ALL data? This cannot be undone.')) {
+    if (confirm('Erase ALL data from Supabase? This cannot be undone.')) {
       setCleaners([]);
       setClients([]);
       setVisits([]);
       setTeams([]);
-      localStorage.removeItem(STORAGE_KEY);
+      supabase.from('app_state').update({ data: {}, updated_at: new Date().toISOString() }).eq('key', 'main');
     }
   };
 
