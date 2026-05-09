@@ -15,7 +15,6 @@ export const checkConstraints = (
     const client = clients.find(c => c.id === visit.clientId);
     const team = teams.find(t => t.id === visit.assignedTeamId);
 
-    // Use assignedCleanerIds if set, otherwise fall back to team cleanerIds
     let visitCleanerIds = visit.assignedCleanerIds || [];
     if (visitCleanerIds.length === 0 && team) {
       visitCleanerIds = team.cleanerIds;
@@ -24,7 +23,6 @@ export const checkConstraints = (
 
     if (!client) return;
 
-    // 1. Client Day Preference
     if (client.preferredDays.length > 0) {
       const visitDate = new Date(visit.date + 'T00:00:00');
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
@@ -38,7 +36,6 @@ export const checkConstraints = (
       }
     }
 
-    // 2. Client Time Window
     const visitStart = timeToDate(visit.startTime);
     if (client.notBefore && isBefore(visitStart, timeToDate(client.notBefore))) {
       violations.push({
@@ -56,7 +53,6 @@ export const checkConstraints = (
       });
     }
 
-    // 3. Cleaner Availability (Sick/Inactive)
     if (visitCleanerIds.length > 0) {
       const inactiveOnTeam = visitCleanerIds.filter(id => !cleaners.find(c => c.id === id)?.active);
       if (inactiveOnTeam.length > 0) {
@@ -69,7 +65,6 @@ export const checkConstraints = (
       }
     }
 
-    // 4. Cleaner Time Restrictions
     teamCleaners.forEach(cleaner => {
       if (cleaner.canStartAt && isBefore(visitStart, timeToDate(cleaner.canStartAt))) {
         violations.push({
@@ -87,7 +82,6 @@ export const checkConstraints = (
       }
     });
 
-    // 5. Driver Requirement (at least one driver per team with 2+ people)
     if (visitCleanerIds.length > 1 && !teamCleaners.some(c => c.isDriver)) {
       violations.push({
         visitId: visit.id,
@@ -96,7 +90,6 @@ export const checkConstraints = (
       });
     }
 
-    // 6. Cleaner Compatibility
     for (let i = 0; i < teamCleaners.length; i++) {
       for (let j = i + 1; j < teamCleaners.length; j++) {
         const c1 = teamCleaners[i];
@@ -111,7 +104,6 @@ export const checkConstraints = (
       }
     }
 
-    // 7. Client preferred/avoided cleaners
     const avoided = client.avoidCleaners.filter(id => visitCleanerIds.includes(id));
     if (avoided.length > 0) {
       const names = avoided.map(id => cleaners.find(c => c.id === id)?.name || 'Unknown').join(', ');
@@ -143,10 +135,6 @@ export const reoptimizeSchedule = (
   teams: Team[]
 ): { visits: Visit[]; changes: ScheduleChange[] } => {
   const activeCleaners = cleaners.filter(c => c.active);
-  const activeTeams = teams.filter(t =>
-    t.cleanerIds.length > 0 && t.cleanerIds.every(id => activeCleaners.some(ac => ac.id === id))
-  );
-
   const changes: ScheduleChange[] = [];
 
   const newVisits = currentVisits.map(visit => {
@@ -157,23 +145,64 @@ export const reoptimizeSchedule = (
     if (visitCleanerIds.length === 0 && currentTeam) {
       visitCleanerIds = currentTeam.cleanerIds;
     }
-    const hasIssue = visitCleanerIds.some(id => !cleaners.find(c => c.id === id)?.active);
 
-    if (!hasIssue) {
-      const vios = checkConstraints([visit], cleaners, clients, teams);
-      if (!vios.some(v => v.severity === 'error')) return visit;
-    }
+    const sickIds = visitCleanerIds.filter(id => !cleaners.find(c => c.id === id)?.active);
+    const hasSickMember = sickIds.length > 0;
+    const currentVios = checkConstraints([visit], cleaners, clients, teams);
+    const hasErrors = currentVios.some(v => v.severity === 'error');
+
+    if (!hasSickMember && !hasErrors) return visit;
 
     const client = clients.find(c => c.id === visit.clientId);
     if (!client) return visit;
 
-    // Try each active team
+    // Strategy 1: Replace sick cleaner(s) with a replacement, keep healthy members
+    if (hasSickMember && currentTeam) {
+      const healthyIds = visitCleanerIds.filter(id => cleaners.find(c => c.id === id)?.active);
+      const needsDriver = healthyIds.length > 0 && !cleaners.filter(c => healthyIds.includes(c.id)).some(c => c.isDriver);
+
+      const candidates = activeCleaners.filter(c => {
+        if (visitCleanerIds.includes(c.id)) return false;
+        if (client.avoidCleaners.includes(c.id)) return false;
+        if (healthyIds.some(hid => {
+          const h = cleaners.find(x => x.id === hid);
+          return h && (h.cannotWorkWith.includes(c.id) || c.cannotWorkWith.includes(h.id));
+        })) return false;
+        if (needsDriver && !c.isDriver) return false;
+        return true;
+      });
+
+      for (const candidate of candidates) {
+        const newIds = [...healthyIds, candidate.id];
+        const tempVisit = { ...visit, assignedCleanerIds: newIds, assignedTeamId: currentTeam.id, teamName: currentTeam.name };
+        const vios = checkConstraints([tempVisit], cleaners, clients, teams);
+        if (!vios.some(v => v.severity === 'error')) {
+          const sickNames = sickIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ');
+          changes.push({
+            visitId: visit.id,
+            clientName: visit.clientName,
+            oldTeamId: visit.assignedTeamId,
+            newTeamId: currentTeam.id,
+            oldTeamName: `${currentTeam.name} (lost ${sickNames})`,
+            newTeamName: `${currentTeam.name} + ${candidate.name}`,
+            reason: `Replaced sick cleaner(s): ${sickNames}`
+          });
+          return tempVisit;
+        }
+      }
+    }
+
+    // Strategy 2: Swap to a completely different active team
+    const activeTeams = teams.filter(t =>
+      t.cleanerIds.length > 0 && t.cleanerIds.every(id => activeCleaners.some(ac => ac.id === id))
+    );
+
     for (const team of activeTeams) {
       const tempVisit = { ...visit, assignedTeamId: team.id, assignedCleanerIds: team.cleanerIds, teamName: team.name };
       const vios = checkConstraints([tempVisit], cleaners, clients, teams);
-      const hasErrors = vios.some(v => v.severity === 'error');
+      const teamHasErrors = vios.some(v => v.severity === 'error');
 
-      if (!hasErrors) {
+      if (!teamHasErrors) {
         if (team.id !== visit.assignedTeamId) {
           changes.push({
             visitId: visit.id,
@@ -182,11 +211,33 @@ export const reoptimizeSchedule = (
             newTeamId: team.id,
             oldTeamName: currentTeam?.name || 'Unassigned',
             newTeamName: team.name,
-            reason: hasIssue ? 'Sick cleaner on original team' : 'Constraint violation on original team'
+            reason: hasSickMember ? 'Sick cleaner — full team swap' : 'Constraint violation — team swap'
           });
         }
         return tempVisit;
       }
+    }
+
+    // Strategy 3: Assign a solo cleaner
+    const soloCandidates = activeCleaners.filter(c => {
+      if (client.avoidCleaners.includes(c.id)) return false;
+      const tempVisit = { ...visit, assignedCleanerIds: [c.id], assignedTeamId: '' };
+      const vios = checkConstraints([tempVisit], cleaners, clients, teams);
+      return !vios.some(v => v.severity === 'error');
+    });
+
+    if (soloCandidates.length > 0) {
+      const best = soloCandidates[0];
+      changes.push({
+        visitId: visit.id,
+        clientName: visit.clientName,
+        oldTeamId: visit.assignedTeamId,
+        newTeamId: '',
+        oldTeamName: currentTeam?.name || 'Unassigned',
+        newTeamName: `Solo: ${best.name}`,
+        reason: hasSickMember ? 'Sick cleaner — assigned solo' : 'Constraint violation — assigned solo'
+      });
+      return { ...visit, assignedCleanerIds: [best.id], assignedTeamId: '' };
     }
 
     return visit;

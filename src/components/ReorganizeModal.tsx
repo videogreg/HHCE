@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { AlertTriangle, UserX, Home, CheckCircle2, MessageSquare, Zap, RotateCcw, Phone, ChevronRight, AlertCircle, Users } from 'lucide-react';
+import { AlertTriangle, UserX, Home, CheckCircle2, MessageSquare, Zap, RotateCcw, Phone, AlertCircle, Users, ArrowRight, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { reoptimizeSchedule, checkConstraints, generateCallList } from '../utils/scheduler';
+import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import type { ScheduleChange, CallItem } from '../types';
 
 export const ReorganizeModal: React.FC = () => {
@@ -12,6 +13,7 @@ export const ReorganizeModal: React.FC = () => {
   const [lastChanges, setLastChanges] = useState<ScheduleChange[]>([]);
   const [lastCalls, setLastCalls] = useState<CallItem[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [showBeforeAfter, setShowBeforeAfter] = useState(false);
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const todaysVisits = visits.filter(v => v.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -24,6 +26,7 @@ export const ReorganizeModal: React.FC = () => {
     setCleaners(cleaners.map(c => c.id === selectedSickCleaner ? { ...c, active: false } : c));
     setSelectedSickCleaner('');
     setShowResults(false);
+    setShowBeforeAfter(false);
   };
 
   const handleClientCancellation = () => {
@@ -31,6 +34,7 @@ export const ReorganizeModal: React.FC = () => {
     setVisits(visits.map(v => v.id === selectedCancelledVisit ? { ...v, cancelled: true } : v));
     setSelectedCancelledVisit('');
     setShowResults(false);
+    setShowBeforeAfter(false);
   };
 
   const handleAutoFix = () => {
@@ -40,6 +44,7 @@ export const ReorganizeModal: React.FC = () => {
     const calls = generateCallList(changes, clients, cleaners, teams);
     setLastCalls(calls);
     setShowResults(true);
+    setShowBeforeAfter(true);
   };
 
   const resetAll = () => {
@@ -49,12 +54,18 @@ export const ReorganizeModal: React.FC = () => {
     setLastChanges([]);
     setLastCalls([]);
     setShowResults(false);
+    setShowBeforeAfter(false);
   };
 
   const affectedVisits = activeTodaysVisits.filter(visit => {
     const team = teams.find(t => t.id === visit.assignedTeamId);
     if (!team) return false;
     return team.cleanerIds.some(id => !cleaners.find(c => c.id === id)?.active);
+  });
+
+  const beforeAfterData = lastChanges.map(change => {
+    const beforeVisit = visits.find(v => v.id === change.visitId);
+    return { change, beforeVisit };
   });
 
   return (
@@ -107,7 +118,7 @@ export const ReorganizeModal: React.FC = () => {
               disabled={!selectedSickCleaner}
               className="w-full py-2.5 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 disabled:opacity-40 active:scale-[0.98] transition-all"
             >
-              Mark Inactive & Affected
+              Mark Inactive
             </button>
           </div>
         </div>
@@ -169,6 +180,65 @@ export const ReorganizeModal: React.FC = () => {
         <Zap className="fill-current" size={24} /> AUTO-FIX SCHEDULE
       </button>
 
+      {showBeforeAfter && lastChanges.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Eye size={16} className="text-indigo-500" /> Before & After
+            </h3>
+            <button
+              onClick={() => setShowBeforeAfter(false)}
+              className="text-xs text-slate-400 hover:text-slate-600 font-bold"
+            >
+              Hide
+            </button>
+          </div>
+          <div className="space-y-3">
+            {beforeAfterData.map(({ change, beforeVisit }, i) => {
+              if (!beforeVisit) return null;
+              const afterVisit = visits.find(v => v.id === change.visitId);
+              if (!afterVisit) return null;
+
+              const beforeTeam = teams.find(t => t.id === beforeVisit.assignedTeamId);
+              const afterTeam = teams.find(t => t.id === afterVisit.assignedTeamId);
+
+              let beforeIds = beforeVisit.assignedCleanerIds || beforeTeam?.cleanerIds || [];
+              let afterIds = afterVisit.assignedCleanerIds || afterTeam?.cleanerIds || [];
+
+              const beforeNames = beforeIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(' + ') || 'Unassigned';
+              const afterNames = afterIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(' + ') || 'Unassigned';
+
+              const beforeHours = formatTotalHours(beforeVisit.durationMinutes);
+              const afterHours = formatTotalHours(afterVisit.durationMinutes);
+              const beforeOnSite = formatOnSiteHours(beforeVisit.durationMinutes, beforeIds.length);
+              const afterOnSite = formatOnSiteHours(afterVisit.durationMinutes, afterIds.length);
+
+              return (
+                <div key={i} className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="bg-indigo-50 px-3 py-2 border-b border-indigo-100">
+                    <p className="text-xs font-bold text-indigo-800">{change.clientName} — {change.reason}</p>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-slate-200">
+                    <div className="p-3">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-2">Before</p>
+                      <p className="text-xs font-bold text-slate-600">{beforeVisit.startTime}</p>
+                      <p className="text-[10px] text-slate-500">{beforeNames}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{beforeHours} hrs total • {beforeOnSite} on-site</p>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-[9px] font-black text-green-600 uppercase tracking-wider mb-2">After</p>
+                      <p className="text-xs font-bold text-slate-800">{afterVisit.startTime}</p>
+                      <p className="text-[10px] text-green-700 font-bold">{afterNames}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">{afterHours} hrs total • {afterOnSite} on-site</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {showResults && (
         <div className="space-y-4 animate-slide-up">
           {lastChanges.length > 0 ? (
@@ -186,7 +256,7 @@ export const ReorganizeModal: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-800">{change.clientName}</p>
                         <p className="text-[10px] text-slate-500">
-                          {change.oldTeamName} <ChevronRight size={10} className="inline mx-0.5" /> {change.newTeamName}
+                          {change.oldTeamName} <ArrowRight size={10} className="inline mx-0.5" /> {change.newTeamName}
                         </p>
                         <p className="text-[10px] text-indigo-600 font-medium mt-0.5">{change.reason}</p>
                       </div>
