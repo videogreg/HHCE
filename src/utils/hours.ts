@@ -1,23 +1,15 @@
-// Format total person-hours (stored as minutes)
 export const formatTotalHours = (minutes: number): string => {
-  const hrs = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  if (rem === 0) return `${hrs}.00`;
-  if (rem === 15) return `${hrs}.25`;
-  if (rem === 30) return `${hrs}.50`;
-  if (rem === 45) return `${hrs}.75`;
-  return `${(minutes / 60).toFixed(2)}`;
+  const hrs = minutes / 60;
+  if (hrs <= 0) return '0 hrs';
+  const isWhole = Number.isInteger(hrs);
+  const display = isWhole ? `${Math.round(hrs)}` : `${hrs.toFixed(1)}`;
+  return `${display} hr${parseFloat(display) === 1 ? '' : 's'}`;
 };
 
-// Calculate on-site hours per cleaner
-export const formatOnSiteHours = (minutes: number, cleanerCount: number): string => {
-  if (!cleanerCount || cleanerCount < 1) return formatTotalHours(minutes);
-  const perCleaner = minutes / cleanerCount;
-  const hrs = Math.floor(perCleaner / 60);
-  const rem = Math.round(perCleaner % 60);
-  if (rem === 0) return `${hrs}.00`;
-  if (rem === 15) return `${hrs}.25`;
-  if (rem === 30) return `${hrs}.50`;
-  if (rem === 45) return `${hrs}.75`;
-  return `${(perCleaner / 60).toFixed(2)}`;
+export const formatOnSiteHours = (totalMinutes: number, cleanerCount: number): string => {
+  if (!cleanerCount || cleanerCount <= 0) return formatTotalHours(totalMinutes);
+  const perPerson = totalMinutes / cleanerCount / 60;
+  const isWhole = Number.isInteger(perPerson);
+  const display = isWhole ? `${Math.round(perPerson)}` : `${perPerson.toFixed(1)}`;
+  return `${display} hr${parseFloat(display) === 1 ? '' : 's'} each`;
 };

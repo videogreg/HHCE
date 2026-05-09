@@ -19,12 +19,21 @@ interface AppContextType extends AppState {
   resetAllData: () => void;
   loadDemoData: () => void;
   loadDemoCleaners: () => void;
+  selectedDate: Date;
+  setSelectedDate: React.Dispatch<React.SetStateAction<Date>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const TEAM_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0891b2', '#be185d'];
 const CLEANER_COLORS = ['#dbeafe', '#d1fae5', '#fef3c7', '#ede9fe', '#fee2e2', '#cffafe', '#fce7f3'];
+
+const formatLocalDate = (d: Date): string => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 const createDemoData = (): AppState => {
   const c1: Cleaner = { id: 'c1', name: 'Sarah', isDriver: true, canStartAt: '08:00', mustBeOffBy: '15:00', cannotWorkWith: [], active: true, phone: '555-0101', color: CLEANER_COLORS[0] };
@@ -55,7 +64,6 @@ const createDemoData = (): AppState => {
   const teams = [t1, t2, t3, t4];
 
   const today = new Date();
-  const formatDate = (d: Date) => d.toISOString().split('T')[0];
   const addDays = (d: Date, n: number) => {
     const x = new Date(d);
     x.setDate(x.getDate() + n);
@@ -63,14 +71,14 @@ const createDemoData = (): AppState => {
   };
 
   const visits: Visit[] = [
-    { id: uuidv4(), clientId: cl1.id, clientName: cl1.name, clientAddress: cl1.address, clientZone: cl1.zone, date: formatDate(today), startTime: '09:30', durationMinutes: 120, assignedTeamId: t1.id, assignedCleanerIds: t1.cleanerIds, cancelled: false, teamName: t1.name },
-    { id: uuidv4(), clientId: cl2.id, clientName: cl2.name, clientAddress: cl2.address, clientZone: cl2.zone, date: formatDate(today), startTime: '10:00', durationMinutes: 90, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name },
-    { id: uuidv4(), clientId: cl4.id, clientName: cl4.name, clientAddress: cl4.address, clientZone: cl4.zone, date: formatDate(today), startTime: '09:00', durationMinutes: 75, assignedTeamId: t3.id, assignedCleanerIds: t3.cleanerIds, cancelled: false, teamName: t3.name },
-    { id: uuidv4(), clientId: cl6.id, clientName: cl6.name, clientAddress: cl6.address, clientZone: cl6.zone, date: formatDate(addDays(today, 1)), startTime: '09:00', durationMinutes: 60, assignedTeamId: t1.id, assignedCleanerIds: t1.cleanerIds, cancelled: false, teamName: t1.name },
-    { id: uuidv4(), clientId: cl3.id, clientName: cl3.name, clientAddress: cl3.address, clientZone: cl3.zone, date: formatDate(addDays(today, 2)), startTime: '10:00', durationMinutes: 150, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name },
-    { id: uuidv4(), clientId: cl5.id, clientName: cl5.name, clientAddress: cl5.address, clientZone: cl5.zone, date: formatDate(addDays(today, 2)), startTime: '08:00', durationMinutes: 180, assignedTeamId: t3.id, assignedCleanerIds: t3.cleanerIds, cancelled: false, teamName: t3.name },
-    { id: uuidv4(), clientId: cl7.id, clientName: cl7.name, clientAddress: cl7.address, clientZone: cl7.zone, date: formatDate(addDays(today, 4)), startTime: '11:00', durationMinutes: 120, assignedTeamId: t1.id, assignedCleanerIds: t1.cleanerIds, cancelled: false, teamName: t1.name },
-    { id: uuidv4(), clientId: cl8.id, clientName: cl8.name, clientAddress: cl8.address, clientZone: cl8.zone, date: formatDate(addDays(today, 4)), startTime: '13:00', durationMinutes: 90, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name },
+    { id: uuidv4(), clientId: cl1.id, clientName: cl1.name, clientAddress: cl1.address, clientZone: cl1.zone, date: formatLocalDate(today), startTime: '09:30', durationMinutes: 120, assignedTeamId: t1.id, assignedCleanerIds: t1.cleanerIds, cancelled: false, teamName: t1.name },
+    { id: uuidv4(), clientId: cl2.id, clientName: cl2.name, clientAddress: cl2.address, clientZone: cl2.zone, date: formatLocalDate(today), startTime: '10:00', durationMinutes: 90, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name },
+    { id: uuidv4(), clientId: cl4.id, clientName: cl4.name, clientAddress: cl4.address, clientZone: cl4.zone, date: formatLocalDate(today), startTime: '09:00', durationMinutes: 75, assignedTeamId: t3.id, assignedCleanerIds: t3.cleanerIds, cancelled: false, teamName: t3.name },
+    { id: uuidv4(), clientId: cl6.id, clientName: cl6.name, clientAddress: cl6.address, clientZone: cl6.zone, date: formatLocalDate(addDays(today, 1)), startTime: '09:00', durationMinutes: 60, assignedTeamId: t1.id, assignedCleanerIds: t1.cleanerIds, cancelled: false, teamName: t1.name },
+    { id: uuidv4(), clientId: cl3.id, clientName: cl3.name, clientAddress: cl3.address, clientZone: cl3.zone, date: formatLocalDate(addDays(today, 2)), startTime: '10:00', durationMinutes: 150, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name },
+    { id: uuidv4(), clientId: cl5.id, clientName: cl5.name, clientAddress: cl5.address, clientZone: cl5.zone, date: formatLocalDate(addDays(today, 2)), startTime: '08:00', durationMinutes: 180, assignedTeamId: t3.id, assignedCleanerIds: t3.cleanerIds, cancelled: false, teamName: t3.name },
+    { id: uuidv4(), clientId: cl7.id, clientName: cl7.name, clientAddress: cl7.address, clientZone: cl7.zone, date: formatLocalDate(addDays(today, 4)), startTime: '11:00', durationMinutes: 120, assignedTeamId: t1.id, assignedCleanerIds: t1.cleanerIds, cancelled: false, teamName: t1.name },
+    { id: uuidv4(), clientId: cl8.id, clientName: cl8.name, clientAddress: cl8.address, clientZone: cl8.zone, date: formatLocalDate(addDays(today, 4)), startTime: '13:00', durationMinutes: 90, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name },
   ];
 
   return { cleaners, clients, visits, teams };
@@ -81,6 +89,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [clients, setClients] = useState<Client[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loaded, setLoaded] = useState(false);
   const skipNextSave = useRef(false);
 
@@ -187,7 +196,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       teams, setTeams,
       resetAllData,
       loadDemoData,
-      loadDemoCleaners
+      loadDemoCleaners,
+      selectedDate,
+      setSelectedDate
     }}>
       {children}
     </AppContext.Provider>

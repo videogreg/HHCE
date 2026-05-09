@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
@@ -12,11 +12,14 @@ import {
 type ViewMode = 'day' | 'week' | 'month';
 
 export const ScheduleBoard: React.FC = () => {
-  const { visits, setVisits, cleaners, setCleaners, clients, teams } = useAppContext();
+  const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
-  const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrentMonth(selectedDate);
+  }, [selectedDate]);
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits
@@ -34,9 +37,7 @@ export const ScheduleBoard: React.FC = () => {
     if (viewMode === 'month') {
       setCurrentMonth(subMonths(currentMonth, 1));
     } else {
-      const newDate = subDays(selectedDate, 1);
-      setSelectedDate(newDate);
-      setCurrentMonth(newDate);
+      setSelectedDate(subDays(selectedDate, 1));
     }
   };
 
@@ -44,9 +45,7 @@ export const ScheduleBoard: React.FC = () => {
     if (viewMode === 'month') {
       setCurrentMonth(addMonths(currentMonth, 1));
     } else {
-      const newDate = addDays(selectedDate, 1);
-      setSelectedDate(newDate);
-      setCurrentMonth(newDate);
+      setSelectedDate(addDays(selectedDate, 1));
     }
   };
 
@@ -345,9 +344,9 @@ export const ScheduleBoard: React.FC = () => {
                     <span className="font-bold">{visit.startTime}</span>
                   </div>
                   <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-lg">
-                    <span className="text-slate-500 font-medium">{totalHours} hrs</span>
+                    <span className="text-slate-500 font-medium">{totalHours}</span>
                     <span className="text-slate-300">|</span>
-                    <span className="text-purple-600 font-bold">{onSiteHours} on-site</span>
+                    <span className="text-purple-600 font-bold">{onSiteHours}</span>
                   </div>
                   {visit.clientZone && (
                     <div className="flex items-center gap-1.5">

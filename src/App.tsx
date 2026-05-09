@@ -6,6 +6,7 @@ import { ClientManager } from './components/ClientManager';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 import { ReorganizeModal } from './components/ReorganizeModal';
+import { SearchBar } from './components/SearchBar';
 import { LayoutDashboard, Users, UserCheck, AlertTriangle, Sparkles, CalendarPlus } from 'lucide-react';
 
 function App() {
@@ -51,6 +52,8 @@ function AppContent() {
           </div>
         </div>
       </header>
+
+      <SearchBar onNavigate={(tab) => setActiveTab(tab as any)} />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {activeTab === 'dashboard' && <ScheduleBoard />}

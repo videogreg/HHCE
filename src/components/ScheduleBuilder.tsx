@@ -6,20 +6,10 @@ import { Plus, Trash2, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, 
 import { format, addDays, subDays, isSameDay } from 'date-fns';
 import { checkConstraints } from '../utils/scheduler';
 import { parseVisitsCSV } from '../utils/csvParser';
-
-const formatDurationHours = (minutes: number): string => {
-  const hrs = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  if (rem === 0) return `${hrs}.00`;
-  if (rem === 15) return `${hrs}.25`;
-  if (rem === 30) return `${hrs}.50`;
-  if (rem === 45) return `${hrs}.75`;
-  return `${(minutes / 60).toFixed(2)}`;
-};
+import { formatTotalHours } from '../utils/hours';
 
 export const ScheduleBuilder: React.FC = () => {
-  const { visits, setVisits, cleaners, clients, teams } = useAppContext();
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const { visits, setVisits, cleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [showAdd, setShowAdd] = useState(false);
   const [newVisit, setNewVisit] = useState<Partial<Visit>>({
     clientId: '', startTime: '09:00', assignedTeamId: '', durationMinutes: 120, assignedCleanerIds: []
@@ -159,7 +149,7 @@ export const ScheduleBuilder: React.FC = () => {
                 <span className="font-bold text-slate-700 min-w-[80px]">{v.date}</span>
                 <span className="font-bold text-slate-800">{v.startTime}</span>
                 <span className="text-slate-500">{v.clientName}</span>
-                <span className="text-slate-400">{formatDurationHours(v.durationMinutes || 120)} hrs</span>
+                <span className="text-slate-400">{formatTotalHours(v.durationMinutes || 120)}</span>
               </div>
             ))}
             {csvPreview.length > 10 && (
@@ -247,13 +237,14 @@ export const ScheduleBuilder: React.FC = () => {
                 value={newVisit.startTime} onChange={e => setNewVisit({ ...newVisit, startTime: e.target.value })} />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Duration (min)</label>
-              <input type="number" step="15" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                value={newVisit.durationMinutes} onChange={e => setNewVisit({ ...newVisit, durationMinutes: parseInt(e.target.value) || 120 })} />
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Duration (hrs)</label>
+              <input type="number" step="0.5" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                value={(newVisit.durationMinutes || 120) / 60}
+                onChange={e => setNewVisit({ ...newVisit, durationMinutes: Math.round(parseFloat(e.target.value) * 60) || 120 })} />
             </div>
             <div className="flex items-end">
               <span className="text-xs text-slate-500 font-medium">
-                = {formatDurationHours(newVisit.durationMinutes || 120)} hrs
+                = {formatTotalHours(newVisit.durationMinutes || 120)}
               </span>
             </div>
           </div>
@@ -333,7 +324,7 @@ export const ScheduleBuilder: React.FC = () => {
             <div key={visit.id} className={`bg-white rounded-2xl border p-3 shadow-sm flex items-center gap-3 ${hasError ? 'border-red-300' : 'border-slate-200'}`}>
               <div className="shrink-0 w-14 text-center">
                 <div className="text-sm font-black text-slate-800">{visit.startTime}</div>
-                <div className="text-[9px] text-slate-400 font-bold">{formatDurationHours(visit.durationMinutes)} hrs</div>
+                <div className="text-[9px] text-slate-400 font-bold">{formatTotalHours(visit.durationMinutes)}</div>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

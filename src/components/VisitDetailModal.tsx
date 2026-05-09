@@ -1,21 +1,19 @@
 import React from 'react';
-import type { Visit, Cleaner, Client, Team } from '../types';
-import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
-import { X, Clock, MapPin, Users, Phone, FileText, Star, Ban, AlertCircle, AlertTriangle, Calendar } from 'lucide-react';
+import type { Visit, Cleaner, Client, Team, ConstraintViolation } from '../types';
+import { formatTotalHours } from '../utils/hours';
+import { X, Phone, MapPin, Clock, Users, AlertCircle, AlertTriangle, FileText, Ban } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
-interface VisitDetailModalProps {
+interface Props {
   visit: Visit;
   cleaners: Cleaner[];
   clients: Client[];
   teams: Team[];
-  violations: { severity: 'error' | 'warning'; message: string }[];
+  violations: ConstraintViolation[];
   onClose: () => void;
 }
 
-export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
-  visit, cleaners, clients, teams, violations, onClose
-}) => {
+export const VisitDetailModal: React.FC<Props> = ({ visit, cleaners, clients, teams, violations, onClose }) => {
   const client = clients.find(c => c.id === visit.clientId);
   const team = teams.find(t => t.id === visit.assignedTeamId);
 
@@ -27,165 +25,128 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
     .map(id => cleaners.find(c => c.id === id))
     .filter(Boolean);
 
-  const cleanerCount = assignedCleaners.length;
-  const totalHours = formatTotalHours(visit.durationMinutes);
-  const onSiteHours = formatOnSiteHours(visit.durationMinutes, cleanerCount);
+  const hasError = violations.some(v => v.severity === 'error');
+  const hasWarning = violations.some(v => v.severity === 'warning');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto animate-slide-up">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-start justify-between z-10">
-          <div>
-            <h2 className="text-lg font-black text-slate-800">{visit.clientName}</h2>
-            <p className="text-xs text-slate-400 font-medium">{format(parseISO(visit.date), 'EEEE, MMMM d, yyyy')}</p>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
+        
+        <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between rounded-t-2xl z-10">
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Visit Details</h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Time & Hours */}
-          <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-slate-700">
-                <Clock size={16} className="text-blue-500" />
-                <span className="font-bold">{visit.startTime}</span>
+          {/* Client Card */}
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+            <h3 className="text-sm font-bold text-blue-900 mb-1">{visit.clientName}</h3>
+            <div className="space-y-1.5">
+              <div className="flex items-start gap-2 text-xs text-blue-800">
+                <MapPin size={12} className="mt-0.5 shrink-0" />
+                <span>{visit.clientAddress}</span>
               </div>
-              <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-200">
-                {totalHours} total hrs
-              </span>
+              {visit.clientZone && (
+                <div className="flex items-center gap-2 text-xs text-blue-700 font-medium">
+                  <span className="bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">Zone</span>
+                  {visit.clientZone}
+                </div>
+              )}
+              {client?.phone && (
+                <a href={`tel:${client.phone}`} className="flex items-center gap-2 text-xs text-blue-700 font-bold hover:underline">
+                  <Phone size={12} /> {client.phone}
+                </a>
+              )}
+              {client?.notes && (
+                <div className="flex items-start gap-2 text-xs text-blue-700 mt-1">
+                  <FileText size={12} className="mt-0.5 shrink-0" />
+                  <span className="italic">{client.notes}</span>
+                </div>
+              )}
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-slate-700">
-                <Users size={16} className="text-purple-500" />
-                <span className="font-medium">{cleanerCount} cleaner{cleanerCount !== 1 ? 's' : ''}</span>
-              </div>
-              <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-1 rounded-lg border border-purple-200">
-                {onSiteHours} hrs on-site
-              </span>
-            </div>
-            {visit.clientZone && (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <MapPin size={14} className="text-slate-400" />
-                {visit.clientZone}
-              </div>
-            )}
           </div>
 
-          {/* Address */}
-          <div className="flex items-start gap-2 text-sm text-slate-600">
-            <MapPin size={16} className="text-slate-400 shrink-0 mt-0.5" />
-            <span>{visit.clientAddress || 'No address on file'}</span>
+          {/* Visit Info Grid */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date</div>
+              <div className="text-sm font-bold text-slate-700">
+                {visit.date ? format(parseISO(visit.date), 'EEE, MMM d, yyyy') : '—'}
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</div>
+              <div className="text-sm font-bold text-slate-700">{visit.startTime}</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Duration</div>
+              <div className="text-sm font-bold text-slate-700">{formatTotalHours(visit.durationMinutes)}</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team</div>
+              <div className="text-sm font-bold text-slate-700">{team?.name || 'Unassigned'}</div>
+            </div>
           </div>
 
-          {/* Client Details */}
-          {client && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Client Preferences</h3>
-              {client.phone && (
-                <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <Phone size={14} className="text-slate-400" />
-                  {client.phone}
-                </div>
-              )}
-              {client.preferredDays.length > 0 && (
-                <div className="flex items-center gap-2 text-xs text-slate-600">
-                  <Calendar size={14} className="text-slate-400" />
-                  Prefers: {client.preferredDays.join(', ')}
-                </div>
-              )}
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <Clock size={14} className="text-slate-400" />
-                Window: {client.notBefore || 'Any'} - {client.notAfter || 'Any'}
-              </div>
-              {client.notes && (
-                <div className="flex items-start gap-2 text-xs text-slate-600 bg-amber-50 border border-amber-100 rounded-lg p-2">
-                  <FileText size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                  {client.notes}
-                </div>
-              )}
-              {client.preferredCleaners.length > 0 && (
-                <div className="flex items-center gap-2 text-xs text-amber-700">
-                  <Star size={14} className="text-amber-400" />
-                  Prefers: {client.preferredCleaners.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
-                </div>
-              )}
-              {client.avoidCleaners.length > 0 && (
-                <div className="flex items-center gap-2 text-xs text-red-700">
-                  <Ban size={14} className="text-red-400" />
-                  Avoids: {client.avoidCleaners.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Assigned Cleaners */}
+          {/* Cleaners */}
           <div>
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-              Assigned Cleaners ({cleanerCount})
-            </h3>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Users size={12} /> Assigned Cleaners
+            </div>
             <div className="space-y-2">
               {assignedCleaners.map(c => (
-                <div key={c!.id} className="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style={{ backgroundColor: c!.color || '#94a3b8' }}>
-                    {c!.name.charAt(0)}
+                <div key={c!.id} className={`flex items-center justify-between p-2 rounded-xl border ${c!.active ? 'bg-white border-slate-200' : 'bg-red-50 border-red-200'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c!.color || '#94a3b8' }} />
+                    <span className={`text-xs font-bold ${c!.active ? 'text-slate-700' : 'text-red-700 line-through'}`}>{c!.name}</span>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-slate-800">{c!.name}</p>
-                    <p className="text-[10px] text-slate-500">
-                      {c!.isDriver ? 'Driver' : 'Non-driver'} • {c!.canStartAt || 'Any'} - {c!.mustBeOffBy || 'Any'}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    {c!.phone && (
+                      <a href={`tel:${c!.phone}`} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100">
+                        <Phone size={12} />
+                      </a>
+                    )}
+                    {!c!.active && <span className="text-[10px] font-black text-red-600 uppercase">Sick</span>}
                   </div>
-                  {c!.phone && (
-                    <a href={`tel:${c!.phone}`} className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
-                      Call
-                    </a>
-                  )}
                 </div>
               ))}
               {assignedCleaners.length === 0 && (
-                <p className="text-sm text-red-600 font-medium bg-red-50 border border-red-100 rounded-xl p-3">
-                  No cleaners assigned to this visit.
-                </p>
+                <p className="text-xs text-slate-400 italic">No cleaners assigned</p>
               )}
             </div>
           </div>
 
-          {/* Team */}
-          {team && (
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Users size={14} />
-              Team: <span className="font-bold" style={{ color: team.color || '#64748b' }}>{team.name}</span>
+          {/* Violations */}
+          {violations.length > 0 && (
+            <div className={`rounded-xl p-3 border ${hasError ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1">
+                {hasError ? <AlertCircle size={12} className="text-red-600" /> : <AlertTriangle size={12} className="text-amber-600" />}
+                <span className={hasError ? 'text-red-700' : 'text-amber-700'}>Schedule Issues</span>
+              </div>
+              <div className="space-y-1">
+                {violations.map((v, i) => (
+                  <p key={i} className={`text-xs font-medium ${v.severity === 'error' ? 'text-red-600' : 'text-amber-700'}`}>
+                    • {v.message}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Violations */}
-          {violations.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-bold text-red-500 uppercase tracking-wider flex items-center gap-1">
-                <AlertCircle size={12} /> Issues
-              </h3>
-              {violations.map((v, i) => (
-                <div key={i} className={`text-xs font-medium flex items-start gap-1.5 p-2 rounded-lg ${
-                  v.severity === 'error' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
-                }`}>
-                  {v.severity === 'error' ? <AlertCircle size={12} className="shrink-0 mt-0.5" /> : <AlertTriangle size={12} className="shrink-0 mt-0.5" />}
-                  {v.message}
-                </div>
-              ))}
+          {/* Cancelled Badge */}
+          {visit.cancelled && (
+            <div className="bg-slate-100 rounded-xl p-3 text-center">
+              <span className="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 uppercase tracking-widest">
+                <Ban size={12} /> Visit Cancelled
+              </span>
             </div>
           )}
         </div>
 
-        {/* Footer close */}
-        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4">
-          <button
-            onClick={onClose}
-            className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-900 transition-colors active:scale-[0.98]"
-          >
+        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex gap-2 rounded-b-2xl">
+          <button onClick={onClose} className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors">
             Close
           </button>
         </div>

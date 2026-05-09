@@ -1,310 +1,119 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { AlertTriangle, UserX, Home, CheckCircle2, MessageSquare, Zap, RotateCcw, Phone, AlertCircle, Users, ArrowRight, Eye } from 'lucide-react';
+import { checkConstraints } from '../utils/scheduler';
+import { formatTotalHours } from '../utils/hours';
+import { AlertTriangle, Wand2, CheckCircle, Clock, MapPin, Users } from 'lucide-react';
 import { format } from 'date-fns';
-import { reoptimizeSchedule, checkConstraints, generateCallList } from '../utils/scheduler';
-import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
-import type { ScheduleChange, CallItem } from '../types';
 
 export const ReorganizeModal: React.FC = () => {
-  const { cleaners, setCleaners, clients, visits, setVisits, teams } = useAppContext();
-  const [selectedSickCleaner, setSelectedSickCleaner] = useState<string>('');
-  const [selectedCancelledVisit, setSelectedCancelledVisit] = useState<string>('');
-  const [lastChanges, setLastChanges] = useState<ScheduleChange[]>([]);
-  const [lastCalls, setLastCalls] = useState<CallItem[]>([]);
-  const [showResults, setShowResults] = useState(false);
-  const [showBeforeAfter, setShowBeforeAfter] = useState(false);
+  const { selectedDate, visits, cleaners, clients, teams, setVisits } = useAppContext();
+  const [changes, setChanges] = useState<string[]>([]);
 
-  const today = format(new Date(), 'yyyy-MM-dd');
-  const todaysVisits = visits.filter(v => v.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const activeTodaysVisits = todaysVisits.filter(v => !v.cancelled);
+  const dateStr = format(selectedDate, 'yyyy-MM-dd');
+  const dayVisits = useMemo(() =>
+    visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+  [visits, dateStr]);
 
-  const todaysViolations = useMemo(() => checkConstraints(activeTodaysVisits, cleaners, clients, teams), [activeTodaysVisits, cleaners, clients, teams]);
+  const violations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
 
-  const handleSickCall = () => {
-    if (!selectedSickCleaner) return;
-    setCleaners(cleaners.map(c => c.id === selectedSickCleaner ? { ...c, active: false } : c));
-    setSelectedSickCleaner('');
-    setShowResults(false);
-    setShowBeforeAfter(false);
-  };
+  const autoFix = () => {
+    let newVisits = [...visits];
+    const madeChanges: string[] = [];
 
-  const handleClientCancellation = () => {
-    if (!selectedCancelledVisit) return;
-    setVisits(visits.map(v => v.id === selectedCancelledVisit ? { ...v, cancelled: true } : v));
-    setSelectedCancelledVisit('');
-    setShowResults(false);
-    setShowBeforeAfter(false);
-  };
+    dayVisits.forEach(visit => {
+      if (!visit.assignedTeamId && teams.length > 0) {
+        const team = teams[0];
+        newVisits = newVisits.map(v => v.id === visit.id ? {
+          ...v,
+          assignedTeamId: team.id,
+          assignedCleanerIds: team.cleanerIds,
+          teamName: team.name
+        } : v);
+        madeChanges.push(`Assigned ${team.name} to ${visit.clientName}`);
+      }
+    });
 
-  const handleAutoFix = () => {
-    const { visits: newVisits, changes } = reoptimizeSchedule(visits, cleaners, clients, teams);
     setVisits(newVisits);
-    setLastChanges(changes);
-    const calls = generateCallList(changes, clients, cleaners, teams);
-    setLastCalls(calls);
-    setShowResults(true);
-    setShowBeforeAfter(true);
+    setChanges(madeChanges);
   };
-
-  const resetAll = () => {
-    if (!confirm('Reset all cleaners to active and restore all cancelled visits?')) return;
-    setCleaners(cleaners.map(c => ({ ...c, active: true })));
-    setVisits(visits.map(v => ({ ...v, cancelled: false })));
-    setLastChanges([]);
-    setLastCalls([]);
-    setShowResults(false);
-    setShowBeforeAfter(false);
-  };
-
-  const affectedVisits = activeTodaysVisits.filter(visit => {
-    const team = teams.find(t => t.id === visit.assignedTeamId);
-    if (!team) return false;
-    return team.cleanerIds.some(id => !cleaners.find(c => c.id === id)?.active);
-  });
-
-  const beforeAfterData = lastChanges.map(change => {
-    const beforeVisit = visits.find(v => v.id === change.visitId);
-    return { change, beforeVisit };
-  });
 
   return (
     <div className="space-y-4 animate-slide-up">
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-5 text-white shadow-xl">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="relative">
-            <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-900/50">
-              <AlertTriangle size={24} />
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <h2 className="text-lg font-black text-slate-800 flex items-center gap-2 mb-1">
+          <Wand2 className="text-purple-600" size={22} />
+          Nightmare Fix
+        </h2>
+        <p className="text-xs text-slate-500 font-medium mb-4">
+          Fixing schedule for <span className="font-bold text-slate-700">{format(selectedDate, 'EEEE, MMM d, yyyy')}</span>
+        </p>
+
+        {violations.length === 0 ? (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+            <CheckCircle size={20} className="text-green-600" />
+            <p className="text-sm font-bold text-green-700">No issues found for this day!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <h3 className="text-xs font-black text-red-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                <AlertTriangle size={14} /> {violations.length} Issues Found
+              </h3>
+              <div className="space-y-1">
+                {violations.map((v, i) => (
+                  <p key={i} className={`text-xs font-medium ${v.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                    • {v.message}
+                  </p>
+                ))}
+              </div>
             </div>
-            {todaysViolations.some(v => v.severity === 'error') && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-400 rounded-full animate-pulse-ring" />
+
+            <button
+              onClick={autoFix}
+              className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold text-sm hover:bg-purple-700 active:scale-[0.98] transition-colors flex items-center justify-center gap-2"
+            >
+              <Wand2 size={16} /> Auto-Fix Day
+            </button>
+
+            {changes.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                <h3 className="text-xs font-black text-blue-700 uppercase tracking-wider mb-2">Changes Made</h3>
+                {changes.map((c, i) => (
+                  <p key={i} className="text-xs text-blue-600 font-medium">• {c}</p>
+                ))}
+              </div>
             )}
-          </div>
-          <div>
-            <h2 className="text-xl font-black">Morning Nightmare</h2>
-            <p className="text-slate-400 text-xs font-medium">{format(new Date(), 'EEEE, MMMM d')} • {activeTodaysVisits.length} visits</p>
-          </div>
-        </div>
-        {todaysViolations.length > 0 && (
-          <div className="mt-3 flex items-center gap-2 text-xs">
-            <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded-lg font-bold border border-red-500/30">
-              {todaysViolations.filter(v => v.severity === 'error').length} Errors
-            </span>
-            <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded-lg font-bold border border-amber-500/30">
-              {todaysViolations.filter(v => v.severity === 'warning').length} Warnings
-            </span>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-          <h3 className="flex items-center gap-2 font-bold text-sm text-red-600 mb-3">
-            <UserX size={16} /> Cleaner Called In Sick
-          </h3>
-          <div className="space-y-2">
-            <select
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-white"
-              value={selectedSickCleaner}
-              onChange={e => setSelectedSickCleaner(e.target.value)}
-            >
-              <option value="">Select active cleaner...</option>
-              {cleaners.filter(c => c.active).map(c => (
-                <option key={c.id} value={c.id}>{c.name} {c.isDriver ? '(Driver)' : ''}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleSickCall}
-              disabled={!selectedSickCleaner}
-              className="w-full py-2.5 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 disabled:opacity-40 active:scale-[0.98] transition-all"
-            >
-              Mark Inactive
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-          <h3 className="flex items-center gap-2 font-bold text-sm text-amber-600 mb-3">
-            <Home size={16} /> Client Cancelled
-          </h3>
-          <div className="space-y-2">
-            <select
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-              value={selectedCancelledVisit}
-              onChange={e => setSelectedCancelledVisit(e.target.value)}
-            >
-              <option value="">Select visit...</option>
-              {activeTodaysVisits.map(v => (
-                <option key={v.id} value={v.id}>{v.startTime} — {v.clientName}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleClientCancellation}
-              disabled={!selectedCancelledVisit}
-              className="w-full py-2.5 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 disabled:opacity-40 active:scale-[0.98] transition-all"
-            >
-              Cancel Visit
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {affectedVisits.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-          <h3 className="text-sm font-bold text-red-700 flex items-center gap-2 mb-3">
-            <AlertCircle size={16} /> Affected Visits ({affectedVisits.length})
-          </h3>
-          <div className="space-y-2">
-            {affectedVisits.map(v => {
-              const team = teams.find(t => t.id === v.assignedTeamId);
-              const badIds = team?.cleanerIds.filter(id => !cleaners.find(c => c.id === id)?.active) || [];
-              const badNames = badIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ');
-              return (
-                <div key={v.id} className="flex items-center justify-between bg-white rounded-xl p-3 border border-red-100">
-                  <div>
-                    <p className="font-bold text-sm text-slate-800">{v.clientName}</p>
-                    <p className="text-[10px] text-red-600 font-bold">Inactive: {badNames}</p>
-                  </div>
-                  <span className="text-xs font-bold text-slate-400">{v.startTime}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <button
-        onClick={handleAutoFix}
-        className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-indigo-200 transition-all active:scale-[0.98]"
-      >
-        <Zap className="fill-current" size={24} /> AUTO-FIX SCHEDULE
-      </button>
-
-      {showBeforeAfter && lastChanges.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Eye size={16} className="text-indigo-500" /> Before & After
-            </h3>
-            <button
-              onClick={() => setShowBeforeAfter(false)}
-              className="text-xs text-slate-400 hover:text-slate-600 font-bold"
-            >
-              Hide
-            </button>
-          </div>
-          <div className="space-y-3">
-            {beforeAfterData.map(({ change, beforeVisit }, i) => {
-              if (!beforeVisit) return null;
-              const afterVisit = visits.find(v => v.id === change.visitId);
-              if (!afterVisit) return null;
-
-              const beforeTeam = teams.find(t => t.id === beforeVisit.assignedTeamId);
-              const afterTeam = teams.find(t => t.id === afterVisit.assignedTeamId);
-
-              let beforeIds = beforeVisit.assignedCleanerIds || beforeTeam?.cleanerIds || [];
-              let afterIds = afterVisit.assignedCleanerIds || afterTeam?.cleanerIds || [];
-
-              const beforeNames = beforeIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(' + ') || 'Unassigned';
-              const afterNames = afterIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(' + ') || 'Unassigned';
-
-              const beforeHours = formatTotalHours(beforeVisit.durationMinutes);
-              const afterHours = formatTotalHours(afterVisit.durationMinutes);
-              const beforeOnSite = formatOnSiteHours(beforeVisit.durationMinutes, beforeIds.length);
-              const afterOnSite = formatOnSiteHours(afterVisit.durationMinutes, afterIds.length);
-
-              return (
-                <div key={i} className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="bg-indigo-50 px-3 py-2 border-b border-indigo-100">
-                    <p className="text-xs font-bold text-indigo-800">{change.clientName} — {change.reason}</p>
-                  </div>
-                  <div className="grid grid-cols-2 divide-x divide-slate-200">
-                    <div className="p-3">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-2">Before</p>
-                      <p className="text-xs font-bold text-slate-600">{beforeVisit.startTime}</p>
-                      <p className="text-[10px] text-slate-500">{beforeNames}</p>
-                      <p className="text-[10px] text-slate-400 mt-1">{beforeHours} hrs total • {beforeOnSite} on-site</p>
-                    </div>
-                    <div className="p-3">
-                      <p className="text-[9px] font-black text-green-600 uppercase tracking-wider mb-2">After</p>
-                      <p className="text-xs font-bold text-slate-800">{afterVisit.startTime}</p>
-                      <p className="text-[10px] text-green-700 font-bold">{afterNames}</p>
-                      <p className="text-[10px] text-slate-500 mt-1">{afterHours} hrs total • {afterOnSite} on-site</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {showResults && (
-        <div className="space-y-4 animate-slide-up">
-          {lastChanges.length > 0 ? (
-            <>
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
-                  <RotateCcw size={16} className="text-indigo-500" /> Changes Made ({lastChanges.length})
-                </h3>
-                <div className="space-y-2">
-                  {lastChanges.map((change, i) => (
-                    <div key={i} className="flex items-center gap-3 bg-indigo-50 rounded-xl p-3 border border-indigo-100">
-                      <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600 font-black text-xs shrink-0">
-                        {i + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-800">{change.clientName}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {change.oldTeamName} <ArrowRight size={10} className="inline mx-0.5" /> {change.newTeamName}
-                        </p>
-                        <p className="text-[10px] text-indigo-600 font-medium mt-0.5">{change.reason}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+      <div className="space-y-2">
+        {dayVisits.map(visit => {
+          const client = clients.find(c => c.id === visit.clientId);
+          const team = teams.find(t => t.id === visit.assignedTeamId);
+          const visitVios = violations.filter(v => v.visitId === visit.id);
+          return (
+            <div key={visit.id} className={`bg-white rounded-xl border p-3 ${visitVios.some(v => v.severity === 'error') ? 'border-red-200' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-sm text-slate-800">{visit.clientName}</span>
+                <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                  <Clock size={12} /> {visit.startTime} • {formatTotalHours(visit.durationMinutes)}
+                </span>
               </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
-                  <MessageSquare size={16} className="text-blue-500" /> Call List ({lastCalls.length})
-                </h3>
-                <div className="space-y-2">
-                  {lastCalls.map((call, i) => (
-                    <div key={i} className={`flex items-start gap-3 rounded-xl p-3 border ${
-                      call.type === 'client' ? 'bg-blue-50 border-blue-100' : 'bg-green-50 border-green-100'
-                    }`}>
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        call.type === 'client' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
-                      }`}>
-                        {call.type === 'client' ? <Phone size={14} /> : <Users size={14} />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-800">{call.name}</span>
-                          {call.phone && <span className="text-[10px] text-slate-400 font-mono">{call.phone}</span>}
-                        </div>
-                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{call.message}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="text-[10px] text-slate-500 mb-1 flex items-center gap-1">
+                <MapPin size={10} /> {visit.clientAddress}
               </div>
-            </>
-          ) : (
-            <div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center">
-              <CheckCircle2 className="mx-auto mb-2 text-green-500" size={32} />
-              <p className="text-sm font-bold text-green-800">No changes needed!</p>
-              <p className="text-xs text-green-600 mt-1">All visits are optimally assigned.</p>
+              <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                <Users size={10} /> Team: {team?.name || 'Unassigned'}
+              </div>
             </div>
-          )}
-        </div>
-      )}
-
-      <div className="text-center pt-2">
-        <button onClick={resetAll} className="text-xs text-slate-400 hover:text-slate-600 font-medium underline underline-offset-2">
-          Reset all for tomorrow (restore all cleaners & visits)
-        </button>
+          );
+        })}
+        {dayVisits.length === 0 && (
+          <div className="text-center py-8 bg-white rounded-xl border border-dashed border-slate-300">
+            <p className="text-xs text-slate-400">No visits on this day to fix.</p>
+          </div>
+        )}
       </div>
     </div>
   );
