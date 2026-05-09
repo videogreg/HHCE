@@ -6,7 +6,7 @@ import { VisitDetailModal } from './VisitDetailModal';
 import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone } from 'lucide-react';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
-  eachDayOfInterval, isSameMonth, isSameDay, getDay, startOfWeek, endOfWeek
+  eachDayOfInterval, isSameMonth, isSameDay, getDay
 } from 'date-fns';
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -59,10 +59,8 @@ export const ScheduleBoard: React.FC = () => {
     setCurrentMonth(now);
   };
 
-  /* Day-view strip: Sun–Sat of the current calendar week */
-  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
-  const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 0 });
-  const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+  /* Day-view strip: next 7 days forward from selectedDate */
+  const dayViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
 
   /* Week-view grid: next 7 days forward from selectedDate */
   const weekViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
@@ -186,10 +184,10 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
-        {/* DAY VIEW — small horizontal Sun–Sat strip */}
+        {/* DAY VIEW — forward-looking 7-day strip */}
         {viewMode === 'day' && (
           <div className="flex justify-between gap-1">
-            {weekDays.map(d => {
+            {dayViewDays.map(d => {
               const isSelected = isSameDay(d, selectedDate);
               const ds = format(d, 'yyyy-MM-dd');
               const count = visits.filter(v => v.date === ds && !v.cancelled).length;
@@ -199,7 +197,7 @@ export const ScheduleBoard: React.FC = () => {
                 <button
                   key={ds}
                   onClick={() => setSelectedDate(d)}
-                  className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl flex-1 transition-all active:scale-95 relative ${
+                  className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl flex-1 transition-all active:scale-95 relative min-h-[72px] ${
                     isSelected
                       ? 'bg-blue-600 text-white shadow-md'
                       : isToday
@@ -210,9 +208,9 @@ export const ScheduleBoard: React.FC = () => {
                   }`}
                 >
                   <span className="text-[9px] font-bold uppercase">{format(d, 'EEE')}</span>
-                  <span className="text-sm font-black">{format(d, 'd')}</span>
-                  <span className={`text-[9px] font-bold px-1 rounded ${
-                    isSelected ? 'bg-white/30 text-white' : 'bg-slate-200 text-slate-500'
+                  <span className="text-xl font-black leading-none mt-0.5">{format(d, 'd')}</span>
+                  <span className={`text-sm font-black mt-auto px-1.5 py-0.5 rounded-lg ${
+                    isSelected ? 'bg-white/30 text-white' : count > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'
                   }`}>{count}</span>
                   {hasErr && !isSelected && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />}
                 </button>
@@ -242,7 +240,7 @@ export const ScheduleBoard: React.FC = () => {
                   <button
                     key={day.toISOString()}
                     onClick={() => { setSelectedDate(day); setViewMode('day'); }}
-                    className={`aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 relative ${
+                    className={`rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 relative py-3 min-h-[80px] ${
                       isSelected
                         ? 'bg-blue-600 text-white shadow-md'
                         : isToday
@@ -252,14 +250,12 @@ export const ScheduleBoard: React.FC = () => {
                         : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
-                    <span className={`text-sm font-bold ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
-                    {count > 0 && (
-                      <span className={`text-[9px] font-bold px-1 rounded ${
-                        isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
-                        {count}
-                      </span>
-                    )}
+                    <span className={`text-xl font-black leading-tight ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
+                    <span className={`text-sm font-black px-2 py-0.5 rounded-lg mt-auto ${
+                      isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : count > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
+                    }`}>
+                      {count}
+                    </span>
                     {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />}
                   </button>
                 );
@@ -278,7 +274,7 @@ export const ScheduleBoard: React.FC = () => {
             </div>
             <div className="grid grid-cols-7 gap-1">
               {calendarDays.map((day, idx) => {
-                if (!day) return <div key={`pad-${idx}`} className="aspect-square" />;
+                if (!day) return <div key={`pad-${idx}`} className="min-h-[80px]" />;
                 const isSelected = isSameDay(day, selectedDate);
                 const isCurrentMonth = isSameMonth(day, currentMonth);
                 const isToday = isSameDay(day, new Date());
@@ -289,7 +285,7 @@ export const ScheduleBoard: React.FC = () => {
                   <button
                     key={day.toISOString()}
                     onClick={() => { setSelectedDate(day); setViewMode('day'); }}
-                    className={`aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 relative ${
+                    className={`rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 relative py-3 min-h-[80px] ${
                       isSelected
                         ? 'bg-blue-600 text-white shadow-md'
                         : isToday
@@ -299,14 +295,12 @@ export const ScheduleBoard: React.FC = () => {
                         : 'bg-transparent text-slate-300'
                     }`}
                   >
-                    <span className={`text-sm font-bold ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
-                    {count > 0 && (
-                      <span className={`text-[9px] font-bold px-1 rounded ${
-                        isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
-                        {count}
-                      </span>
-                    )}
+                    <span className={`text-xl font-black leading-tight ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
+                    <span className={`text-sm font-black px-2 py-0.5 rounded-lg mt-auto ${
+                      isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : count > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
+                    }`}>
+                      {count}
+                    </span>
                     {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />}
                   </button>
                 );
