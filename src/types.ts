@@ -1,50 +1,75 @@
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
-export interface TimeRange {
-  start: string; // HH:mm
-  end: string;   // HH:mm
-}
-
 export interface Cleaner {
   id: string;
   name: string;
   isDriver: boolean;
   canStartAt?: string; // HH:mm
   mustBeOffBy?: string; // HH:mm
-  cannotWorkWith: string[]; // Array of cleaner IDs
-  active: boolean; // For "Morning Nightmare" sick calls
+  cannotWorkWith: string[]; // Cleaner IDs
+  active: boolean;
+  phone?: string;
+  notes?: string;
+  color?: string; // hex color for UI
 }
 
 export interface Client {
   id: string;
   name: string;
   address: string;
+  zone?: string; // Travel grouping area (e.g. "North", "Downtown")
   preferredDays: DayOfWeek[];
   notBefore?: string; // HH:mm
   notAfter?: string;  // HH:mm
   preferredCleaners: string[]; // Cleaner IDs
-  avoidCleaners: string[];    // Cleaner IDs
+  avoidCleaners: string[];     // Cleaner IDs
+  durationMinutes: number; // Default clean duration
+  phone?: string;
+  notes?: string;
 }
 
 export interface Visit {
   id: string;
   clientId: string;
   clientName: string;
+  clientAddress: string;
+  clientZone?: string;
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   durationMinutes: number;
   assignedTeamId: string;
-  cancelled: boolean; // For "Morning Nightmare"
+  assignedCleanerIds?: string[]; // Optional direct assignment override
+  cancelled: boolean;
+  teamName?: string;
 }
 
 export interface Team {
   id: string;
   cleanerIds: string[];
   name: string;
+  color?: string;
 }
 
-export interface DailySchedule {
-  date: string;
-  teams: Team[];
-  visits: Visit[];
+export interface ConstraintViolation {
+  visitId: string;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+export interface ScheduleChange {
+  visitId: string;
+  clientName: string;
+  oldTeamId: string;
+  newTeamId: string;
+  oldTeamName: string;
+  newTeamName: string;
+  reason: string;
+}
+
+export interface CallItem {
+  type: 'client' | 'cleaner';
+  name: string;
+  phone?: string;
+  message: string;
+  priority: 'urgent' | 'normal';
 }
