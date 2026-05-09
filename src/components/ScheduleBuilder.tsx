@@ -74,7 +74,7 @@ export const ScheduleBuilder: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const parsed = parseVisitsCSV(text, clients, teams);
+      const parsed = parseVisitsCSV(text, clients, teams, cleaners);
       setCsvPreview(parsed);
     };
     reader.readAsText(file);

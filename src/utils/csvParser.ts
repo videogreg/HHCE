@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import type { Client, Visit, Team } from '../types';
+import type { Client, Visit, Team, Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -141,6 +141,76 @@ const buildZone = (row: Record<string, string>): string => {
   return '';
 };
 
+/**
+ * Parse a flexible date string into yyyy-MM-dd.
+ * Handles ISO, North American slashes/dashes, and written formats like "May 8, 2026".
+ */
+const parseFlexibleDate = (raw: string): string => {
+  if (!raw) return '';
+  raw = raw.trim();
+
+  // Already ISO yyyy-MM-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  // Try native Date parse (handles MM/DD/YYYY, DD-MM-YYYY, etc.)
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // Manual parse for written dates: "May 8, 2026" or "8 May 2026"
+  const monthMap: Record<string, number> = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+    may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
+  };
+
+  const parts = raw.split(/[\s,/-]+/).filter(Boolean);
+  if (parts.length >= 3) {
+    let day = 0, month = 0, year = 0;
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+      if (monthMap[lower]) {
+        month = monthMap[lower];
+      } else if (/^\d{4}$/.test(part)) {
+        year = parseInt(part);
+      } else if (/^\d{1,2}$/.test(part)) {
+        day = parseInt(part);
+      }
+    }
+    if (year && month && day) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  return '';
+};
+
+/**
+ * Extract start time (HH:MM) from a time or time-range string.
+ * Handles "9:00 AM - 11:00 AM", "09:00 - 11:00", "9:00am", etc.
+ */
+const parseStartTime = (raw: string): string => {
+  if (!raw) return '09:00';
+  raw = raw.trim();
+
+  // Grab the first time-looking token in the string
+  const match = raw.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+  if (match) {
+    let hours = parseInt(match[1]);
+    const minutes = match[2];
+    const meridian = match[3]?.toUpperCase();
+    if (meridian === 'PM' && hours !== 12) hours += 12;
+    if (meridian === 'AM' && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, '0')}:${minutes}`;
+  }
+
+  return '09:00';
+};
+
 export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
   const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
   const rows = data as Record<string, string>[];
@@ -167,51 +237,85 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
   }).filter(c => c.name && c.name !== 'Unknown Client');
 };
 
-export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Team[]): Partial<Visit>[] => {
+/**
+ * Parse a Jobber Visits report CSV.
+ * Headers recognized in any order: Date, Times, Client name, Client phone,
+ * Service street, Service city, Visit completed date, Assigned to,
+ * One-off job ($), Schedule duration, Job type, House Notes
+ */
+export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Team[], cleaners: Cleaner[]): Partial<Visit>[] => {
   const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
   const rows = data as Record<string, string>[];
 
   return rows.map(row => {
-    const startDateTime = getColumn(row, ['schedule start date', 'date', 'start date']);
-    let date = '';
-    let time = '09:00';
-    
-    if (startDateTime.includes(' ')) {
-      [date, time] = startDateTime.split(' ');
-    } else if (startDateTime.includes('T')) {
-      [date, time] = startDateTime.split('T');
-      time = time?.substring(0, 5) || '09:00';
-    } else {
-      date = startDateTime;
-    }
+    // --- DATE (Jobber: "Date") ---
+    const dateRaw = getColumn(row, ['date', 'visit date', 'scheduled date', 'service date']);
+    const date = parseFlexibleDate(dateRaw);
 
+    // --- TIME (Jobber: "Times" e.g. "9:00 AM - 11:00 AM") ---
+    const timesRaw = getColumn(row, ['times', 'time', 'scheduled time', 'start time', 'time range']);
+    const startTime = parseStartTime(timesRaw);
+
+    // --- CLIENT ---
+    const clientName = getColumn(row, ['client name', 'customer name', 'name', 'client']);
+    const client = clients.find(c => c.name.toLowerCase().trim() === clientName.toLowerCase().trim());
+
+    // --- ADDRESS (Jobber: "Service street" + "Service city") ---
+    const serviceStreet = getColumn(row, ['service street', 'street', 'address', 'service address']);
+    const serviceCity = getColumn(row, ['service city', 'city']);
+    const address = [serviceStreet, serviceCity].filter(Boolean).join(', ');
+
+    // --- ZONE ---
+    const zone = serviceCity || client?.zone || '';
+
+    // --- DURATION (Jobber: "Schedule duration", usually decimal hours like "2.00") ---
+    const durationRaw = getColumn(row, ['schedule duration', 'duration', 'estimated duration', 'hours', 'job duration']);
     let durationMinutes = 120;
-    const durVal = getColumn(row, ['duration', 'estimated duration', 'hours']);
-    if (durVal) {
-      const num = parseFloat(durVal);
-      if (!isNaN(num)) {
-        durationMinutes = num < 10 ? Math.round(num * 60) : Math.round(num);
+    if (durationRaw) {
+      // If it explicitly says minutes, treat as minutes
+      if (/min/i.test(durationRaw)) {
+        const num = parseFloat(durationRaw.replace(/[^0-9.]/g, ''));
+        if (!isNaN(num)) durationMinutes = Math.round(num);
+      } else {
+        // Otherwise assume hours (Jobber default export is decimal hours)
+        const num = parseFloat(durationRaw.replace(/[^0-9.]/g, ''));
+        if (!isNaN(num)) {
+          durationMinutes = num < 24 ? Math.round(num * 60) : Math.round(num);
+        }
       }
     }
 
-    const clientName = buildName(row);
-    const client = clients.find(c => c.name.toLowerCase().trim() === clientName.toLowerCase().trim());
-    const teamName = getColumn(row, ['team', 'team name']);
-    const team = teams.find(t => t.name.toLowerCase().trim() === teamName.toLowerCase().trim());
+    // --- ASSIGNED TO / TEAM (Jobber: "Assigned to") ---
+    const assignedToRaw = getColumn(row, ['assigned to', 'assigned', 'cleaner', 'team', 'team name', 'staff']);
+    let team = teams.find(t => t.name.toLowerCase().trim() === assignedToRaw.toLowerCase().trim());
+
+    // If no exact team match, try matching cleaner names inside the assignment string
+    if (!team && assignedToRaw && cleaners.length > 0) {
+      const assignedNames = assignedToRaw.split(/,|&|\band\b|\+/i).map(n => n.trim().toLowerCase()).filter(Boolean);
+      team = teams.find(t => {
+        const teamCleanerNames = t.cleanerIds
+          .map(id => cleaners.find(c => c.id === id))
+          .filter(Boolean)
+          .map(c => c!.name.toLowerCase());
+        return assignedNames.some(name =>
+          teamCleanerNames.some(tcName => tcName.includes(name) || name.includes(tcName))
+        );
+      });
+    }
 
     return {
       id: uuidv4(),
       clientId: client?.id || '',
       clientName: clientName || client?.name || 'Unknown',
-      clientAddress: buildAddress(row) || client?.address || '',
-      clientZone: client?.zone || buildZone(row) || '',
-      date: date || getColumn(row, ['date']) || '',
-      startTime: time || getColumn(row, ['start time']) || '09:00',
+      clientAddress: address || client?.address || '',
+      clientZone: zone,
+      date,
+      startTime,
       durationMinutes,
       assignedTeamId: team?.id || '',
       assignedCleanerIds: team?.cleanerIds || [],
       cancelled: false,
-      teamName: team?.name || teamName || ''
+      teamName: team?.name || assignedToRaw || ''
     };
   }).filter(v => v.date && v.clientName);
 };
