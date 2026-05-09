@@ -36,6 +36,8 @@ export const ScheduleBoard: React.FC = () => {
   const goPrev = () => {
     if (viewMode === 'month') {
       setCurrentMonth(subMonths(currentMonth, 1));
+    } else if (viewMode === 'week') {
+      setSelectedDate(subDays(selectedDate, 7));
     } else {
       setSelectedDate(subDays(selectedDate, 1));
     }
@@ -44,6 +46,8 @@ export const ScheduleBoard: React.FC = () => {
   const goNext = () => {
     if (viewMode === 'month') {
       setCurrentMonth(addMonths(currentMonth, 1));
+    } else if (viewMode === 'week') {
+      setSelectedDate(addDays(selectedDate, 7));
     } else {
       setSelectedDate(addDays(selectedDate, 1));
     }
@@ -55,9 +59,13 @@ export const ScheduleBoard: React.FC = () => {
     setCurrentMonth(now);
   };
 
+  /* Day-view strip: Sun–Sat of the current calendar week */
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 0 });
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+
+  /* Week-view grid: next 7 days forward from selectedDate */
+  const weekViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -148,6 +156,13 @@ export const ScheduleBoard: React.FC = () => {
           <div className="text-center">
             {viewMode === 'month' ? (
               <h2 className="text-lg font-black text-slate-800">{format(currentMonth, 'MMMM yyyy')}</h2>
+            ) : viewMode === 'week' ? (
+              <>
+                <h2 className="text-lg font-black text-slate-800">
+                  {format(selectedDate, 'MMM d')} – {format(addDays(selectedDate, 6), 'MMM d')}
+                </h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Next 7 days</p>
+              </>
             ) : (
               <>
                 <h2 className="text-lg font-black text-slate-800">{format(selectedDate, 'EEEE, MMM d')}</h2>
@@ -171,7 +186,7 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
-        {/* DAY VIEW — small horizontal day selector */}
+        {/* DAY VIEW — small horizontal Sun–Sat strip */}
         {viewMode === 'day' && (
           <div className="flex justify-between gap-1">
             {weekDays.map(d => {
@@ -206,16 +221,18 @@ export const ScheduleBoard: React.FC = () => {
           </div>
         )}
 
-        {/* WEEK VIEW — 7 day cards like month view */}
+        {/* WEEK VIEW — 7 forward-looking day cards */}
         {viewMode === 'week' && (
           <>
             <div className="grid grid-cols-7 gap-1 mb-1">
-              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider py-1">{d}</div>
+              {weekViewDays.map(d => (
+                <div key={d.toISOString()} className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider py-1">
+                  {format(d, 'EEE')}
+                </div>
               ))}
             </div>
             <div className="grid grid-cols-7 gap-1">
-              {weekDays.map(day => {
+              {weekViewDays.map(day => {
                 const isSelected = isSameDay(day, selectedDate);
                 const isToday = isSameDay(day, new Date());
                 const count = getDayVisitCount(day);
