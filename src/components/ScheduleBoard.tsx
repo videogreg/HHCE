@@ -4,6 +4,7 @@ import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
 import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X } from 'lucide-react';
+import type { Visit } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, isSameMonth, isSameDay, getDay
@@ -379,7 +380,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
 
           <div className="space-y-3">
             {dayVisits.map(visit => {
-              const visitViolations = getViolationsForVisit(visit.id);
               const visibleViolations = getVisibleViolationsForVisit(visit);
               const hasError = visibleViolations.some(v => v.severity === 'error');
               const hasWarning = visibleViolations.some(v => v.severity === 'warning');
