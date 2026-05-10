@@ -95,17 +95,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     }));
   };
 
-  const hasDriversToday = useMemo(() => {
-    return dayVisits.some(v => {
-      let ids = v.assignedCleanerIds || [];
-      if (ids.length === 0) {
-        const team = teams.find(t => t.id === v.assignedTeamId);
-        if (team) ids = team.cleanerIds;
-      }
-      return ids.some(id => cleaners.find(c => c.id === id)?.isDriver);
-    });
-  }, [dayVisits, cleaners, teams]);
-
   const dayViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
   const weekViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
 
@@ -228,7 +217,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           </div>
         )}
 
-        {hasDriversToday && (
+        {dayVisits.length > 0 && (
           <button
             onClick={() => setShowRoutePlanner(true)}
             className="w-full mt-2 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-700 transition-colors"
@@ -405,6 +394,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 .map(id => cleaners.find(c => c.id === id))
                 .filter(Boolean);
 
+              const hasDriverAssigned = assignedCleaners.some(c => c?.isDriver);
+
               const cleanerCount = assignedCleaners.length;
               const totalHours = formatTotalHours(visit.durationMinutes);
               const onSiteHours = formatOnSiteHours(visit.durationMinutes, cleanerCount);
@@ -438,6 +429,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       <p className="text-[10px] text-slate-400 truncate mt-0.5">{visit.clientAddress}</p>
                     </button>
                     <div className="flex gap-1 shrink-0">
+                      {hasDriverAssigned && (
+                        <button
+                          onClick={() => setShowRoutePlanner(true)}
+                          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 active:scale-95"
+                          title="View driver route"
+                        >
+                          <Car size={16} />
+                        </button>
+                      )}
                       {visibleViolations.map((v) => (
                         v.severity === 'error'
                           ? <AlertCircle key={v.id} size={18} className="text-red-500" />
