@@ -9,6 +9,8 @@ export interface Cleaner {
   cannotWorkWith: string[]; // Cleaner IDs
   active: boolean;
   phone?: string;
+  email?: string;      // NEW
+  address?: string;    // NEW
   notes?: string;
   color?: string; // hex color for UI
 }

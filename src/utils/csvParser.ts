@@ -337,7 +337,7 @@ export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
     const phone = getColumn(row, ['telephone', 'phone', 'mobile', 'cell']);
     const equipment = getColumn(row, ['equipment #', 'equipment', 'equipment number', 'equip #']);
     const email = getColumn(row, ['email', 'e-mail']);
-    const address = getColumn(row, ['address', 'street']);
+    const street = getColumn(row, ['address', 'street']);
     const unit = getColumn(row, ['unit #', 'unit', 'unit number', 'apt', 'apartment']);
     const city = getColumn(row, ['city']);
     const province = getColumn(row, ['province', 'state']);
@@ -345,10 +345,10 @@ export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
     const startDate = getColumn(row, ['start date', 'startdate', 'hire date']);
     const birthday = getColumn(row, ['birthday', 'birth date', 'dob']);
 
+    const address = [street, unit, city, province].filter(Boolean).join(', ');
+
     const extraParts = [
       equipment && `Equip: ${equipment}`,
-      email && `Email: ${email}`,
-      (address || city) && `Addr: ${[address, unit, city, province].filter(Boolean).join(', ')}`,
       startDate && `Started: ${startDate}`,
       birthday && `DOB: ${birthday}`,
       notesRaw
@@ -363,6 +363,8 @@ export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
       cannotWorkWith: [],
       active: true,
       phone,
+      email: email || undefined,
+      address: address || undefined,
       notes: extraParts.join(' | ') || undefined,
     };
   }).filter(c => c.name && c.name !== 'Unknown Cleaner');

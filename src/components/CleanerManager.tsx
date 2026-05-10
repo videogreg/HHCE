@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, UserPlus, Car, Phone, FileText, ChevronDown, ChevronUp, Upload, X } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Car, Phone, Mail, MapPin, FileText, ChevronDown, ChevronUp, Upload, X, Save, Pencil } from 'lucide-react';
 import { parseCleanersCSV } from '../utils/csvParser';
 
 const COLORS = [
@@ -17,8 +17,10 @@ const COLORS = [
 export const CleanerManager: React.FC = () => {
   const { cleaners, setCleaners } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Cleaner>>({});
   const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
-    name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', notes: ''
+    name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', email: '', address: '', notes: ''
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
@@ -35,11 +37,13 @@ export const CleanerManager: React.FC = () => {
       cannotWorkWith: newCleaner.cannotWorkWith || [],
       active: true,
       phone: newCleaner.phone || '',
+      email: newCleaner.email || '',
+      address: newCleaner.address || '',
       notes: newCleaner.notes || '',
       color: COLORS[idx].dot
     };
     setCleaners([...cleaners, cleaner]);
-    setNewCleaner({ name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', notes: '' });
+    setNewCleaner({ name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', email: '', address: '', notes: '' });
     setShowAdd(false);
   };
 
@@ -47,6 +51,24 @@ export const CleanerManager: React.FC = () => {
     if (confirm('Remove this cleaner?')) {
       setCleaners(cleaners.filter(c => c.id !== id));
     }
+  };
+
+  const startEdit = (cleaner: Cleaner) => {
+    setEditId(cleaner.id);
+    setEditForm({ ...cleaner });
+    setExpandedId(cleaner.id);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.name?.trim()) return;
+    setCleaners(cleaners.map(c => c.id === editId ? { ...c, ...editForm, name: editForm.name.trim() } as Cleaner : c));
+    setEditId(null);
+    setEditForm({});
+  };
+
+  const cancelEdit = () => {
+    setEditId(null);
+    setEditForm({});
   };
 
   const toggleCannotWorkWith = (targetId: string, cleanerId: string) => {
@@ -155,74 +177,53 @@ export const CleanerManager: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Name *</label>
-              <input
-                type="text"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={newCleaner.name}
-                onChange={e => setNewCleaner({ ...newCleaner, name: e.target.value })}
-                placeholder="e.g. Sarah"
-              />
+              <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.name} onChange={e => setNewCleaner({ ...newCleaner, name: e.target.value })} placeholder="e.g. Sarah" />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Phone</label>
-              <input
-                type="tel"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={newCleaner.phone}
-                onChange={e => setNewCleaner({ ...newCleaner, phone: e.target.value })}
-                placeholder="555-0100"
-              />
+              <input type="tel" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.phone} onChange={e => setNewCleaner({ ...newCleaner, phone: e.target.value })} placeholder="555-0100" />
             </div>
           </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Email</label>
+              <input type="email" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.email} onChange={e => setNewCleaner({ ...newCleaner, email: e.target.value })} placeholder="sarah@email.com" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Address</label>
+              <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.address} onChange={e => setNewCleaner({ ...newCleaner, address: e.target.value })} placeholder="123 Main St, London" />
+            </div>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Start</label>
-              <input
-                type="time"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={newCleaner.canStartAt}
-                onChange={e => setNewCleaner({ ...newCleaner, canStartAt: e.target.value })}
-              />
+              <input type="time" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.canStartAt} onChange={e => setNewCleaner({ ...newCleaner, canStartAt: e.target.value })} />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Off By</label>
-              <input
-                type="time"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={newCleaner.mustBeOffBy}
-                onChange={e => setNewCleaner({ ...newCleaner, mustBeOffBy: e.target.value })}
-              />
+              <input type="time" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.mustBeOffBy} onChange={e => setNewCleaner({ ...newCleaner, mustBeOffBy: e.target.value })} />
             </div>
             <div className="flex items-end pb-3">
               <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  checked={newCleaner.isDriver}
-                  onChange={e => setNewCleaner({ ...newCleaner, isDriver: e.target.checked })}
-                />
+                <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={newCleaner.isDriver} onChange={e => setNewCleaner({ ...newCleaner, isDriver: e.target.checked })} />
                 <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Car size={14} /> Driver</span>
               </label>
             </div>
           </div>
-
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
-            <input
-              type="text"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={newCleaner.notes}
-              onChange={e => setNewCleaner({ ...newCleaner, notes: e.target.value })}
-              placeholder="e.g. Picks up kids at 2:30pm"
-            />
+            <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={newCleaner.notes} onChange={e => setNewCleaner({ ...newCleaner, notes: e.target.value })} placeholder="e.g. Picks up kids at 2:30pm" />
           </div>
-
-          <button
-            onClick={addCleaner}
-            disabled={!newCleaner.name?.trim()}
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors active:scale-[0.98]"
-          >
+          <button onClick={addCleaner} disabled={!newCleaner.name?.trim()}
+            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-40 transition-colors active:scale-[0.98]">
             Add Cleaner
           </button>
         </div>
@@ -232,6 +233,8 @@ export const CleanerManager: React.FC = () => {
         {cleaners.map((cleaner, idx) => {
           const style = COLORS[idx % COLORS.length];
           const isExpanded = expandedId === cleaner.id;
+          const isEditing = editId === cleaner.id;
+
           return (
             <div key={cleaner.id} className={`${style.bg} border ${style.border} rounded-2xl p-4 transition-all hover:shadow-md`}>
               <div className="flex items-start justify-between">
@@ -255,40 +258,119 @@ export const CleanerManager: React.FC = () => {
                 </div>
               </div>
 
-              {isExpanded && (
+              {isExpanded && !isEditing && (
                 <div className="mt-3 pt-3 border-t border-black/5 space-y-3 animate-slide-up">
-                  {cleaner.phone && (
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <Phone size={12} /> {cleaner.phone}
-                    </div>
-                  )}
+                  {/* PROMINENT CONTACT INFO */}
+                  <div className="space-y-2">
+                    {cleaner.phone && (
+                      <a href={`tel:${cleaner.phone}`} className="flex items-center gap-2 text-sm font-bold text-blue-700 hover:underline">
+                        <Phone size={14} /> {cleaner.phone}
+                      </a>
+                    )}
+                    {cleaner.email && (
+                      <a href={`mailto:${cleaner.email}`} className="flex items-center gap-2 text-sm font-bold text-slate-700 hover:underline">
+                        <Mail size={14} /> {cleaner.email}
+                      </a>
+                    )}
+                    {cleaner.address && (
+                      <div className="flex items-start gap-2 text-sm font-medium text-slate-600">
+                        <MapPin size={14} className="mt-0.5 shrink-0" /> {cleaner.address}
+                      </div>
+                    )}
+                  </div>
+
                   {cleaner.notes && (
-                    <div className="flex items-start gap-2 text-xs text-slate-600">
+                    <div className="flex items-start gap-2 text-xs text-slate-600 bg-white/60 rounded-lg p-2">
                       <FileText size={12} className="mt-0.5 shrink-0" /> {cleaner.notes}
                     </div>
                   )}
+
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      Cannot work with
-                    </p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Cannot work with</p>
                     <div className="flex flex-wrap gap-1.5">
                       {cleaners.filter(c => c.id !== cleaner.id).map(other => {
                         const isBlocked = cleaner.cannotWorkWith.includes(other.id);
                         return (
-                          <button
-                            key={other.id}
-                            onClick={() => toggleCannotWorkWith(other.id, cleaner.id)}
+                          <button key={other.id} onClick={() => toggleCannotWorkWith(other.id, cleaner.id)}
                             className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
-                              isBlocked
-                                ? 'bg-red-100 text-red-700 border-red-200'
-                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
+                              isBlocked ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                            }`}>
                             {other.name}
                           </button>
                         );
                       })}
                     </div>
+                  </div>
+
+                  <button onClick={() => startEdit(cleaner)}
+                    className="w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-50 transition-colors active:scale-95 flex items-center justify-center gap-2">
+                    <Pencil size={14} /> Edit Cleaner
+                  </button>
+                </div>
+              )}
+
+              {isEditing && (
+                <div className="mt-3 pt-3 border-t border-black/5 space-y-3 animate-slide-up">
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Name</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editForm.name || ''} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Phone</label>
+                        <input type="tel" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.phone || ''} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Email</label>
+                        <input type="email" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.email || ''} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Address</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editForm.address || ''} onChange={e => setEditForm({ ...editForm, address: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Start</label>
+                        <input type="time" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.canStartAt || ''} onChange={e => setEditForm({ ...editForm, canStartAt: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Off By</label>
+                        <input type="time" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.mustBeOffBy || ''} onChange={e => setEditForm({ ...editForm, mustBeOffBy: e.target.value })} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 py-1">
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                          checked={!!editForm.isDriver} onChange={e => setEditForm({ ...editForm, isDriver: e.target.checked })} />
+                        <span className="text-xs font-medium text-slate-700 flex items-center gap-1"><Car size={12} /> Driver</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                          checked={!!editForm.active} onChange={e => setEditForm({ ...editForm, active: e.target.checked })} />
+                        <span className="text-xs font-medium text-slate-700">Active</span>
+                      </label>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveEdit} className="flex-1 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-blue-700 transition-colors active:scale-95 flex items-center justify-center gap-1.5">
+                      <Save size={14} /> Save
+                    </button>
+                    <button onClick={cancelEdit} className="flex-1 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors active:scale-95">
+                      Cancel
+                    </button>
                   </div>
                 </div>
               )}

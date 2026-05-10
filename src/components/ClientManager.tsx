@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Client, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban } from 'lucide-react';
+import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save, X } from 'lucide-react';
 import { parseClientsCSV } from '../utils/csvParser';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -10,6 +10,8 @@ const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 export const ClientManager: React.FC = () => {
   const { cleaners, clients, setClients } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Client>>({});
   const [newClient, setNewClient] = useState<Partial<Client>>({
     name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00',
     preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''
@@ -41,15 +43,43 @@ export const ClientManager: React.FC = () => {
     if (confirm('Remove this client?')) setClients(clients.filter(c => c.id !== id));
   };
 
-  const toggleDay = (day: DayOfWeek) => {
-    const current = newClient.preferredDays || [];
-    setNewClient({ ...newClient, preferredDays: current.includes(day) ? current.filter(d => d !== day) : [...current, day] });
+  const startEdit = (client: Client) => {
+    setEditId(client.id);
+    setEditForm({ ...client });
+    setExpandedId(client.id);
   };
 
-  const toggleCleaner = (id: string, type: 'preferred' | 'avoid') => {
+  const saveEdit = () => {
+    if (!editId || !editForm.name?.trim()) return;
+    setClients(clients.map(c => c.id === editId ? { ...c, ...editForm, name: editForm.name.trim() } as Client : c));
+    setEditId(null);
+    setEditForm({});
+  };
+
+  const cancelEdit = () => {
+    setEditId(null);
+    setEditForm({});
+  };
+
+  const toggleDay = (day: DayOfWeek, isEdit: boolean) => {
+    if (isEdit) {
+      const current = editForm.preferredDays || [];
+      setEditForm({ ...editForm, preferredDays: current.includes(day) ? current.filter(d => d !== day) : [...current, day] });
+    } else {
+      const current = newClient.preferredDays || [];
+      setNewClient({ ...newClient, preferredDays: current.includes(day) ? current.filter(d => d !== day) : [...current, day] });
+    }
+  };
+
+  const toggleCleaner = (id: string, type: 'preferred' | 'avoid', isEdit: boolean) => {
     const key = type === 'preferred' ? 'preferredCleaners' : 'avoidCleaners';
-    const current = (newClient[key] || []) as string[];
-    setNewClient({ ...newClient, [key]: current.includes(id) ? current.filter(x => x !== id) : [...current, id] });
+    if (isEdit) {
+      const current = (editForm[key] || []) as string[];
+      setEditForm({ ...editForm, [key]: current.includes(id) ? current.filter(x => x !== id) : [...current, id] });
+    } else {
+      const current = (newClient[key] || []) as string[];
+      setNewClient({ ...newClient, [key]: current.includes(id) ? current.filter(x => x !== id) : [...current, id] });
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,7 +155,7 @@ export const ClientManager: React.FC = () => {
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Preferred Days</label>
             <div className="flex flex-wrap gap-2">
               {DAYS.map(day => (
-                <button key={day} onClick={() => toggleDay(day)}
+                <button key={day} onClick={() => toggleDay(day, false)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
                     newClient.preferredDays?.includes(day)
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
@@ -163,7 +193,7 @@ export const ClientManager: React.FC = () => {
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {cleaners.map(c => (
-                    <button key={c.id} onClick={() => toggleCleaner(c.id, 'preferred')}
+                    <button key={c.id} onClick={() => toggleCleaner(c.id, 'preferred', false)}
                       className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
                         newClient.preferredCleaners?.includes(c.id) ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-slate-400 border-slate-200'
                       }`}>
@@ -178,7 +208,7 @@ export const ClientManager: React.FC = () => {
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {cleaners.map(c => (
-                    <button key={c.id} onClick={() => toggleCleaner(c.id, 'avoid')}
+                    <button key={c.id} onClick={() => toggleCleaner(c.id, 'avoid', false)}
                       className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
                         newClient.avoidCleaners?.includes(c.id) ? 'bg-red-100 text-red-700 border-red-300' : 'bg-white text-slate-400 border-slate-200'
                       }`}>
@@ -206,6 +236,8 @@ export const ClientManager: React.FC = () => {
       <div className="space-y-2">
         {clients.map(client => {
           const isExpanded = expandedId === client.id;
+          const isEditing = editId === client.id;
+
           return (
             <div key={client.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
               <div className="flex items-start justify-between">
@@ -229,7 +261,7 @@ export const ClientManager: React.FC = () => {
                 </div>
               </div>
 
-              {isExpanded && (
+              {isExpanded && !isEditing && (
                 <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 animate-slide-up text-xs text-slate-600">
                   <div className="flex items-center gap-2"><MapPin size={12} className="shrink-0 text-slate-400" /> {client.address || 'No address'}</div>
                   {client.phone && <div className="flex items-center gap-2"><Phone size={12} className="shrink-0 text-slate-400" /> {client.phone}</div>}
@@ -249,6 +281,119 @@ export const ClientManager: React.FC = () => {
                       {client.avoidCleaners.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
                     </div>
                   )}
+
+                  <button onClick={() => startEdit(client)}
+                    className="w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-50 transition-colors active:scale-95 flex items-center justify-center gap-2 mt-2">
+                    <Pencil size={14} /> Edit Client
+                  </button>
+                </div>
+              )}
+
+              {isEditing && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-3 animate-slide-up">
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Name</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        value={editForm.name || ''} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Phone</label>
+                        <input type="tel" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          value={editForm.phone || ''} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Zone</label>
+                        <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          value={editForm.zone || ''} onChange={e => setEditForm({ ...editForm, zone: e.target.value })} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Address</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        value={editForm.address || ''} onChange={e => setEditForm({ ...editForm, address: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Not Before</label>
+                        <input type="time" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          value={editForm.notBefore || ''} onChange={e => setEditForm({ ...editForm, notBefore: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Not After</label>
+                        <input type="time" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          value={editForm.notAfter || ''} onChange={e => setEditForm({ ...editForm, notAfter: e.target.value })} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Duration (min)</label>
+                      <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        value={editForm.durationMinutes || 120} onChange={e => setEditForm({ ...editForm, durationMinutes: parseInt(e.target.value) || 120 })} />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preferred Days</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {DAYS.map(day => (
+                          <button key={day} onClick={() => toggleDay(day, true)}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all active:scale-95 ${
+                              editForm.preferredDays?.includes(day)
+                                ? 'bg-green-600 text-white border-green-600'
+                                : 'bg-white text-slate-500 border-slate-200 hover:border-green-300'
+                            }`}>
+                            {day.slice(0, 3)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {cleaners.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <Star size={10} /> Preferred
+                          </label>
+                          <div className="flex flex-wrap gap-1">
+                            {cleaners.map(c => (
+                              <button key={c.id} onClick={() => toggleCleaner(c.id, 'preferred', true)}
+                                className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${
+                                  editForm.preferredCleaners?.includes(c.id) ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-slate-400 border-slate-200'
+                                }`}>
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <Ban size={10} /> Avoid
+                          </label>
+                          <div className="flex flex-wrap gap-1">
+                            {cleaners.map(c => (
+                              <button key={c.id} onClick={() => toggleCleaner(c.id, 'avoid', true)}
+                                className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${
+                                  editForm.avoidCleaners?.includes(c.id) ? 'bg-red-100 text-red-700 border-red-300' : 'bg-white text-slate-400 border-slate-200'
+                                }`}>
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveEdit} className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-green-700 transition-colors active:scale-95 flex items-center justify-center gap-1.5">
+                      <Save size={14} /> Save
+                    </button>
+                    <button onClick={cancelEdit} className="flex-1 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors active:scale-95">
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
