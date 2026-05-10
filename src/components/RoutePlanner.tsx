@@ -123,7 +123,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     if (routeStops.length === 0 || !selectedDriver) return;
 
     const dateLabel = format(selectedDate, 'EEEE, MMM d, yyyy');
-    const teamNames = teamHours.map(t => `${t.name} (${t.hours.toFixed(1)} hrs)`).join(', ');
 
     let text = `HHCE ROUTE PLAN\n`;
     text += `${dateLabel}\n`;
