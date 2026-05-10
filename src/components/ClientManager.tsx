@@ -50,8 +50,9 @@ export const ClientManager: React.FC = () => {
   };
 
   const saveEdit = () => {
-    if (!editId || !editForm.name?.trim()) return;
-    setClients(clients.map(c => c.id === editId ? { ...c, ...editForm, name: editForm.name.trim() } as Client : c));
+    const name = editForm.name?.trim();
+    if (!editId || !name) return;
+    setClients(clients.map(c => c.id === editId ? { ...c, ...editForm, name } as Client : c));
     setEditId(null);
     setEditForm({});
   };

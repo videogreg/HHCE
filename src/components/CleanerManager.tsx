@@ -60,8 +60,9 @@ export const CleanerManager: React.FC = () => {
   };
 
   const saveEdit = () => {
-    if (!editId || !editForm.name?.trim()) return;
-    setCleaners(cleaners.map(c => c.id === editId ? { ...c, ...editForm, name: editForm.name.trim() } as Cleaner : c));
+    const name = editForm.name?.trim();
+    if (!editId || !name) return;
+    setCleaners(cleaners.map(c => c.id === editId ? { ...c, ...editForm, name } as Cleaner : c));
     setEditId(null);
     setEditForm({});
   };
