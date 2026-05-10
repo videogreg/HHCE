@@ -186,7 +186,7 @@ export const ScheduleBoard: React.FC = () => {
 
         {/* DAY VIEW — forward-looking 7-day strip */}
         {viewMode === 'day' && (
-          <div className="flex justify-between gap-1">
+          <div className="flex justify-between gap-1.5 bg-slate-100 rounded-xl p-2">
             {dayViewDays.map(d => {
               const isSelected = isSameDay(d, selectedDate);
               const ds = format(d, 'yyyy-MM-dd');
@@ -197,22 +197,22 @@ export const ScheduleBoard: React.FC = () => {
                 <button
                   key={ds}
                   onClick={() => setSelectedDate(d)}
-                  className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl flex-1 transition-all active:scale-95 relative min-h-[72px] ${
+                  className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl flex-1 transition-all active:scale-95 relative min-h-[72px] border ${
                     isSelected
-                      ? 'bg-blue-600 text-white shadow-md'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md'
                       : isToday
-                      ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                      ? 'bg-white text-blue-600 border-blue-300'
                       : hasErr
-                      ? 'bg-red-50 text-red-600 border border-red-100'
-                      : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                      ? 'bg-white text-red-600 border-red-300'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   <span className="text-[9px] font-bold uppercase">{format(d, 'EEE')}</span>
                   <span className="text-xl font-black leading-none mt-0.5">{format(d, 'd')}</span>
                   <span className={`text-sm font-black mt-auto px-1.5 py-0.5 rounded-lg ${
-                    isSelected ? 'bg-white/30 text-white' : count > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'
+                    isSelected ? 'bg-white/30 text-white' : count > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
                   }`}>{count}</span>
-                  {hasErr && !isSelected && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />}
+                  {hasErr && !isSelected && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-100" />}
                 </button>
               );
             })}
@@ -221,15 +221,15 @@ export const ScheduleBoard: React.FC = () => {
 
         {/* WEEK VIEW — 7 forward-looking day cards */}
         {viewMode === 'week' && (
-          <>
-            <div className="grid grid-cols-7 gap-1 mb-1">
+          <div className="bg-slate-100 rounded-xl p-2">
+            <div className="grid grid-cols-7 gap-1.5 mb-1">
               {weekViewDays.map(d => (
-                <div key={d.toISOString()} className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider py-1">
+                <div key={d.toISOString()} className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider py-1">
                   {format(d, 'EEE')}
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-1.5">
               {weekViewDays.map(day => {
                 const isSelected = isSameDay(day, selectedDate);
                 const isToday = isSameDay(day, new Date());
@@ -240,39 +240,39 @@ export const ScheduleBoard: React.FC = () => {
                   <button
                     key={day.toISOString()}
                     onClick={() => { setSelectedDate(day); setViewMode('day'); }}
-                    className={`rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 relative py-3 min-h-[80px] ${
+                    className={`rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 relative py-3 min-h-[80px] border ${
                       isSelected
-                        ? 'bg-blue-600 text-white shadow-md'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
                         : isToday
-                        ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                        ? 'bg-white text-blue-600 border-blue-300'
                         : hasError
-                        ? 'bg-red-50 text-red-600 border border-red-100'
-                        : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                        ? 'bg-white text-red-600 border-red-300'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
                     }`}
                   >
                     <span className={`text-xl font-black leading-tight ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
                     <span className={`text-sm font-black px-2 py-0.5 rounded-lg mt-auto ${
-                      isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : count > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
+                      isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : count > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
                     }`}>
                       {count}
                     </span>
-                    {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />}
+                    {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />}
                   </button>
                 );
               })}
             </div>
-          </>
+          </div>
         )}
 
         {/* MONTH VIEW — full calendar grid */}
         {viewMode === 'month' && (
-          <>
-            <div className="grid grid-cols-7 gap-1 mb-1">
+          <div className="bg-slate-100 rounded-xl p-2">
+            <div className="grid grid-cols-7 gap-1.5 mb-1">
               {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider py-1">{d}</div>
+                <div key={d} className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider py-1">{d}</div>
               ))}
             </div>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-1.5">
               {calendarDays.map((day, idx) => {
                 if (!day) return <div key={`pad-${idx}`} className="min-h-[80px]" />;
                 const isSelected = isSameDay(day, selectedDate);
@@ -285,28 +285,28 @@ export const ScheduleBoard: React.FC = () => {
                   <button
                     key={day.toISOString()}
                     onClick={() => { setSelectedDate(day); setViewMode('day'); }}
-                    className={`rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 relative py-3 min-h-[80px] ${
+                    className={`rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 relative py-3 min-h-[80px] border ${
                       isSelected
-                        ? 'bg-blue-600 text-white shadow-md'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
                         : isToday
-                        ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                        ? 'bg-white text-blue-600 border-blue-300'
                         : isCurrentMonth
-                        ? 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                        : 'bg-transparent text-slate-300'
+                        ? 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                        : 'bg-slate-50 text-slate-300 border-transparent'
                     }`}
                   >
                     <span className={`text-xl font-black leading-tight ${isSelected ? 'text-white' : ''}`}>{format(day, 'd')}</span>
                     <span className={`text-sm font-black px-2 py-0.5 rounded-lg mt-auto ${
-                      isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : count > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
+                      isSelected ? 'bg-white/30 text-white' : hasError ? 'bg-red-100 text-red-600' : count > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
                     }`}>
                       {count}
                     </span>
-                    {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />}
+                    {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />}
                   </button>
                 );
               })}
             </div>
-          </>
+          </div>
         )}
       </div>
 
