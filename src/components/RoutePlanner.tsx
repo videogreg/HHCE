@@ -135,7 +135,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           ${stop.arrivalTime ? `<div style="font-size: 11px; color: #475569;"><strong>Arrive:</strong> ${stop.arrivalTime}</div>` : ''}
           ${stop.departTime ? `<div style="font-size: 11px; color: #475569;"><strong>Depart:</strong> ${stop.departTime}</div>` : ''}
           ${stop.durationMin ? `<div style="font-size: 11px; color: #475569;"><strong>Duration:</strong> ${stop.durationMin} min</div>` : ''}
-          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (arrived early)</div>` : ''}
+          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (unpaid)</div>` : ''}
           ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">⚠️ Late ${stop.lateMin} min past window</div>` : ''}
           ${(i > 0 && stop.legDistanceKm !== undefined) ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid #e2e8f0; padding-top: 4px;">🚗 ${stop.legDistanceKm.toFixed(1)} km • ${Math.round(stop.legDurationMin || 0)} min drive</div>` : ''}
         </div>
@@ -183,7 +183,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           const latest = format(addMinutes(sched, 15), 'HH:mm');
           text += `Scheduled: ${v.startTime} | Window: ${earliest}–${latest}\n`;
           if (stop.waitMin && stop.waitMin > 0) {
-            text += `WAIT: ${stop.waitMin} min (arrived early, waiting in car)\n`;
+            text += `WAIT: ${stop.waitMin} min (unpaid — waiting in car)\n`;
           }
           if (stop.isLate && stop.lateMin) {
             text += `LATE: ${stop.lateMin} min past window\n`;
@@ -202,7 +202,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
     text += `═══════════════════════════════════════\n`;
     text += `TOTAL DISTANCE: ${totalKm.toFixed(1)} km\n`;
-    text += `TOTAL DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door)\n`;
+    text += `TOTAL DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door, unpaid wait excluded)\n`;
     text += `BILLABLE CLEAN HOURS: ${cleanHours.toFixed(1)} hrs (revenue)\n`;
     text += `TRAVEL/DRIVE HOURS: ${driveHours.toFixed(1)} hrs (non-billable)\n`;
     if (teamHours.length > 0) {
@@ -429,20 +429,29 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           }
         }
 
-        const driverTotalMinutes = Math.round((runningTime.getTime() - departTime.getTime()) / 60000);
+        // Calculate total unpaid wait time across all cleans
+        const totalWaitMin = stops
+          .filter(s => s.type === 'clean')
+          .reduce((sum, s) => sum + (s.waitMin || 0), 0);
+
+        // Driver door-to-door minutes MINUS unpaid wait time
+        const rawDriverMinutes = Math.round((runningTime.getTime() - departTime.getTime()) / 60000);
+        const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
         const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
 
-        // Calculate billable clean time vs travel time
+        // Billable clean time (pure cleaning, no wait)
         const cleanTotalMinutes = stops
           .filter(s => s.type === 'clean')
           .reduce((sum, s) => sum + (s.durationMin || 0), 0);
         const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
+
+        // Drive time = total paid time minus clean time
         const driveTotalMinutes = driverTotalMinutes - cleanTotalMinutes;
         const driveTotalHours = Math.round((driveTotalMinutes / 60) * 10) / 10;
 
         const memberHours: TeamMemberHours[] = teamMembersWithAddr.map(tm => {
           if (!tm.isDriver) {
-            // Non-driver: paid from first clean start to last clean end
+            // Non-driver: paid from first clean start to last clean end (wait already excluded)
             const cleanStops = stops.filter(s => s.type === 'clean');
             if (cleanStops.length === 0) {
               return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
@@ -454,14 +463,15 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             const minutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
             return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
           } else {
-            // Driver team member: door-to-door from pickup to dropoff (home to home)
+            // Driver team member: door-to-door pickup to dropoff MINUS unpaid wait time
             const pickupIdx = stops.findIndex(s => s.type === 'pickup' && s.teamMemberId === tm.id);
             const dropoffIdx = stops.findIndex(s => s.type === 'dropoff' && s.teamMemberId === tm.id);
             let minutes = 0;
             if (pickupIdx >= 0 && dropoffIdx >= 0) {
               const pickupTime = parse(stops[pickupIdx].arrivalTime, 'HH:mm', new Date());
               const dropoffTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
-              minutes = Math.round((dropoffTime.getTime() - pickupTime.getTime()) / 60000);
+              const rawMinutes = Math.round((dropoffTime.getTime() - pickupTime.getTime()) / 60000);
+              minutes = rawMinutes - totalWaitMin;
             }
             return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: true };
           }
