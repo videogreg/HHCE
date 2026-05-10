@@ -36,9 +36,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(null);
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
-  const [driverMinutes, setDriverMinutes] = useState(0);
+  const [driverHours, setDriverHours] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);
-  const [driveHours, setDriveHours] = useState(0);
+  const [actualDriveMinutes, setActualDriveMinutes] = useState(0);
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -202,9 +202,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
     text += `═══════════════════════════════════════\n`;
     text += `TOTAL DISTANCE: ${totalKm.toFixed(1)} km\n`;
-    text += `TOTAL DRIVER MINUTES: ${driverMinutes} min (door to door)\n`;
+    text += `TOTAL DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door)\n`;
     text += `BILLABLE CLEAN HOURS: ${cleanHours.toFixed(1)} hrs (revenue)\n`;
-    text += `TRAVEL/DRIVE HOURS: ${driveHours.toFixed(1)} hrs (non-billable)\n`;
+    text += `ACTUAL DRIVING MINUTES: ${actualDriveMinutes} min (Google Maps)\n`;
     if (teamHours.length > 0) {
       text += `TEAM HOURS:\n`;
       teamHours.forEach(tm => {
@@ -367,6 +367,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       if (routeResult) {
         const legs = routeResult.routes[0].legs;
         let totalDist = 0;
+        let actualDriveSeconds = 0;
 
         const firstCleanIdx = stops.findIndex(s => s.type === 'clean');
         const firstCleanVisit = firstCleanIdx >= 0 ? driverVisits.find(dv => dv.id === stops[firstCleanIdx].visitId) : null;
@@ -392,6 +393,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         for (let i = 1; i < stops.length; i++) {
           const leg = legs[i - 1];
           totalDist += leg.distance.value;
+          actualDriveSeconds += leg.duration.value;
           const driveMs = leg.duration.value * 1000;
           runningTime = new Date(runningTime.getTime() + driveMs);
 
@@ -437,6 +439,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         // Driver door-to-door minutes MINUS wait time
         const rawDriverMinutes = Math.round((runningTime.getTime() - departTime.getTime()) / 60000);
         const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
+        const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
 
         // Billable clean time (pure cleaning, no wait)
         const cleanTotalMinutes = stops
@@ -444,9 +447,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           .reduce((sum, s) => sum + (s.durationMin || 0), 0);
         const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
 
-        // Drive time = total paid time minus clean time
-        const driveTotalMinutes = driverTotalMinutes - cleanTotalMinutes;
-        const driveTotalHours = Math.round((driveTotalMinutes / 60) * 10) / 10;
+        // Actual driving minutes from Google Maps legs
+        const actualDriveMin = Math.round(actualDriveSeconds / 60);
 
         const memberHours: TeamMemberHours[] = teamMembersWithAddr.map(tm => {
           if (!tm.isDriver) {
@@ -477,9 +479,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         });
 
         setTotalKm(Math.round(totalDist / 100) / 10);
-        setDriverMinutes(driverTotalMinutes);
+        setDriverHours(driverTotalHours);
         setCleanHours(cleanTotalHours);
-        setDriveHours(driveTotalHours);
+        setActualDriveMinutes(actualDriveMin);
         setTeamHours(memberHours);
 
         if (mapRef.current) {
@@ -572,8 +574,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <p className="text-2xl font-black text-blue-700">{totalKm.toFixed(1)} <span className="text-sm font-bold">km</span></p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-xl border border-green-100">
-                  <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Driver Minutes</p>
-                  <p className="text-2xl font-black text-green-700">{driverMinutes} <span className="text-sm font-bold">min</span></p>
+                  <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Driver Hours</p>
+                  <p className="text-2xl font-black text-green-700">{driverHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
                   <p className="text-[10px] text-green-600 font-medium mt-0.5">Door to door</p>
                 </div>
                 <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
@@ -582,9 +584,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <p className="text-[10px] text-purple-600 font-medium mt-0.5">Billable to clients</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Drive Hours</p>
-                  <p className="text-2xl font-black text-amber-700">{driveHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
-                  <p className="text-[10px] text-amber-600 font-medium mt-0.5">Travel + pickup/dropoff</p>
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Actual Drive</p>
+                  <p className="text-2xl font-black text-amber-700">{actualDriveMinutes} <span className="text-sm font-bold">min</span></p>
+                  <p className="text-[10px] text-amber-600 font-medium mt-0.5">Google Maps directions</p>
                 </div>
               </div>
 
