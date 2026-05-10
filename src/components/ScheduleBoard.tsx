@@ -439,16 +439,16 @@ export const ScheduleBoard: React.FC = () => {
 
                       <div className="flex gap-2 pt-2 border-t border-slate-100">
                         <button
-                          onClick={() => cancelVisit(visit.id)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-amber-200 hover:bg-amber-100 transition-colors active:scale-95"
-                        >
-                          <XCircle size={12} /> Cancel Visit
-                        </button>
-                        <button
                           onClick={() => setModalVisitId(visit.id)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-blue-200 hover:bg-blue-100 transition-colors active:scale-95"
                         >
                           <Phone size={12} /> Details
+                        </button>
+                        <button
+                          onClick={() => cancelVisit(visit.id)}
+                          className="flex items-center justify-center gap-1.5 py-2 px-3 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-amber-200 hover:bg-amber-100 transition-colors active:scale-95 whitespace-nowrap"
+                        >
+                          <XCircle size={12} /> Cancel Visit
                         </button>
                       </div>
                     </div>
