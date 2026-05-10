@@ -3,6 +3,17 @@ import { parse, isBefore, isAfter, addMinutes, format } from 'date-fns';
 
 const timeToDate = (time: string) => parse(time, 'HH:mm', new Date());
 
+/** Simple stable hash for violation IDs */
+const hashString = (str: string): string => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+};
+
 export const checkConstraints = (
   visits: Visit[],
   cleaners: Cleaner[],
@@ -29,6 +40,7 @@ export const checkConstraints = (
       const visitDay = dayNames[visitDate.getDay()];
       if (!client.preferredDays.includes(visitDay)) {
         violations.push({
+          id: hashString(`${visit.id}-preferredDays-${visitDay}`),
           visitId: visit.id,
           message: `${client.name} prefers ${client.preferredDays.join(', ')} but scheduled for ${visitDay}.`,
           severity: 'warning'
@@ -39,6 +51,7 @@ export const checkConstraints = (
     const visitStart = timeToDate(visit.startTime);
     if (client.notBefore && isBefore(visitStart, timeToDate(client.notBefore))) {
       violations.push({
+        id: hashString(`${visit.id}-notBefore-${client.notBefore}`),
         visitId: visit.id,
         message: `Starts before client's ${client.notBefore} limit.`,
         severity: 'error'
@@ -47,6 +60,7 @@ export const checkConstraints = (
     const visitEnd = addMinutes(visitStart, visit.durationMinutes);
     if (client.notAfter && isAfter(visitEnd, timeToDate(client.notAfter))) {
       violations.push({
+        id: hashString(`${visit.id}-notAfter-${client.notAfter}`),
         visitId: visit.id,
         message: `Ends after client's ${client.notAfter} limit.`,
         severity: 'error'
@@ -58,6 +72,7 @@ export const checkConstraints = (
       if (inactiveOnTeam.length > 0) {
         const names = inactiveOnTeam.map(id => cleaners.find(c => c.id === id)?.name || 'Unknown').join(', ');
         violations.push({
+          id: hashString(`${visit.id}-inactive-${names}`),
           visitId: visit.id,
           message: `Assigned inactive cleaner(s): ${names}.`,
           severity: 'error'
@@ -68,6 +83,7 @@ export const checkConstraints = (
     teamCleaners.forEach(cleaner => {
       if (cleaner.canStartAt && isBefore(visitStart, timeToDate(cleaner.canStartAt))) {
         violations.push({
+          id: hashString(`${visit.id}-start-${cleaner.id}-${cleaner.canStartAt}`),
           visitId: visit.id,
           message: `${cleaner.name} cannot start before ${cleaner.canStartAt}.`,
           severity: 'error'
@@ -75,6 +91,7 @@ export const checkConstraints = (
       }
       if (cleaner.mustBeOffBy && isAfter(visitEnd, timeToDate(cleaner.mustBeOffBy))) {
         violations.push({
+          id: hashString(`${visit.id}-off-${cleaner.id}-${cleaner.mustBeOffBy}`),
           visitId: visit.id,
           message: `${cleaner.name} must be off by ${cleaner.mustBeOffBy}.`,
           severity: 'error'
@@ -84,6 +101,7 @@ export const checkConstraints = (
 
     if (visitCleanerIds.length > 1 && !teamCleaners.some(c => c.isDriver)) {
       violations.push({
+        id: hashString(`${visit.id}-noDriver`),
         visitId: visit.id,
         message: `No driver assigned (multi-person team).`,
         severity: 'warning'
@@ -96,6 +114,7 @@ export const checkConstraints = (
         const c2 = teamCleaners[j];
         if (c1.cannotWorkWith.includes(c2.id) || c2.cannotWorkWith.includes(c1.id)) {
           violations.push({
+            id: hashString(`${visit.id}-conflict-${c1.id}-${c2.id}`),
             visitId: visit.id,
             message: `${c1.name} and ${c2.name} cannot work together.`,
             severity: 'warning'
@@ -108,6 +127,7 @@ export const checkConstraints = (
     if (avoided.length > 0) {
       const names = avoided.map(id => cleaners.find(c => c.id === id)?.name || 'Unknown').join(', ');
       violations.push({
+        id: hashString(`${visit.id}-avoid-${names}`),
         visitId: visit.id,
         message: `${client.name} avoids cleaner(s): ${names}.`,
         severity: 'error'
@@ -117,6 +137,7 @@ export const checkConstraints = (
       const hasPreferred = visitCleanerIds.some(id => client.preferredCleaners.includes(id));
       if (!hasPreferred) {
         violations.push({
+          id: hashString(`${visit.id}-preferredMissing`),
           visitId: visit.id,
           message: `${client.name} requested specific cleaner(s) not assigned.`,
           severity: 'warning'

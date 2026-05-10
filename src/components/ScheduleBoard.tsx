@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone } from 'lucide-react';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X } from 'lucide-react';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, isSameMonth, isSameDay, getDay
@@ -41,8 +41,17 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     }
   }, [focusVisitId, dayVisits, onFocusClear]);
 
-  const violations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
-  const getViolationsForVisit = (visitId: string) => violations.filter(v => v.visitId === visitId);
+  const allViolations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
+  const violations = allViolations.filter(v => {
+    const visit = dayVisits.find(dv => dv.id === v.visitId);
+    return !visit?.dismissedViolations?.includes(v.id);
+  });
+
+  const getViolationsForVisit = (visitId: string) => allViolations.filter(v => v.visitId === visitId);
+  const getVisibleViolationsForVisit = (visit: Visit) => {
+    const vios = getViolationsForVisit(visit.id);
+    return vios.filter(v => !visit.dismissedViolations?.includes(v.id));
+  };
 
   const errorCount = violations.filter(v => v.severity === 'error').length;
   const warningCount = violations.filter(v => v.severity === 'warning').length;
@@ -74,6 +83,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     setCurrentMonth(now);
   };
 
+  const dismissViolation = (visitId: string, violationId: string) => {
+    setVisits(visits.map(v => {
+      if (v.id !== visitId) return v;
+      const dismissed = new Set(v.dismissedViolations || []);
+      dismissed.add(violationId);
+      return { ...v, dismissedViolations: Array.from(dismissed) };
+    }));
+  };
+
   /* Day-view strip: next 7 days forward from selectedDate */
   const dayViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
 
@@ -92,7 +110,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     const ds = format(d, 'yyyy-MM-dd');
     const dVisits = visits.filter(v => v.date === ds);
     const vios = checkConstraints(dVisits, cleaners, clients, teams);
-    return vios.some(v => v.severity === 'error');
+    return vios.some(v => {
+      const visit = dVisits.find(dv => dv.id === v.visitId);
+      return v.severity === 'error' && !visit?.dismissedViolations?.includes(v.id);
+    });
   };
 
   const stats = {
@@ -115,7 +136,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   };
 
   const modalVisit = modalVisitId ? dayVisits.find(v => v.id === modalVisitId) || null : null;
-  const modalViolations = modalVisit ? getViolationsForVisit(modalVisit.id) : [];
+  const modalViolations = modalVisit ? getVisibleViolationsForVisit(modalVisit) : [];
 
   return (
     <div className="space-y-4 animate-slide-up">
@@ -359,8 +380,9 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           <div className="space-y-3">
             {dayVisits.map(visit => {
               const visitViolations = getViolationsForVisit(visit.id);
-              const hasError = visitViolations.some(v => v.severity === 'error');
-              const hasWarning = visitViolations.some(v => v.severity === 'warning');
+              const visibleViolations = getVisibleViolationsForVisit(visit);
+              const hasError = visibleViolations.some(v => v.severity === 'error');
+              const hasWarning = visibleViolations.some(v => v.severity === 'warning');
               const team = teams.find(t => t.id === visit.assignedTeamId);
               const client = clients.find(c => c.id === visit.clientId);
 
@@ -405,10 +427,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       <p className="text-[10px] text-slate-400 truncate mt-0.5">{visit.clientAddress}</p>
                     </button>
                     <div className="flex gap-1 shrink-0">
-                      {visitViolations.map((v, i) => (
+                      {visibleViolations.map((v) => (
                         v.severity === 'error'
-                          ? <AlertCircle key={i} size={18} className="text-red-500" />
-                          : <AlertTriangle key={i} size={18} className="text-amber-500" />
+                          ? <AlertCircle key={v.id} size={18} className="text-red-500" />
+                          : <AlertTriangle key={v.id} size={18} className="text-amber-500" />
                       ))}
                     </div>
                   </div>
@@ -470,13 +492,22 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                     </div>
                   )}
 
-                  {visitViolations.length > 0 && !visit.cancelled && (
+                  {visibleViolations.length > 0 && !visit.cancelled && (
                     <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
-                      {visitViolations.map((v, i) => (
-                        <p key={i} className={`text-[11px] font-medium flex items-center gap-1 ${v.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                          {v.severity === 'error' ? <AlertCircle size={10} /> : <AlertTriangle size={10} />}
-                          {v.message}
-                        </p>
+                      {visibleViolations.map((v) => (
+                        <div key={v.id} className={`flex items-center justify-between text-[11px] font-medium ${v.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                          <span className="flex items-center gap-1">
+                            {v.severity === 'error' ? <AlertCircle size={10} /> : <AlertTriangle size={10} />}
+                            {v.message}
+                          </span>
+                          <button
+                            onClick={() => dismissViolation(visit.id, v.id)}
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors active:scale-95"
+                            title="Dismiss this alert for this visit"
+                          >
+                            <X size={8} /> Dismiss
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}

@@ -43,6 +43,7 @@ export interface Visit {
   assignedCleanerIds?: string[]; // Optional direct assignment override
   cancelled: boolean;
   teamName?: string;
+  dismissedViolations?: string[]; // IDs of alerts the user has dismissed for this visit
 }
 
 export interface Team {
@@ -53,6 +54,7 @@ export interface Team {
 }
 
 export interface ConstraintViolation {
+  id: string; // Stable hash so it can be dismissed
   visitId: string;
   message: string;
   severity: 'error' | 'warning';
