@@ -37,6 +37,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
+  const [cleanHours, setCleanHours] = useState(0);
+  const [driveHours, setDriveHours] = useState(0);
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -200,7 +202,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
     text += `═══════════════════════════════════════\n`;
     text += `TOTAL DISTANCE: ${totalKm.toFixed(1)} km\n`;
-    text += `DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door)\n`;
+    text += `TOTAL DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door)\n`;
+    text += `BILLABLE CLEAN HOURS: ${cleanHours.toFixed(1)} hrs (revenue)\n`;
+    text += `TRAVEL/DRIVE HOURS: ${driveHours.toFixed(1)} hrs (non-billable)\n`;
     if (teamHours.length > 0) {
       text += `TEAM HOURS:\n`;
       teamHours.forEach(tm => {
@@ -428,6 +432,14 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const driverTotalMinutes = Math.round((runningTime.getTime() - departTime.getTime()) / 60000);
         const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
 
+        // Calculate billable clean time vs travel time
+        const cleanTotalMinutes = stops
+          .filter(s => s.type === 'clean')
+          .reduce((sum, s) => sum + (s.durationMin || 0), 0);
+        const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
+        const driveTotalMinutes = driverTotalMinutes - cleanTotalMinutes;
+        const driveTotalHours = Math.round((driveTotalMinutes / 60) * 10) / 10;
+
         const memberHours: TeamMemberHours[] = teamMembersWithAddr.map(tm => {
           if (!tm.isDriver) {
             // Non-driver: paid from first clean start to last clean end
@@ -457,6 +469,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
         setTotalKm(Math.round(totalDist / 100) / 10);
         setDriverHours(driverTotalHours);
+        setCleanHours(cleanTotalHours);
+        setDriveHours(driveTotalHours);
         setTeamHours(memberHours);
 
         if (mapRef.current) {
@@ -552,6 +566,16 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Driver Hours</p>
                   <p className="text-2xl font-black text-green-700">{driverHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
                   <p className="text-[10px] text-green-600 font-medium mt-0.5">Door to door</p>
+                </div>
+                <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
+                  <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wider">Clean Hours</p>
+                  <p className="text-2xl font-black text-purple-700">{cleanHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
+                  <p className="text-[10px] text-purple-600 font-medium mt-0.5">Billable to clients</p>
+                </div>
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Drive Hours</p>
+                  <p className="text-2xl font-black text-amber-700">{driveHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
+                  <p className="text-[10px] text-amber-600 font-medium mt-0.5">Travel + pickup/dropoff</p>
                 </div>
               </div>
 
