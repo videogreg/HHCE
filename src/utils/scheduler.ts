@@ -98,7 +98,7 @@ export const checkConstraints = (
           violations.push({
             visitId: visit.id,
             message: `${c1.name} and ${c2.name} cannot work together.`,
-            severity: 'error'
+            severity: 'warning'
           });
         }
       }
