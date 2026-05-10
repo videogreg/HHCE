@@ -319,3 +319,51 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
     };
   }).filter(v => v.date && v.clientName);
 };
+
+/**
+ * Parse a Cleaners CSV.
+ * Headers recognized in any order: First Name, Last Name, Equipment #,
+ * Telephone, Email, Address, Unit #, City, Province, Notes, Start Date, Birthday
+ */
+export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
+  const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
+  const rows = data as Record<string, string>[];
+
+  return rows.map(row => {
+    const firstName = getColumn(row, ['first name']);
+    const lastName = getColumn(row, ['last name']);
+    const name = `${firstName} ${lastName}`.trim() || 'Unknown Cleaner';
+
+    const phone = getColumn(row, ['telephone', 'phone', 'mobile', 'cell']);
+    const equipment = getColumn(row, ['equipment #', 'equipment', 'equipment number', 'equip #']);
+    const email = getColumn(row, ['email', 'e-mail']);
+    const address = getColumn(row, ['address', 'street']);
+    const unit = getColumn(row, ['unit #', 'unit', 'unit number', 'apt', 'apartment']);
+    const city = getColumn(row, ['city']);
+    const province = getColumn(row, ['province', 'state']);
+    const notesRaw = getColumn(row, ['notes', 'comments', 'remarks']);
+    const startDate = getColumn(row, ['start date', 'startdate', 'hire date']);
+    const birthday = getColumn(row, ['birthday', 'birth date', 'dob']);
+
+    const extraParts = [
+      equipment && `Equip: ${equipment}`,
+      email && `Email: ${email}`,
+      (address || city) && `Addr: ${[address, unit, city, province].filter(Boolean).join(', ')}`,
+      startDate && `Started: ${startDate}`,
+      birthday && `DOB: ${birthday}`,
+      notesRaw
+    ].filter(Boolean);
+
+    return {
+      id: uuidv4(),
+      name,
+      isDriver: false,
+      canStartAt: '08:00',
+      mustBeOffBy: '17:00',
+      cannotWorkWith: [],
+      active: true,
+      phone,
+      notes: extraParts.join(' | ') || undefined,
+    };
+  }).filter(c => c.name && c.name !== 'Unknown Cleaner');
+};

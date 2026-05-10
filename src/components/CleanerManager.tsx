@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, UserPlus, Car, Phone, FileText, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Car, Phone, FileText, ChevronDown, ChevronUp, Upload, X } from 'lucide-react';
+import { parseCleanersCSV } from '../utils/csvParser';
 
 const COLORS = [
   { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
@@ -14,12 +15,13 @@ const COLORS = [
 ];
 
 export const CleanerManager: React.FC = () => {
-  const { cleaners, setCleaners, loadDemoCleaners } = useAppContext();
+  const { cleaners, setCleaners } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
     name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', notes: ''
   });
   const [showAdd, setShowAdd] = useState(false);
+  const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
 
   const addCleaner = () => {
     if (!newCleaner.name?.trim()) return;
@@ -64,6 +66,37 @@ export const CleanerManager: React.FC = () => {
     setCleaners(updated);
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const parsed = parseCleanersCSV(text);
+      setCsvPreview(parsed);
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmCsvImport = () => {
+    if (!csvPreview || csvPreview.length === 0) return;
+    const fullCleaners = csvPreview.map((p, idx) => {
+      const style = COLORS[(cleaners.length + idx) % COLORS.length];
+      return {
+        ...p,
+        id: uuidv4(),
+        color: style.dot,
+        isDriver: p.isDriver ?? false,
+        canStartAt: p.canStartAt || '08:00',
+        mustBeOffBy: p.mustBeOffBy || '17:00',
+        cannotWorkWith: p.cannotWorkWith || [],
+        active: p.active ?? true,
+      };
+    }) as Cleaner[];
+    setCleaners([...cleaners, ...fullCleaners]);
+    setCsvPreview(null);
+  };
+
   return (
     <div className="space-y-4 animate-slide-up">
       <div className="flex items-center justify-between">
@@ -71,14 +104,10 @@ export const CleanerManager: React.FC = () => {
           <UserPlus className="text-blue-600" size={24} /> Cleaners ({cleaners.length})
         </h2>
         <div className="flex items-center gap-2">
-          {cleaners.length === 0 && (
-            <button
-              onClick={loadDemoCleaners}
-              className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors active:scale-95 flex items-center gap-1.5 border border-slate-200"
-            >
-              <Database size={14} /> Load Demo
-            </button>
-          )}
+          <label className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl cursor-pointer hover:bg-slate-200 transition-colors flex items-center gap-1.5 text-xs font-bold active:scale-95 border border-slate-200">
+            <Upload size={14} /> Import CSV
+            <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
+          </label>
           <button
             onClick={() => setShowAdd(!showAdd)}
             className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-md active:scale-95 flex items-center gap-2"
@@ -87,6 +116,39 @@ export const CleanerManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {csvPreview && (
+        <div className="bg-white rounded-2xl border border-blue-200 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+              <Upload size={16} /> CSV Import Preview ({csvPreview.length} cleaners)
+            </h3>
+            <button onClick={() => setCsvPreview(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-100 rounded-xl">
+            {csvPreview.slice(0, 10).map((c, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2 text-xs border-b border-slate-50 last:border-0">
+                <span className="font-bold text-slate-800">{c.name}</span>
+                <span className="text-slate-500">{c.phone || 'No phone'}</span>
+                <span className="text-slate-400 truncate">{c.notes || ''}</span>
+              </div>
+            ))}
+            {csvPreview.length > 10 && (
+              <p className="text-center text-[10px] text-slate-400 py-2">...and {csvPreview.length - 10} more</p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={confirmCsvImport} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 active:scale-[0.98]">
+              Import All
+            </button>
+            <button onClick={() => setCsvPreview(null)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 active:scale-[0.98]">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showAdd && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
