@@ -20,11 +20,19 @@ interface RouteStop {
   lateMin?: number;
 }
 
+interface TeamMemberHours {
+  name: string;
+  minutes: number;
+  hours: number;
+}
+
 export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { visits, cleaners, clients, teams, selectedDate } = useAppContext();
   const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(null);
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
+  const [driverHours, setDriverHours] = useState(0);
+  const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -106,15 +114,12 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     }
 
     const stops: RouteStop[] = [];
-    const firstVisit = driverVisits[0];
-    let currentTime = parse(firstVisit.startTime, 'HH:mm', new Date());
 
-    currentTime = addMinutes(currentTime, -30);
     stops.push({
       type: 'depart',
       label: `Leave Home — ${driver.name}`,
       address: driver.address || 'Unknown',
-      arrivalTime: format(currentTime, 'HH:mm'),
+      arrivalTime: '',
       durationMin: 0,
     });
 
@@ -159,8 +164,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     });
 
     const latLngs: any[] = [];
-    const stopIndexToLatLng: Record<number, any> = {};
-
     stops.forEach((stop, idx) => {
       let loc: any = null;
       if (stop.type === 'depart' || stop.type === 'home') loc = driverHome;
@@ -172,10 +175,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const v = driverVisits.find(dv => stop.label.includes(dv.clientName));
         if (v) loc = clientLocs[v.id] || null;
       }
-      if (loc) {
-        latLngs.push(loc);
-        stopIndexToLatLng[idx] = loc;
-      }
+      if (loc) latLngs.push(loc);
     });
 
     if (latLngs.length >= 2) {
@@ -188,28 +188,42 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const legs = routeResult.routes[0].legs;
         let totalDist = 0;
 
-        let runningTime = parse(firstVisit.startTime, 'HH:mm', new Date());
-        runningTime = addMinutes(runningTime, -30);
+        // Find first clean to work backwards from scheduled start time
+        const firstCleanIdx = stops.findIndex(s => s.type === 'clean');
+        const firstCleanVisit = firstCleanIdx >= 0 ? driverVisits.find(dv => stops[firstCleanIdx].label.includes(dv.clientName)) : null;
 
-        let legIdx = 0;
-        for (let i = 0; i < stops.length; i++) {
-          const stop = stops[i];
-
-          if (i > 0 && legIdx < legs.length) {
-            const leg = legs[legIdx];
-            totalDist += leg.distance.value;
-            const driveMin = Math.ceil(leg.duration.value / 60);
-
-            runningTime = addMinutes(runningTime, driveMin);
-            stops[i].legDistanceKm = leg.distance.value / 1000;
-            stops[i].legDurationMin = driveMin;
-            legIdx++;
+        let departTime: Date;
+        if (firstCleanVisit) {
+          departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
+          // Walk backwards from first clean to home
+          for (let i = firstCleanIdx; i > 0; i--) {
+            const leg = legs[i - 1];
+            departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
+            const prevStop = stops[i - 1];
+            if (prevStop.durationMin) {
+              departTime = addMinutes(departTime, -prevStop.durationMin);
+            }
           }
+        } else {
+          departTime = parse('08:00', 'HH:mm', new Date());
+        }
 
+        // Walk forward from departure time
+        let runningTime = new Date(departTime.getTime());
+        stops[0].arrivalTime = format(runningTime, 'HH:mm');
+
+        for (let i = 1; i < stops.length; i++) {
+          const leg = legs[i - 1];
+          totalDist += leg.distance.value;
+          const driveMs = leg.duration.value * 1000;
+          runningTime = new Date(runningTime.getTime() + driveMs);
+
+          stops[i].legDistanceKm = leg.distance.value / 1000;
+          stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
           stops[i].arrivalTime = format(runningTime, 'HH:mm');
 
-          if (stop.type === 'clean') {
-            const v = driverVisits.find(dv => stop.label.includes(dv.clientName));
+          if (stops[i].type === 'clean') {
+            const v = driverVisits.find(dv => stops[i].label.includes(dv.clientName));
             if (v) {
               const scheduledStart = parse(v.startTime, 'HH:mm', new Date());
               if (isAfter(runningTime, scheduledStart)) {
@@ -219,12 +233,31 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               runningTime = addMinutes(runningTime, v.durationMinutes);
               stops[i].departTime = format(runningTime, 'HH:mm');
             }
-          } else if (stop.durationMin) {
-            runningTime = addMinutes(runningTime, stop.durationMin);
+          } else if (stops[i].durationMin) {
+            runningTime = addMinutes(runningTime, stops[i].durationMin);
           }
         }
 
+        // Driver total hours: depart home → arrive home
+        const driverTotalMinutes = Math.round((runningTime.getTime() - departTime.getTime()) / 60000);
+        const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
+
+        // Team member door-to-door hours
+        const memberHours: TeamMemberHours[] = teamMembers.map(tm => {
+          const pickupIdx = stops.findIndex(s => s.type === 'pickup' && s.label.includes(tm.name));
+          const dropoffIdx = stops.findIndex(s => s.type === 'dropoff' && s.label.includes(tm.name));
+          let minutes = 0;
+          if (pickupIdx >= 0 && dropoffIdx >= 0) {
+            const pickupTime = parse(stops[pickupIdx].arrivalTime, 'HH:mm', new Date());
+            const dropoffTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
+            minutes = Math.round((dropoffTime.getTime() - pickupTime.getTime()) / 60000);
+          }
+          return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10 };
+        });
+
         setTotalKm(Math.round(totalDist / 100) / 10);
+        setDriverHours(driverTotalHours);
+        setTeamHours(memberHours);
 
         if (mapRef.current) {
           if (!mapInstance.current) {
@@ -309,15 +342,21 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
           {!loading && routeStops.length > 0 && (
             <div className="p-4">
-              <div className="flex items-center justify-between mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                <div>
+              {/* Driver Stats */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
                   <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Total Distance</p>
                   <p className="text-2xl font-black text-blue-700">{totalKm.toFixed(1)} <span className="text-sm font-bold">km</span></p>
                 </div>
-                <Car size={28} className="text-blue-400" />
+                <div className="p-3 bg-green-50 rounded-xl border border-green-100">
+                  <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Driver Hours</p>
+                  <p className="text-2xl font-black text-green-700">{driverHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
+                  <p className="text-[10px] text-green-600 font-medium mt-0.5">Door to door</p>
+                </div>
               </div>
 
-              <div className="space-y-0">
+              {/* Timeline */}
+              <div className="space-y-0 mb-4">
                 {routeStops.map((stop, i) => (
                   <div key={i} className="flex gap-3 relative">
                     {i < routeStops.length - 1 && (
@@ -374,6 +413,30 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   </div>
                 ))}
               </div>
+
+              {/* Team Member Hours */}
+              {teamHours.length > 0 && (
+                <div className="border-t border-slate-200 pt-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1">
+                    <Users size={10} /> Team Member Hours (Door to Door)
+                  </p>
+                  <div className="space-y-2">
+                    {teamHours.map(tm => (
+                      <div key={tm.name} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-green-500" />
+                          <span className="text-sm font-bold text-slate-700">{tm.name}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-lg font-black text-slate-800">{tm.hours.toFixed(1)}</span>
+                          <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
+                          <p className="text-[10px] text-slate-400">{tm.minutes} min total</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
