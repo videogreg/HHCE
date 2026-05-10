@@ -55,7 +55,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [apiError, setApiError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [routeUrl, setRouteUrl] = useState<string>('');
-  const [needsRecalc, setNeedsRecalc] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
@@ -342,7 +341,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setActualDriveMinutes(actualDriveMin);
     setTeamHours(memberHours);
     setRouteStops(stops); // Update with new times on included stops
-    setNeedsRecalc(false);
 
     if (mapRef.current) {
       if (!mapInstance.current) {
@@ -368,19 +366,11 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setLoading(false);
   }, []);
 
-  const recalculateRoute = useCallback(() => {
-    if (!routeDataRef.current || routeStops.length === 0) return;
-    setLoading(true);
-    setApiError(null);
-    processRoute(routeDataRef.current, routeStops);
-  }, [routeStops, processRoute]);
-
   const toggleStop = (index: number) => {
     const newStops = routeStops.map((s, i) =>
       i === index ? { ...s, included: s.included === false ? true : false } : s
     );
     setRouteStops(newStops);
-    setNeedsRecalc(true);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -474,7 +464,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setApiError(null);
     setCopied(false);
     setRouteUrl('');
-    setNeedsRecalc(false);
 
     await loadGoogleMaps(API_KEY);
 
