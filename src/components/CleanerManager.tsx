@@ -62,7 +62,30 @@ export const CleanerManager: React.FC = () => {
   const saveEdit = () => {
     const name = editForm.name?.trim();
     if (!editId || !name) return;
-    setCleaners(cleaners.map(c => c.id === editId ? { ...c, ...editForm, name } as Cleaner : c));
+
+    const originalCleaner = cleaners.find(c => c.id === editId);
+    const originalBlocked = originalCleaner?.cannotWorkWith || [];
+    const newBlocked = editForm.cannotWorkWith || [];
+
+    const added = newBlocked.filter(id => !originalBlocked.includes(id));
+    const removed = originalBlocked.filter(id => !newBlocked.includes(id));
+
+    const updatedCleaners = cleaners.map(c => {
+      if (c.id === editId) {
+        return { ...c, ...editForm, name } as Cleaner;
+      }
+      if (added.includes(c.id)) {
+        if (!c.cannotWorkWith.includes(editId)) {
+          return { ...c, cannotWorkWith: [...c.cannotWorkWith, editId] };
+        }
+      }
+      if (removed.includes(c.id)) {
+        return { ...c, cannotWorkWith: c.cannotWorkWith.filter(x => x !== editId) };
+      }
+      return c;
+    });
+
+    setCleaners(updatedCleaners);
     setEditId(null);
     setEditForm({});
   };
@@ -72,21 +95,13 @@ export const CleanerManager: React.FC = () => {
     setEditForm({});
   };
 
-  const toggleCannotWorkWith = (targetId: string, cleanerId: string) => {
-    const cleaner = cleaners.find(c => c.id === cleanerId);
-    if (!cleaner) return;
-    const has = cleaner.cannotWorkWith.includes(targetId);
-    const updated = cleaners.map(c => {
-      if (c.id === cleanerId) {
-        return { ...c, cannotWorkWith: has ? c.cannotWorkWith.filter(x => x !== targetId) : [...c.cannotWorkWith, targetId] };
-      }
-      if (c.id === targetId) {
-        const targetHas = c.cannotWorkWith.includes(cleanerId);
-        return { ...c, cannotWorkWith: targetHas ? c.cannotWorkWith.filter(x => x !== cleanerId) : [...c.cannotWorkWith, cleanerId] };
-      }
-      return c;
+  const toggleCannotWorkWithEdit = (targetId: string) => {
+    const current = editForm.cannotWorkWith || [];
+    const has = current.includes(targetId);
+    setEditForm({
+      ...editForm,
+      cannotWorkWith: has ? current.filter(x => x !== targetId) : [...current, targetId]
     });
-    setCleaners(updated);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,7 +129,6 @@ export const CleanerManager: React.FC = () => {
       const existingIndex = updatedCleaners.findIndex(c => c.name.trim().toLowerCase() === importedNameLower);
 
       if (existingIndex >= 0) {
-        // UPDATE existing cleaner — preserve id, color, cannotWorkWith
         const existing = updatedCleaners[existingIndex];
         updatedCleaners[existingIndex] = {
           ...existing,
@@ -129,7 +143,6 @@ export const CleanerManager: React.FC = () => {
           active: p.active ?? existing.active,
         };
       } else {
-        // ADD new cleaner
         const style = COLORS[updatedCleaners.length % COLORS.length];
         const newCleaner: Cleaner = {
           ...p,
@@ -319,28 +332,27 @@ export const CleanerManager: React.FC = () => {
                     )}
                   </div>
 
+                  {cleaner.cannotWorkWith.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Cannot work with</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {cleaner.cannotWorkWith.map(id => {
+                          const other = cleaners.find(c => c.id === id);
+                          return other ? (
+                            <span key={id} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                              {other.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {cleaner.notes && (
                     <div className="flex items-start gap-2 text-xs text-slate-600 bg-white/60 rounded-lg p-2">
                       <FileText size={12} className="mt-0.5 shrink-0" /> {cleaner.notes}
                     </div>
                   )}
-
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Cannot work with</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {cleaners.filter(c => c.id !== cleaner.id).map(other => {
-                        const isBlocked = cleaner.cannotWorkWith.includes(other.id);
-                        return (
-                          <button key={other.id} onClick={() => toggleCannotWorkWith(other.id, cleaner.id)}
-                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
-                              isBlocked ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                            }`}>
-                            {other.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
 
                   <button onClick={() => startEdit(cleaner)}
                     className="w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-50 transition-colors active:scale-95 flex items-center justify-center gap-2">
@@ -402,6 +414,22 @@ export const CleanerManager: React.FC = () => {
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
                       <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Cannot work with</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {cleaners.filter(c => c.id !== cleaner.id).map(other => {
+                          const isBlocked = (editForm.cannotWorkWith || []).includes(other.id);
+                          return (
+                            <button key={other.id} onClick={() => toggleCannotWorkWithEdit(other.id)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                                isBlocked ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                              }`}>
+                              {other.name}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-2">

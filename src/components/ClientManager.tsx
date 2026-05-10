@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Client, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save } from 'lucide-react';
+import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save, X } from 'lucide-react';
 import { parseClientsCSV } from '../utils/csvParser';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -17,6 +17,7 @@ export const ClientManager: React.FC = () => {
     preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''
   });
   const [showAdd, setShowAdd] = useState(false);
+  const [csvPreview, setCsvPreview] = useState<Partial<Client>[] | null>(null);
 
   const addClient = () => {
     if (!newClient.name?.trim()) return;
@@ -85,22 +86,61 @@ export const ClientManager: React.FC = () => {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result as string;
-        const parsed = parseClientsCSV(text);
-        const fullClients = parsed.map(p => ({
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const parsed = parseClientsCSV(text);
+      setCsvPreview(parsed);
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmCsvImport = () => {
+    if (!csvPreview || csvPreview.length === 0) return;
+
+    const updatedClients = [...clients];
+
+    csvPreview.forEach((p) => {
+      const importedName = p.name?.trim();
+      if (!importedName) return;
+
+      const importedNameLower = importedName.toLowerCase();
+      const existingIndex = updatedClients.findIndex(c => c.name.trim().toLowerCase() === importedNameLower);
+
+      if (existingIndex >= 0) {
+        const existing = updatedClients[existingIndex];
+        updatedClients[existingIndex] = {
+          ...existing,
+          name: importedName,
+          address: p.address || existing.address,
+          phone: p.phone || existing.phone,
+          zone: p.zone || existing.zone,
+          notes: p.notes || existing.notes,
+          durationMinutes: p.durationMinutes || existing.durationMinutes,
+          notBefore: p.notBefore || existing.notBefore,
+          notAfter: p.notAfter || existing.notAfter,
+          preferredDays: p.preferredDays || existing.preferredDays,
+          preferredCleaners: p.preferredCleaners || existing.preferredCleaners,
+          avoidCleaners: p.avoidCleaners || existing.avoidCleaners,
+        };
+      } else {
+        const newClient: Client = {
           ...p,
+          id: uuidv4(),
           preferredDays: p.preferredDays || [],
           preferredCleaners: p.preferredCleaners || [],
           avoidCleaners: p.avoidCleaners || [],
-          durationMinutes: p.durationMinutes || 120
-        })) as Client[];
-        setClients([...clients, ...fullClients]);
-      };
-      reader.readAsText(file);
-    }
+          durationMinutes: p.durationMinutes || 120,
+          notBefore: p.notBefore || '09:00',
+          notAfter: p.notAfter || '17:00',
+        } as Client;
+        updatedClients.push(newClient);
+      }
+    });
+
+    setClients(updatedClients);
+    setCsvPreview(null);
   };
 
   return (
@@ -123,6 +163,45 @@ export const ClientManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {csvPreview && (
+        <div className="bg-white rounded-2xl border border-green-200 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-green-800 flex items-center gap-2">
+              <Upload size={16} /> CSV Import Preview ({csvPreview.length} clients)
+            </h3>
+            <button onClick={() => setCsvPreview(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-100 rounded-xl">
+            {csvPreview.slice(0, 10).map((c, i) => {
+              const isExisting = clients.some(existing => existing.name.trim().toLowerCase() === (c.name || '').trim().toLowerCase());
+              return (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 text-xs border-b border-slate-50 last:border-0">
+                  <span className="font-bold text-slate-800">{c.name}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isExisting ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                    {isExisting ? 'UPDATE' : 'NEW'}
+                  </span>
+                  <span className="text-slate-500">{c.phone || 'No phone'}</span>
+                  <span className="text-slate-400 truncate">{c.notes || ''}</span>
+                </div>
+              );
+            })}
+            {csvPreview.length > 10 && (
+              <p className="text-center text-[10px] text-slate-400 py-2">...and {csvPreview.length - 10} more</p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={confirmCsvImport} className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 active:scale-[0.98]">
+              Import All
+            </button>
+            <button onClick={() => setCsvPreview(null)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 active:scale-[0.98]">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showAdd && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">

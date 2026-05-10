@@ -72,12 +72,47 @@ export const ScheduleBuilder: React.FC = () => {
 
   const confirmCsvImport = () => {
     if (!csvPreview || csvPreview.length === 0) return;
-    const fullVisits = csvPreview.map(p => ({
-      ...p,
-      id: uuidv4(),
-      cancelled: false,
-    })) as Visit[];
-    setVisits([...visits, ...fullVisits]);
+
+    const updatedVisits = [...visits];
+
+    csvPreview.forEach((p) => {
+      const importedDate = p.date;
+      const importedClientName = p.clientName?.trim();
+      const importedStartTime = p.startTime;
+
+      if (!importedDate || !importedClientName || !importedStartTime) return;
+
+      const existingIndex = updatedVisits.findIndex(v =>
+        v.date === importedDate &&
+        v.clientName.trim().toLowerCase() === importedClientName.toLowerCase()
+      );
+
+      if (existingIndex >= 0) {
+        const existing = updatedVisits[existingIndex];
+        updatedVisits[existingIndex] = {
+          ...existing,
+          clientId: p.clientId || existing.clientId,
+          clientAddress: p.clientAddress || existing.clientAddress,
+          clientZone: p.clientZone || existing.clientZone,
+          date: p.date || existing.date,
+          startTime: p.startTime || existing.startTime,
+          durationMinutes: p.durationMinutes || existing.durationMinutes,
+          assignedTeamId: p.assignedTeamId || existing.assignedTeamId,
+          assignedCleanerIds: p.assignedCleanerIds || existing.assignedCleanerIds,
+          teamName: p.teamName || existing.teamName,
+          cancelled: p.cancelled ?? existing.cancelled,
+        };
+      } else {
+        const newVisit: Visit = {
+          ...p,
+          id: uuidv4(),
+          cancelled: false,
+        } as Visit;
+        updatedVisits.push(newVisit);
+      }
+    });
+
+    setVisits(updatedVisits);
     setCsvPreview(null);
   };
 
@@ -144,14 +179,23 @@ export const ScheduleBuilder: React.FC = () => {
             </button>
           </div>
           <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-100 rounded-xl">
-            {csvPreview.slice(0, 10).map((v, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2 text-xs border-b border-slate-50 last:border-0">
-                <span className="font-bold text-slate-700 min-w-[80px]">{v.date}</span>
-                <span className="font-bold text-slate-800">{v.startTime}</span>
-                <span className="text-slate-500">{v.clientName}</span>
-                <span className="text-slate-400">{formatTotalHours(v.durationMinutes || 120)}</span>
-              </div>
-            ))}
+            {csvPreview.slice(0, 10).map((v, i) => {
+              const isExisting = visits.some(existing =>
+                existing.date === v.date &&
+                existing.clientName.trim().toLowerCase() === (v.clientName || '').trim().toLowerCase()
+              );
+              return (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 text-xs border-b border-slate-50 last:border-0">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isExisting ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                    {isExisting ? 'UPDATE' : 'NEW'}
+                  </span>
+                  <span className="font-bold text-slate-700 min-w-[80px]">{v.date}</span>
+                  <span className="font-bold text-slate-800">{v.startTime}</span>
+                  <span className="text-slate-500">{v.clientName}</span>
+                  <span className="text-slate-400">{formatTotalHours(v.durationMinutes || 120)}</span>
+                </div>
+              );
+            })}
             {csvPreview.length > 10 && (
               <p className="text-center text-[10px] text-slate-400 py-2">...and {csvPreview.length - 10} more</p>
             )}
