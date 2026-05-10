@@ -103,20 +103,49 @@ export const CleanerManager: React.FC = () => {
 
   const confirmCsvImport = () => {
     if (!csvPreview || csvPreview.length === 0) return;
-    const fullCleaners = csvPreview.map((p, idx) => {
-      const style = COLORS[(cleaners.length + idx) % COLORS.length];
-      return {
-        ...p,
-        id: uuidv4(),
-        color: style.dot,
-        isDriver: p.isDriver ?? false,
-        canStartAt: p.canStartAt || '08:00',
-        mustBeOffBy: p.mustBeOffBy || '17:00',
-        cannotWorkWith: p.cannotWorkWith || [],
-        active: p.active ?? true,
-      };
-    }) as Cleaner[];
-    setCleaners([...cleaners, ...fullCleaners]);
+
+    const updatedCleaners = [...cleaners];
+
+    csvPreview.forEach((p) => {
+      const importedName = p.name?.trim();
+      if (!importedName) return;
+
+      const importedNameLower = importedName.toLowerCase();
+      const existingIndex = updatedCleaners.findIndex(c => c.name.trim().toLowerCase() === importedNameLower);
+
+      if (existingIndex >= 0) {
+        // UPDATE existing cleaner — preserve id, color, cannotWorkWith
+        const existing = updatedCleaners[existingIndex];
+        updatedCleaners[existingIndex] = {
+          ...existing,
+          name: importedName,
+          isDriver: p.isDriver ?? existing.isDriver,
+          phone: p.phone || existing.phone,
+          email: p.email || existing.email,
+          address: p.address || existing.address,
+          notes: p.notes || existing.notes,
+          canStartAt: p.canStartAt || existing.canStartAt,
+          mustBeOffBy: p.mustBeOffBy || existing.mustBeOffBy,
+          active: p.active ?? existing.active,
+        };
+      } else {
+        // ADD new cleaner
+        const style = COLORS[updatedCleaners.length % COLORS.length];
+        const newCleaner: Cleaner = {
+          ...p,
+          id: uuidv4(),
+          color: style.dot,
+          isDriver: p.isDriver ?? false,
+          canStartAt: p.canStartAt || '08:00',
+          mustBeOffBy: p.mustBeOffBy || '17:00',
+          cannotWorkWith: p.cannotWorkWith || [],
+          active: p.active ?? true,
+        } as Cleaner;
+        updatedCleaners.push(newCleaner);
+      }
+    });
+
+    setCleaners(updatedCleaners);
     setCsvPreview(null);
   };
 
@@ -151,13 +180,19 @@ export const CleanerManager: React.FC = () => {
             </button>
           </div>
           <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-100 rounded-xl">
-            {csvPreview.slice(0, 10).map((c, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2 text-xs border-b border-slate-50 last:border-0">
-                <span className="font-bold text-slate-800">{c.name}</span>
-                <span className="text-slate-500">{c.phone || 'No phone'}</span>
-                <span className="text-slate-400 truncate">{c.notes || ''}</span>
-              </div>
-            ))}
+            {csvPreview.slice(0, 10).map((c, i) => {
+              const isExisting = cleaners.some(existing => existing.name.trim().toLowerCase() === c.name?.trim().toLowerCase());
+              return (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 text-xs border-b border-slate-50 last:border-0">
+                  <span className="font-bold text-slate-800">{c.name}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isExisting ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                    {isExisting ? 'UPDATE' : 'NEW'}
+                  </span>
+                  <span className="text-slate-500">{c.phone || 'No phone'}</span>
+                  <span className="text-slate-400 truncate">{c.notes || ''}</span>
+                </div>
+              );
+            })}
             {csvPreview.length > 10 && (
               <p className="text-center text-[10px] text-slate-400 py-2">...and {csvPreview.length - 10} more</p>
             )}
