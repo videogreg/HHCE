@@ -3,7 +3,8 @@ import { useAppContext } from '../context/AppContext';
 import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X } from 'lucide-react';
+import { RoutePlanner } from './RoutePlanner';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car } from 'lucide-react';
 import type { Visit } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
@@ -22,6 +23,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
+  const [showRoutePlanner, setShowRoutePlanner] = useState(false);
 
   useEffect(() => {
     setCurrentMonth(selectedDate);
@@ -93,10 +95,18 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     }));
   };
 
-  /* Day-view strip: next 7 days forward from selectedDate */
-  const dayViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
+  const hasDriversToday = useMemo(() => {
+    return dayVisits.some(v => {
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const team = teams.find(t => t.id === v.assignedTeamId);
+        if (team) ids = team.cleanerIds;
+      }
+      return ids.some(id => cleaners.find(c => c.id === id)?.isDriver);
+    });
+  }, [dayVisits, cleaners, teams]);
 
-  /* Week-view grid: next 7 days forward from selectedDate */
+  const dayViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
   const weekViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
 
   const monthStart = startOfMonth(currentMonth);
@@ -141,7 +151,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
 
   return (
     <div className="space-y-4 animate-slide-up">
-      {/* MORNING ALERT BANNER */}
       {isSameDay(selectedDate, new Date()) && hasMorningIssues && (
         <div className="bg-gradient-to-r from-red-600 to-red-700 rounded-2xl p-4 text-white shadow-xl shadow-red-200">
           <div className="flex items-center gap-3 mb-2">
@@ -161,7 +170,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       )}
 
-      {/* View Mode Toggle */}
       <div className="bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm flex gap-1">
         {(['day', 'week', 'month'] as ViewMode[]).map(mode => (
           <button
@@ -181,7 +189,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         ))}
       </div>
 
-      {/* Date Navigation Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <button onClick={goPrev} className="p-2 rounded-xl hover:bg-slate-100 active:scale-95 transition-all">
@@ -221,7 +228,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           </div>
         )}
 
-        {/* DAY VIEW — forward-looking 7-day strip */}
+        {hasDriversToday && (
+          <button
+            onClick={() => setShowRoutePlanner(true)}
+            className="w-full mt-2 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-700 transition-colors"
+          >
+            <Car size={14} /> Plan Driver Routes
+          </button>
+        )}
+
         {viewMode === 'day' && (
           <div className="flex justify-between gap-1.5 bg-slate-100 rounded-xl p-2">
             {dayViewDays.map(d => {
@@ -256,7 +271,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           </div>
         )}
 
-        {/* WEEK VIEW — 7 forward-looking day cards */}
         {viewMode === 'week' && (
           <div className="bg-slate-100 rounded-xl p-2">
             <div className="grid grid-cols-7 gap-1.5 mb-1">
@@ -301,7 +315,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           </div>
         )}
 
-        {/* MONTH VIEW — full calendar grid */}
         {viewMode === 'month' && (
           <div className="bg-slate-100 rounded-xl p-2">
             <div className="grid grid-cols-7 gap-1.5 mb-1">
@@ -347,7 +360,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-4 gap-2">
         <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
           <div className="text-lg font-black text-slate-800">{stats.total}</div>
@@ -367,7 +379,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       </div>
 
-      {/* Visit Cards — ONLY in Day view */}
       {viewMode === 'day' && (
         <>
           {dayVisits.length === 0 && (
@@ -533,6 +544,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           violations={modalViolations}
           onClose={() => setModalVisitId(null)}
         />
+      )}
+
+      {showRoutePlanner && (
+        <RoutePlanner onClose={() => setShowRoutePlanner(false)} />
       )}
     </div>
   );
