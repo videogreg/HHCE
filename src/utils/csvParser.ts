@@ -285,22 +285,53 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
       }
     }
 
-    // --- ASSIGNED TO / TEAM (Jobber: "Assigned to") ---
+    // --- ASSIGNED TO / CLEANERS ---
     const assignedToRaw = getColumn(row, ['assigned to', 'assigned', 'cleaner', 'team', 'team name', 'staff']);
-    let team = teams.find(t => t.name.toLowerCase().trim() === assignedToRaw.toLowerCase().trim());
 
-    // If no exact team match, try matching cleaner names inside the assignment string
-    if (!team && assignedToRaw && cleaners.length > 0) {
-      const assignedNames = assignedToRaw.split(/,|&|\band\b|\+/i).map(n => n.trim().toLowerCase()).filter(Boolean);
-      team = teams.find(t => {
-        const teamCleanerNames = t.cleanerIds
-          .map(id => cleaners.find(c => c.id === id))
-          .filter(Boolean)
-          .map(c => c!.name.toLowerCase());
-        return assignedNames.some(name =>
-          teamCleanerNames.some(tcName => tcName.includes(name) || name.includes(tcName))
-        );
-      });
+    // Match individual cleaners from the assignment text
+    let assignedCleanerIds: string[] = [];
+    if (assignedToRaw && cleaners.length > 0) {
+      // Split by common separators and strip parentheticals / brackets
+      const fragments = assignedToRaw
+        .split(/,|&|\band\b|\+|\/|\|/i)
+        .map(f => f.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim())
+        .filter(Boolean);
+
+      const matchedIds = new Set<string>();
+      // Sort by name length descending so longer names match first
+      const sortedCleaners = [...cleaners].sort((a, b) => b.name.length - a.name.length);
+
+      for (const fragment of fragments) {
+        const fragLower = fragment.toLowerCase();
+        if (!fragLower) continue;
+
+        for (const cleaner of sortedCleaners) {
+          const cNameLower = cleaner.name.toLowerCase();
+          const cParts = cNameLower.split(/\s+/).filter(p => p.length > 1);
+
+          // Match if: exact, contained in full name, full name contained in fragment,
+          // or fragment matches a significant name part
+          const isMatch =
+            cNameLower === fragLower ||
+            cNameLower.includes(fragLower) ||
+            fragLower.includes(cNameLower) ||
+            cParts.some(part => part === fragLower) ||
+            cParts.some(part => fragLower.includes(part) && part.length > 2);
+
+          if (isMatch) {
+            matchedIds.add(cleaner.id);
+            break; // matched this fragment, move to next
+          }
+        }
+      }
+
+      assignedCleanerIds = Array.from(matchedIds);
+    }
+
+    // Try to find a team that contains all assigned cleaners
+    let team = teams.find(t => t.name.toLowerCase().trim() === assignedToRaw.toLowerCase().trim());
+    if (!team && assignedCleanerIds.length > 0) {
+      team = teams.find(t => assignedCleanerIds.every(id => t.cleanerIds.includes(id)));
     }
 
     return {
@@ -313,7 +344,7 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
       startTime,
       durationMinutes,
       assignedTeamId: team?.id || '',
-      assignedCleanerIds: team?.cleanerIds || [],
+      assignedCleanerIds,
       cancelled: false,
       teamName: team?.name || assignedToRaw || ''
     };
