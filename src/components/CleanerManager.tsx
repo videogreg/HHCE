@@ -260,7 +260,6 @@ export const CleanerManager: React.FC = () => {
 
               {isExpanded && !isEditing && (
                 <div className="mt-3 pt-3 border-t border-black/5 space-y-3 animate-slide-up">
-                  {/* PROMINENT CONTACT INFO */}
                   <div className="space-y-2">
                     {cleaner.phone && (
                       <a href={`tel:${cleaner.phone}`} className="flex items-center gap-2 text-sm font-bold text-blue-700 hover:underline">

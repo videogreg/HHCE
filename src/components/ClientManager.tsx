@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Client, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save, X } from 'lucide-react';
+import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save } from 'lucide-react';
 import { parseClientsCSV } from '../utils/csvParser';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
