@@ -243,6 +243,11 @@ export const CleanerManager: React.FC = () => {
                   <div className={`w-3 h-3 rounded-full ${style.dot} ${cleaner.active ? '' : 'opacity-30'}`} />
                   <div>
                     <h3 className={`font-bold text-sm ${style.text} ${cleaner.active ? '' : 'line-through opacity-50'}`}>{cleaner.name}</h3>
+                    {cleaner.phone && (
+                      <a href={`tel:${cleaner.phone}`} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1 mt-0.5">
+                        <Phone size={12} /> {cleaner.phone}
+                      </a>
+                    )}
                     <div className="flex items-center gap-2 mt-0.5">
                       {cleaner.isDriver && <span className="text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-bold">DRIVER</span>}
                       <span className="text-[10px] text-slate-500 font-medium">{cleaner.canStartAt}-{cleaner.mustBeOffBy}</span>

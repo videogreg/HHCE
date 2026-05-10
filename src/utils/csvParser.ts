@@ -323,7 +323,7 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
 /**
  * Parse a Cleaners CSV.
  * Headers recognized in any order: First Name, Last Name, Equipment #,
- * Telephone, Email, Address, Unit #, City, Province, Notes, Start Date, Birthday
+ * Driver, Telephone, Email, Address, Unit #, City, Province, Notes, Start Date, Birthday
  */
 export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
   const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
@@ -333,6 +333,9 @@ export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
     const firstName = getColumn(row, ['first name']);
     const lastName = getColumn(row, ['last name']);
     const name = `${firstName} ${lastName}`.trim() || 'Unknown Cleaner';
+
+    const driverRaw = getColumn(row, ['driver', 'is driver', 'isdriver']);
+    const isDriver = /^\s*yes\s*$/i.test(driverRaw);
 
     const phone = getColumn(row, ['telephone', 'phone', 'mobile', 'cell']);
     const equipment = getColumn(row, ['equipment #', 'equipment', 'equipment number', 'equip #']);
@@ -357,7 +360,7 @@ export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
     return {
       id: uuidv4(),
       name,
-      isDriver: false,
+      isDriver,
       canStartAt: '08:00',
       mustBeOffBy: '17:00',
       cannotWorkWith: [],
