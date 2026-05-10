@@ -62,30 +62,7 @@ export const CleanerManager: React.FC = () => {
   const saveEdit = () => {
     const name = editForm.name?.trim();
     if (!editId || !name) return;
-
-    const originalCleaner = cleaners.find(c => c.id === editId);
-    const originalBlocked = originalCleaner?.cannotWorkWith || [];
-    const newBlocked = editForm.cannotWorkWith || [];
-
-    const added = newBlocked.filter(id => !originalBlocked.includes(id));
-    const removed = originalBlocked.filter(id => !newBlocked.includes(id));
-
-    const updatedCleaners = cleaners.map(c => {
-      if (c.id === editId) {
-        return { ...c, ...editForm, name } as Cleaner;
-      }
-      if (added.includes(c.id)) {
-        if (!c.cannotWorkWith.includes(editId)) {
-          return { ...c, cannotWorkWith: [...c.cannotWorkWith, editId] };
-        }
-      }
-      if (removed.includes(c.id)) {
-        return { ...c, cannotWorkWith: c.cannotWorkWith.filter(x => x !== editId) };
-      }
-      return c;
-    });
-
-    setCleaners(updatedCleaners);
+    setCleaners(cleaners.map(c => c.id === editId ? { ...c, ...editForm, name } as Cleaner : c));
     setEditId(null);
     setEditForm({});
   };
