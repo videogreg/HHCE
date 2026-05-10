@@ -1,3 +1,5 @@
+/// <reference types="google.maps" />
+
 let googleMapsLoaded = false;
 
 export const loadGoogleMaps = (apiKey: string): Promise<void> => {
@@ -19,7 +21,7 @@ export const geocodeAddress = (address: string): Promise<google.maps.LatLng | nu
   return new Promise((resolve) => {
     if (!address) { resolve(null); return; }
     const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address }, (results, status) => {
+    geocoder.geocode({ address }, (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
       if (status === 'OK' && results?.[0]) {
         resolve(results[0].geometry.location);
       } else {
@@ -44,7 +46,7 @@ export const calculateRoute = (
         optimizeWaypoints: false,
         travelMode: google.maps.TravelMode.DRIVING,
       },
-      (result, status) => {
+      (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
         if (status === 'OK' && result) {
           resolve(result);
         } else {
