@@ -44,6 +44,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const infoWindowsRef = useRef<any[]>([]);
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
@@ -74,6 +75,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const clearMarkers = () => {
     markersRef.current.forEach(m => m.setMap(null));
     markersRef.current = [];
+    infoWindowsRef.current.forEach((iw: any) => iw.close());
+    infoWindowsRef.current = [];
   };
 
   const addMarkers = (map: any, stops: RouteStop[], latLngs: any[]) => {
@@ -81,6 +84,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     let cleanCount = 0;
     let pickupCount = 0;
     let dropoffCount = 0;
+    let activeInfoWindow: any = null;
 
     latLngs.forEach((loc: any, i: number) => {
       const stop = stops[i];
@@ -88,12 +92,13 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
       let labelText = '';
       let color = '#64748b';
+      let zIndex = 5;
 
-      if (stop.type === 'depart') { labelText = 'S'; color = '#2563eb'; }
-      else if (stop.type === 'pickup') { labelText = `P${++pickupCount}`; color = '#059669'; }
-      else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; }
-      else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; }
-      else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; }
+      if (stop.type === 'depart') { labelText = 'S'; color = '#2563eb'; zIndex = 8; }
+      else if (stop.type === 'pickup') { labelText = `P${++pickupCount}`; color = '#059669'; zIndex = 7; }
+      else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; zIndex = 10; }
+      else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
+      else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
 
       const marker = new (window as any).google.maps.Marker({
         position: loc,
@@ -112,10 +117,39 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           strokeWeight: 2,
           scale: 16,
         },
-        zIndex: stop.type === 'clean' ? 10 : 5,
+        zIndex,
+      });
+
+      const infoContent = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; padding: 6px; min-width: 200px; line-height: 1.4;">
+          <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 3px;">
+            ${stop.label.replace(/—/g, '-')}
+          </div>
+          <div style="font-size: 12px; color: #334155; margin-bottom: 5px; word-wrap: break-word; max-width: 200px;">
+            ${stop.address}
+          </div>
+          ${stop.arrivalTime ? `<div style="font-size: 11px; color: #475569;"><strong>Arrive:</strong> ${stop.arrivalTime}</div>` : ''}
+          ${stop.departTime ? `<div style="font-size: 11px; color: #475569;"><strong>Depart:</strong> ${stop.departTime}</div>` : ''}
+          ${stop.durationMin ? `<div style="font-size: 11px; color: #475569;"><strong>Duration:</strong> ${stop.durationMin} min</div>` : ''}
+          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (arrived early)</div>` : ''}
+          ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">⚠️ Late ${stop.lateMin} min past window</div>` : ''}
+          ${(i > 0 && stop.legDistanceKm !== undefined) ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid #e2e8f0; padding-top: 4px;">🚗 ${stop.legDistanceKm.toFixed(1)} km • ${Math.round(stop.legDurationMin || 0)} min drive</div>` : ''}
+        </div>
+      `;
+
+      const infoWindow = new (window as any).google.maps.InfoWindow({
+        content: infoContent,
+        maxWidth: 240,
+      });
+
+      marker.addListener('click', () => {
+        if (activeInfoWindow) activeInfoWindow.close();
+        infoWindow.open(map, marker);
+        activeInfoWindow = infoWindow;
       });
 
       markersRef.current.push(marker);
+      infoWindowsRef.current.push(infoWindow);
     });
   };
 
