@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Client, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -7,7 +7,12 @@ import { parseClientsCSV } from '../utils/csvParser';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const ClientManager: React.FC = () => {
+interface ClientManagerProps {
+  focusId?: string | null;
+  onFocusClear?: () => void;
+}
+
+export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusClear }) => {
   const { cleaners, clients, setClients } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -18,6 +23,17 @@ export const ClientManager: React.FC = () => {
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Client>[] | null>(null);
+
+  useEffect(() => {
+    if (focusId && clients.some(c => c.id === focusId)) {
+      setExpandedId(focusId);
+      setEditId(null);
+      onFocusClear?.();
+      setTimeout(() => {
+        document.getElementById(`client-card-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [focusId, clients, onFocusClear]);
 
   const addClient = () => {
     if (!newClient.name?.trim()) return;
@@ -319,7 +335,7 @@ export const ClientManager: React.FC = () => {
           const isEditing = editId === client.id;
 
           return (
-            <div key={client.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
+            <div key={client.id} id={`client-card-${client.id}`} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
               <div className="flex items-start justify-between">
                 <div className="min-w-0">
                   <h3 className="font-bold text-sm text-slate-800 truncate">{client.name}</h3>

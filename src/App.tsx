@@ -21,6 +21,7 @@ function App() {
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare'>('dashboard');
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24">
@@ -53,13 +54,13 @@ function AppContent() {
         </div>
       </header>
 
-      <SearchBar onNavigate={(tab) => setActiveTab(tab as any)} />
+      <SearchBar onNavigate={(tab, id) => { setActiveTab(tab); setFocusId(id || null); }} />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        {activeTab === 'dashboard' && <ScheduleBoard />}
+        {activeTab === 'dashboard' && <ScheduleBoard focusVisitId={focusId} onFocusClear={() => setFocusId(null)} />}
         {activeTab === 'builder' && <ScheduleBuilder />}
-        {activeTab === 'cleaners' && <CleanerManager />}
-        {activeTab === 'clients' && <ClientManager />}
+        {activeTab === 'cleaners' && <CleanerManager focusId={focusId} onFocusClear={() => setFocusId(null)} />}
+        {activeTab === 'clients' && <ClientManager focusId={focusId} onFocusClear={() => setFocusId(null)} />}
         {activeTab === 'nightmare' && (
           <div className="max-w-3xl mx-auto">
             <ReorganizeModal />

@@ -11,7 +11,12 @@ import {
 
 type ViewMode = 'day' | 'week' | 'month';
 
-export const ScheduleBoard: React.FC = () => {
+interface ScheduleBoardProps {
+  focusVisitId?: string | null;
+  onFocusClear?: () => void;
+}
+
+export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -25,6 +30,16 @@ export const ScheduleBoard: React.FC = () => {
   const dayVisits = visits
     .filter(v => v.date === dateStr)
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  useEffect(() => {
+    if (focusVisitId && dayVisits.some(v => v.id === focusVisitId)) {
+      setModalVisitId(focusVisitId);
+      onFocusClear?.();
+      setTimeout(() => {
+        document.getElementById(`visit-card-${focusVisitId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [focusVisitId, dayVisits, onFocusClear]);
 
   const violations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
   const getViolationsForVisit = (visitId: string) => violations.filter(v => v.visitId === visitId);
@@ -364,6 +379,7 @@ export const ScheduleBoard: React.FC = () => {
               return (
                 <div
                   key={visit.id}
+                  id={`visit-card-${visit.id}`}
                   className={`bg-white rounded-2xl border-2 p-4 transition-all ${
                     visit.cancelled
                       ? 'border-slate-200 opacity-50 grayscale'

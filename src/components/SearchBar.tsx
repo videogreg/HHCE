@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { Search, X, User, Users, Calendar } from 'lucide-react';
 
 interface SearchBarProps {
-  onNavigate: (tab: 'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare') => void;
+  onNavigate: (tab: 'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare', itemId?: string) => void;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({ onNavigate }) => {
@@ -78,7 +78,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onNavigate }) => {
                 {clientResults.map(c => (
                   <button
                     key={c.id}
-                    onClick={() => { onNavigate('clients'); setQuery(''); setOpen(false); }}
+                    onClick={() => { onNavigate('clients', c.id); setQuery(''); setOpen(false); }}
                     className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center gap-3"
                   >
                     <User size={14} className="text-blue-500 shrink-0" />
@@ -96,7 +96,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onNavigate }) => {
                 {cleanerResults.map(c => (
                   <button
                     key={c.id}
-                    onClick={() => { onNavigate('cleaners'); setQuery(''); setOpen(false); }}
+                    onClick={() => { onNavigate('cleaners', c.id); setQuery(''); setOpen(false); }}
                     className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center gap-3"
                   >
                     <Users size={14} className="text-green-500 shrink-0" />
@@ -117,7 +117,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onNavigate }) => {
                     onClick={() => {
                       const [y, m, d] = v.date.split('-').map(Number);
                       if (y && m && d) setSelectedDate(new Date(y, m - 1, d));
-                      onNavigate('dashboard');
+                      onNavigate('dashboard', v.id);
                       setQuery('');
                       setOpen(false);
                     }}

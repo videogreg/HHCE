@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -14,7 +14,12 @@ const COLORS = [
   { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700', dot: 'bg-cyan-500' },
 ];
 
-export const CleanerManager: React.FC = () => {
+interface CleanerManagerProps {
+  focusId?: string | null;
+  onFocusClear?: () => void;
+}
+
+export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocusClear }) => {
   const { cleaners, setCleaners } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -24,6 +29,17 @@ export const CleanerManager: React.FC = () => {
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
+
+  useEffect(() => {
+    if (focusId && cleaners.some(c => c.id === focusId)) {
+      setExpandedId(focusId);
+      setEditId(null);
+      onFocusClear?.();
+      setTimeout(() => {
+        document.getElementById(`cleaner-card-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [focusId, cleaners, onFocusClear]);
 
   const addCleaner = () => {
     if (!newCleaner.name?.trim()) return;
@@ -262,7 +278,7 @@ export const CleanerManager: React.FC = () => {
           const isEditing = editId === cleaner.id;
 
           return (
-            <div key={cleaner.id} className={`${style.bg} border ${style.border} rounded-2xl p-4 transition-all hover:shadow-md`}>
+            <div key={cleaner.id} id={`cleaner-card-${cleaner.id}`} className={`${style.bg} border ${style.border} rounded-2xl p-4 transition-all hover:shadow-md`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-3 h-3 rounded-full ${style.dot} ${cleaner.active ? '' : 'opacity-30'}`} />
