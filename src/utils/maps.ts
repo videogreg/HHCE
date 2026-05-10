@@ -1,5 +1,3 @@
-/// <reference types="google.maps" />
-
 let googleMapsLoaded = false;
 
 export const loadGoogleMaps = (apiKey: string): Promise<void> => {
@@ -17,11 +15,11 @@ export const loadGoogleMaps = (apiKey: string): Promise<void> => {
   });
 };
 
-export const geocodeAddress = (address: string): Promise<google.maps.LatLng | null> => {
+export const geocodeAddress = (address: string): Promise<any | null> => {
   return new Promise((resolve) => {
     if (!address) { resolve(null); return; }
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address }, (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
+    const geocoder = new (window as any).google.maps.Geocoder();
+    geocoder.geocode({ address }, (results: any, status: any) => {
       if (status === 'OK' && results?.[0]) {
         resolve(results[0].geometry.location);
       } else {
@@ -32,21 +30,21 @@ export const geocodeAddress = (address: string): Promise<google.maps.LatLng | nu
 };
 
 export const calculateRoute = (
-  origin: google.maps.LatLng,
-  destination: google.maps.LatLng,
-  waypoints: google.maps.LatLng[]
-): Promise<google.maps.DirectionsResult | null> => {
+  origin: any,
+  destination: any,
+  waypoints: any[]
+): Promise<any | null> => {
   return new Promise((resolve) => {
-    const directionsService = new google.maps.DirectionsService();
+    const directionsService = new (window as any).google.maps.DirectionsService();
     directionsService.route(
       {
         origin,
         destination,
-        waypoints: waypoints.map(loc => ({ location: loc, stopover: true })),
+        waypoints: waypoints.map((loc: any) => ({ location: loc, stopover: true })),
         optimizeWaypoints: false,
-        travelMode: google.maps.TravelMode.DRIVING,
+        travelMode: (window as any).google.maps.TravelMode.DRIVING,
       },
-      (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
+      (result: any, status: any) => {
         if (status === 'OK' && result) {
           resolve(result);
         } else {
