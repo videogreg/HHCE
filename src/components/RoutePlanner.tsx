@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
 import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink } from 'lucide-react';
-import type { Cleaner } from '../types';
+import type { Cleaner, Visit } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -22,6 +22,8 @@ interface RouteStop {
   actualStartTime?: string;
   visitId?: string;
   teamMemberId?: string;
+  latLng?: any;
+  included?: boolean;
 }
 
 interface TeamMemberHours {
@@ -29,6 +31,15 @@ interface TeamMemberHours {
   minutes: number;
   hours: number;
   isDriver: boolean;
+}
+
+interface RouteData {
+  driver: Cleaner;
+  driverVisits: Visit[];
+  teamMembersWithAddr: Cleaner[];
+  driverHome: any;
+  clientLocs: Record<string, any>;
+  teamLocs: Record<string, any>;
 }
 
 export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -44,11 +55,14 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [apiError, setApiError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [routeUrl, setRouteUrl] = useState<string>('');
+  const [needsRecalc, setNeedsRecalc] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<any[]>([]);
+  const routeDataRef = useRef<RouteData | null>(null);
+  const debounceRef = useRef<any>(null);
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
@@ -83,16 +97,15 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     infoWindowsRef.current = [];
   };
 
-  const addMarkers = (map: any, stops: RouteStop[], latLngs: any[]) => {
+  const addMarkers = (map: any, stops: RouteStop[]) => {
     clearMarkers();
     let cleanCount = 0;
     let pickupCount = 0;
     let dropoffCount = 0;
     let activeInfoWindow: any = null;
 
-    latLngs.forEach((loc: any, i: number) => {
-      const stop = stops[i];
-      if (!loc || !stop) return;
+    stops.forEach((stop, i) => {
+      if (!stop.latLng) return;
 
       let labelText = '';
       let color = '#64748b';
@@ -105,7 +118,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
 
       const marker = new (window as any).google.maps.Marker({
-        position: loc,
+        position: stop.latLng,
         map,
         label: {
           text: labelText,
@@ -157,8 +170,231 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     });
   };
 
+  const processRoute = useCallback(async (data: RouteData, stops: RouteStop[]) => {
+    const includedStops = stops.filter(s => s.included !== false);
+    const latLngs = includedStops.map(s => s.latLng).filter(Boolean);
+
+    if (latLngs.length < 2) {
+      setApiError('Not enough stops to build a route. Please check at least 2 stops.');
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
+
+    const origin = latLngs[0];
+    const destination = latLngs[latLngs.length - 1];
+    const waypoints = latLngs.slice(1, -1);
+
+    // Build Google Maps directions URL
+    const originStr = `${origin.lat()},${origin.lng()}`;
+    const destStr = `${destination.lat()},${destination.lng()}`;
+    const waypointsStr = waypoints.map((ll: any) => `${ll.lat()},${ll.lng()}`).join('|');
+    const mapsUrl = waypointsStr
+      ? `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}&waypoints=${waypointsStr}`
+      : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
+    setRouteUrl(mapsUrl);
+
+    const routeResult = await calculateRoute(origin, destination, waypoints);
+    if (!routeResult) {
+      setApiError('Could not calculate route. Check addresses.');
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
+
+    const legs = routeResult.routes[0].legs;
+    let totalDist = 0;
+    let actualDriveSeconds = 0;
+
+    const firstCleanIdx = includedStops.findIndex(s => s.type === 'clean');
+    const firstCleanVisit = firstCleanIdx >= 0
+      ? data.driverVisits.find(dv => dv.id === includedStops[firstCleanIdx].visitId)
+      : null;
+
+    let departTime: Date;
+    if (firstCleanVisit) {
+      departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
+      for (let i = firstCleanIdx; i > 0; i--) {
+        const leg = legs[i - 1];
+        departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
+        const prevStop = includedStops[i - 1];
+        if (prevStop.durationMin) {
+          departTime = addMinutes(departTime, -prevStop.durationMin);
+        }
+      }
+    } else {
+      departTime = parse('08:00', 'HH:mm', new Date());
+    }
+
+    let runningTime = new Date(departTime.getTime());
+    includedStops[0].arrivalTime = format(runningTime, 'HH:mm');
+
+    for (let i = 1; i < includedStops.length; i++) {
+      const leg = legs[i - 1];
+      totalDist += leg.distance.value;
+      actualDriveSeconds += leg.duration.value;
+      const driveMs = leg.duration.value * 1000;
+      runningTime = new Date(runningTime.getTime() + driveMs);
+
+      includedStops[i].legDistanceKm = leg.distance.value / 1000;
+      includedStops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+      includedStops[i].arrivalTime = format(runningTime, 'HH:mm');
+
+      if (includedStops[i].type === 'clean') {
+        const v = data.driverVisits.find(dv => dv.id === includedStops[i].visitId);
+        if (v) {
+          const scheduledStart = parse(v.startTime, 'HH:mm', new Date());
+          const earliestStart = addMinutes(scheduledStart, -15);
+          const latestStart = addMinutes(scheduledStart, 15);
+
+          if (isBefore(runningTime, earliestStart)) {
+            includedStops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
+            includedStops[i].actualStartTime = format(earliestStart, 'HH:mm');
+            runningTime = addMinutes(earliestStart, v.durationMinutes);
+            includedStops[i].departTime = format(runningTime, 'HH:mm');
+          } else if (isAfter(runningTime, latestStart)) {
+            includedStops[i].isLate = true;
+            includedStops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
+            includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+            runningTime = addMinutes(runningTime, v.durationMinutes);
+            includedStops[i].departTime = format(runningTime, 'HH:mm');
+          } else {
+            includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+            runningTime = addMinutes(runningTime, v.durationMinutes);
+            includedStops[i].departTime = format(runningTime, 'HH:mm');
+          }
+        }
+      } else if (includedStops[i].durationMin) {
+        runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
+        includedStops[i].departTime = format(runningTime, 'HH:mm');
+      }
+    }
+
+    // Calculate total wait time across included cleans only
+    const totalWaitMin = includedStops
+      .filter(s => s.type === 'clean')
+      .reduce((sum, s) => sum + (s.waitMin || 0), 0);
+
+    // Driver door-to-door minutes MINUS wait time
+    const firstIncluded = includedStops[0];
+    const lastIncluded = includedStops[includedStops.length - 1];
+    const startTime = parse(firstIncluded.arrivalTime, 'HH:mm', new Date());
+    const endTime = parse(lastIncluded.departTime || lastIncluded.arrivalTime, 'HH:mm', new Date());
+    const rawDriverMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+    const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
+    const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
+
+    // Billable clean time (pure cleaning, no wait)
+    const cleanTotalMinutes = includedStops
+      .filter(s => s.type === 'clean')
+      .reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
+
+    // Actual driving minutes from Google Maps legs
+    const actualDriveMin = Math.round(actualDriveSeconds / 60);
+
+    const memberHours: TeamMemberHours[] = data.teamMembersWithAddr.map(tm => {
+      const includedPickup = includedStops.find(s => s.type === 'pickup' && s.teamMemberId === tm.id);
+      const includedDropoff = includedStops.find(s => s.type === 'dropoff' && s.teamMemberId === tm.id);
+      const includedCleans = includedStops.filter(s => s.type === 'clean');
+
+      if (!tm.isDriver) {
+        // Non-driver: first clean to last clean
+        if (includedCleans.length === 0) {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
+        }
+        const firstClean = includedCleans[0];
+        const lastClean = includedCleans[includedCleans.length - 1];
+        const cleanStart = parse(firstClean.actualStartTime || firstClean.arrivalTime, 'HH:mm', new Date());
+        const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
+        const minutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
+        return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
+      } else {
+        // Driver team member: pickup-to-dropoff, or clean-to-clean if skipped
+        let startTime: Date;
+        let endTime: Date;
+
+        if (includedPickup) {
+          startTime = parse(includedPickup.arrivalTime, 'HH:mm', new Date());
+        } else if (includedCleans.length > 0) {
+          startTime = parse(includedCleans[0].actualStartTime || includedCleans[0].arrivalTime, 'HH:mm', new Date());
+        } else {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
+        }
+
+        if (includedDropoff) {
+          endTime = parse(includedDropoff.arrivalTime, 'HH:mm', new Date());
+        } else if (includedCleans.length > 0) {
+          endTime = parse(includedCleans[includedCleans.length - 1].departTime || includedCleans[includedCleans.length - 1].arrivalTime, 'HH:mm', new Date());
+        } else {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
+        }
+
+        const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+        const minutes = rawMinutes - totalWaitMin;
+        return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: true };
+      }
+    });
+
+    setTotalKm(Math.round(totalDist / 100) / 10);
+    setDriverHours(driverTotalHours);
+    setCleanHours(cleanTotalHours);
+    setActualDriveMinutes(actualDriveMin);
+    setTeamHours(memberHours);
+    setRouteStops(stops); // Update with new times on included stops
+    setNeedsRecalc(false);
+
+    if (mapRef.current) {
+      if (!mapInstance.current) {
+        mapInstance.current = new (window as any).google.maps.Map(mapRef.current, {
+          zoom: 12,
+          center: origin,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+        });
+      }
+      if (!directionsRenderer.current) {
+        directionsRenderer.current = new (window as any).google.maps.DirectionsRenderer({
+          map: mapInstance.current,
+          suppressMarkers: true,
+        });
+      }
+      directionsRenderer.current.setDirections(routeResult);
+      mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+      addMarkers(mapInstance.current, includedStops);
+    }
+
+    setLoading(false);
+  }, []);
+
+  const recalculateRoute = useCallback(() => {
+    if (!routeDataRef.current || routeStops.length === 0) return;
+    setLoading(true);
+    setApiError(null);
+    processRoute(routeDataRef.current, routeStops);
+  }, [routeStops, processRoute]);
+
+  const toggleStop = (index: number) => {
+    const newStops = routeStops.map((s, i) =>
+      i === index ? { ...s, included: s.included === false ? true : false } : s
+    );
+    setRouteStops(newStops);
+    setNeedsRecalc(true);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (routeDataRef.current) {
+        setLoading(true);
+        setApiError(null);
+        processRoute(routeDataRef.current, newStops);
+      }
+    }, 400);
+  };
+
   const copyPlan = () => {
     if (routeStops.length === 0 || !selectedDriver) return;
+    const includedStops = routeStops.filter(s => s.included !== false);
 
     const dateLabel = format(selectedDate, 'EEEE, MMM d, yyyy');
 
@@ -171,7 +407,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     }
     text += `═══════════════════════════════════════\n\n`;
 
-    routeStops.forEach((stop, i) => {
+    includedStops.forEach((stop, i) => {
       text += `${stop.arrivalTime || '----'} — ${stop.label}\n`;
       text += `${stop.address}\n`;
 
@@ -199,6 +435,15 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       }
       text += `\n`;
     });
+
+    const skippedStops = routeStops.filter(s => s.included === false);
+    if (skippedStops.length > 0) {
+      text += `--- SKIPPED STOPS ---\n`;
+      skippedStops.forEach(s => {
+        text += `☐ ${s.label} — ${s.address}\n`;
+      });
+      text += `\n`;
+    }
 
     text += `═══════════════════════════════════════\n`;
     text += `TOTAL DISTANCE: ${totalKm.toFixed(1)} km\n`;
@@ -229,6 +474,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setApiError(null);
     setCopied(false);
     setRouteUrl('');
+    setNeedsRecalc(false);
 
     await loadGoogleMaps(API_KEY);
 
@@ -291,6 +537,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       address: driver.address || 'Unknown',
       arrivalTime: '',
       durationMin: 0,
+      latLng: driverHome,
+      included: true,
     });
 
     for (const tm of teamMembersWithAddr) {
@@ -301,6 +549,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         arrivalTime: '',
         durationMin: 5,
         teamMemberId: tm.id,
+        latLng: teamLocs[tm.id],
+        included: true,
       });
     }
 
@@ -314,6 +564,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         departTime: '',
         durationMin: v.durationMinutes,
         visitId: v.id,
+        latLng: clientLocs[v.id],
+        included: true,
       });
     }
 
@@ -325,6 +577,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         arrivalTime: '',
         durationMin: 5,
         teamMemberId: tm.id,
+        latLng: teamLocs[tm.id],
+        included: true,
       });
     });
 
@@ -334,185 +588,20 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       address: driver.address || 'Unknown',
       arrivalTime: '',
       durationMin: 0,
+      latLng: driverHome,
+      included: true,
     });
 
-    const latLngs: any[] = [];
-    stops.forEach((stop) => {
-      let loc: any = null;
-      if (stop.type === 'depart' || stop.type === 'home') loc = driverHome;
-      else if (stop.type === 'pickup' || stop.type === 'dropoff') {
-        if (stop.teamMemberId) loc = teamLocs[stop.teamMemberId] || null;
-      }
-      else if (stop.type === 'clean') {
-        if (stop.visitId) loc = clientLocs[stop.visitId] || null;
-      }
-      latLngs.push(loc);
-    });
+    routeDataRef.current = {
+      driver,
+      driverVisits,
+      teamMembersWithAddr,
+      driverHome,
+      clientLocs,
+      teamLocs,
+    };
 
-    if (latLngs.length >= 2) {
-      const origin = latLngs[0];
-      const destination = latLngs[latLngs.length - 1];
-      const waypoints = latLngs.slice(1, -1);
-
-      // Build Google Maps directions URL
-      const originStr = `${origin.lat()},${origin.lng()}`;
-      const destStr = `${destination.lat()},${destination.lng()}`;
-      const waypointsStr = waypoints.map((ll: any) => `${ll.lat()},${ll.lng()}`).join('|');
-      const mapsUrl = waypointsStr
-        ? `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}&waypoints=${waypointsStr}`
-        : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
-      setRouteUrl(mapsUrl);
-
-      const routeResult = await calculateRoute(origin, destination, waypoints);
-      if (routeResult) {
-        const legs = routeResult.routes[0].legs;
-        let totalDist = 0;
-        let actualDriveSeconds = 0;
-
-        const firstCleanIdx = stops.findIndex(s => s.type === 'clean');
-        const firstCleanVisit = firstCleanIdx >= 0 ? driverVisits.find(dv => dv.id === stops[firstCleanIdx].visitId) : null;
-
-        let departTime: Date;
-        if (firstCleanVisit) {
-          departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
-          for (let i = firstCleanIdx; i > 0; i--) {
-            const leg = legs[i - 1];
-            departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
-            const prevStop = stops[i - 1];
-            if (prevStop.durationMin) {
-              departTime = addMinutes(departTime, -prevStop.durationMin);
-            }
-          }
-        } else {
-          departTime = parse('08:00', 'HH:mm', new Date());
-        }
-
-        let runningTime = new Date(departTime.getTime());
-        stops[0].arrivalTime = format(runningTime, 'HH:mm');
-
-        for (let i = 1; i < stops.length; i++) {
-          const leg = legs[i - 1];
-          totalDist += leg.distance.value;
-          actualDriveSeconds += leg.duration.value;
-          const driveMs = leg.duration.value * 1000;
-          runningTime = new Date(runningTime.getTime() + driveMs);
-
-          stops[i].legDistanceKm = leg.distance.value / 1000;
-          stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
-          stops[i].arrivalTime = format(runningTime, 'HH:mm');
-
-          if (stops[i].type === 'clean') {
-            const v = driverVisits.find(dv => dv.id === stops[i].visitId);
-            if (v) {
-              const scheduledStart = parse(v.startTime, 'HH:mm', new Date());
-              const earliestStart = addMinutes(scheduledStart, -15);
-              const latestStart = addMinutes(scheduledStart, 15);
-
-              if (isBefore(runningTime, earliestStart)) {
-                stops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
-                stops[i].actualStartTime = format(earliestStart, 'HH:mm');
-                runningTime = addMinutes(earliestStart, v.durationMinutes);
-                stops[i].departTime = format(runningTime, 'HH:mm');
-              } else if (isAfter(runningTime, latestStart)) {
-                stops[i].isLate = true;
-                stops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
-                stops[i].actualStartTime = format(runningTime, 'HH:mm');
-                runningTime = addMinutes(runningTime, v.durationMinutes);
-                stops[i].departTime = format(runningTime, 'HH:mm');
-              } else {
-                stops[i].actualStartTime = format(runningTime, 'HH:mm');
-                runningTime = addMinutes(runningTime, v.durationMinutes);
-                stops[i].departTime = format(runningTime, 'HH:mm');
-              }
-            }
-          } else if (stops[i].durationMin) {
-            runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
-            stops[i].departTime = format(runningTime, 'HH:mm');
-          }
-        }
-
-        // Calculate total wait time across all cleans
-        const totalWaitMin = stops
-          .filter(s => s.type === 'clean')
-          .reduce((sum, s) => sum + (s.waitMin || 0), 0);
-
-        // Driver door-to-door minutes MINUS wait time
-        const rawDriverMinutes = Math.round((runningTime.getTime() - departTime.getTime()) / 60000);
-        const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
-        const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
-
-        // Billable clean time (pure cleaning, no wait)
-        const cleanTotalMinutes = stops
-          .filter(s => s.type === 'clean')
-          .reduce((sum, s) => sum + (s.durationMin || 0), 0);
-        const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
-
-        // Actual driving minutes from Google Maps legs
-        const actualDriveMin = Math.round(actualDriveSeconds / 60);
-
-        const memberHours: TeamMemberHours[] = teamMembersWithAddr.map(tm => {
-          if (!tm.isDriver) {
-            // Non-driver: paid from first clean start to last clean end (wait already excluded)
-            const cleanStops = stops.filter(s => s.type === 'clean');
-            if (cleanStops.length === 0) {
-              return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
-            }
-            const firstClean = cleanStops[0];
-            const lastClean = cleanStops[cleanStops.length - 1];
-            const startTime = parse(firstClean.actualStartTime || firstClean.arrivalTime, 'HH:mm', new Date());
-            const endTime = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
-            const minutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-            return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
-          } else {
-            // Driver team member: door-to-door pickup to dropoff MINUS wait time
-            const pickupIdx = stops.findIndex(s => s.type === 'pickup' && s.teamMemberId === tm.id);
-            const dropoffIdx = stops.findIndex(s => s.type === 'dropoff' && s.teamMemberId === tm.id);
-            let minutes = 0;
-            if (pickupIdx >= 0 && dropoffIdx >= 0) {
-              const pickupTime = parse(stops[pickupIdx].arrivalTime, 'HH:mm', new Date());
-              const dropoffTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
-              const rawMinutes = Math.round((dropoffTime.getTime() - pickupTime.getTime()) / 60000);
-              minutes = rawMinutes - totalWaitMin;
-            }
-            return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: true };
-          }
-        });
-
-        setTotalKm(Math.round(totalDist / 100) / 10);
-        setDriverHours(driverTotalHours);
-        setCleanHours(cleanTotalHours);
-        setActualDriveMinutes(actualDriveMin);
-        setTeamHours(memberHours);
-
-        if (mapRef.current) {
-          if (!mapInstance.current) {
-            mapInstance.current = new (window as any).google.maps.Map(mapRef.current, {
-              zoom: 12,
-              center: origin,
-              streetViewControl: false,
-              mapTypeControl: false,
-              fullscreenControl: false,
-            });
-          }
-          if (!directionsRenderer.current) {
-            directionsRenderer.current = new (window as any).google.maps.DirectionsRenderer({
-              map: mapInstance.current,
-              suppressMarkers: true,
-            });
-          }
-          directionsRenderer.current.setDirections(routeResult);
-          mapInstance.current.fitBounds(routeResult.routes[0].bounds);
-          addMarkers(mapInstance.current, stops, latLngs);
-        }
-      } else {
-        setApiError('Could not calculate route. Check addresses.');
-      }
-    } else {
-      setApiError('Not enough valid addresses to build a route.');
-    }
-
-    setRouteStops(stops);
-    setLoading(false);
+    await processRoute(routeDataRef.current, stops);
   };
 
   return (
@@ -562,7 +651,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {loading && (
             <div className="p-8 text-center">
               <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-sm text-slate-500 font-medium">Calculating optimal route...</p>
+              <p className="text-sm text-slate-500 font-medium">Recalculating route...</p>
             </div>
           )}
 
@@ -617,66 +706,88 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               </div>
 
               <div className="space-y-0 mb-4">
-                {routeStops.map((stop, i) => (
-                  <div key={i} className="flex gap-3 relative">
-                    {i < routeStops.length - 1 && (
-                      <div className="absolute left-[19px] top-10 bottom-0 w-0.5 bg-slate-200" />
-                    )}
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 z-10 ${
-                      stop.type === 'depart' ? 'bg-blue-100 text-blue-600' :
-                      stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
-                      stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
-                      stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
-                      'bg-slate-100 text-slate-600'
-                    }`}>
-                      {stop.type === 'depart' && <Home size={18} />}
-                      {stop.type === 'pickup' && <Users size={18} />}
-                      {stop.type === 'clean' && <MapPin size={18} />}
-                      {stop.type === 'dropoff' && <Users size={18} />}
-                      {stop.type === 'home' && <Home size={18} />}
-                    </div>
+                {routeStops.map((stop, i) => {
+                  const isExcluded = stop.included === false;
+                  return (
+                    <div key={i} className={`flex gap-3 relative ${isExcluded ? 'opacity-50' : ''}`}>
+                      {i < routeStops.length - 1 && (
+                        <div className="absolute left-[19px] top-10 bottom-0 w-0.5 bg-slate-200" />
+                      )}
+                      <div className="flex flex-col items-center shrink-0 z-10 pt-1">
+                        <input
+                          type="checkbox"
+                          checked={stop.included !== false}
+                          onChange={() => toggleStop(i)}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </div>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 z-10 ${
+                        stop.type === 'depart' ? 'bg-blue-100 text-blue-600' :
+                        stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
+                        stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
+                        stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {stop.type === 'depart' && <Home size={18} />}
+                        {stop.type === 'pickup' && <Users size={18} />}
+                        {stop.type === 'clean' && <MapPin size={18} />}
+                        {stop.type === 'dropoff' && <Users size={18} />}
+                        {stop.type === 'home' && <Home size={18} />}
+                      </div>
 
-                    <div className="pb-5 flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                        <span className="text-sm font-bold text-slate-800">{stop.label}</span>
-                        <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
-                          stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
-                        }`}>
-                          <Clock size={10} className="inline mr-0.5" />
-                          {stop.arrivalTime}
-                          {stop.departTime && ` – ${stop.departTime}`}
-                        </span>
-                        {stop.waitMin && stop.waitMin > 0 && (
-                          <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                            WAIT {stop.waitMin} MIN
+                      <div className="pb-5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          <span className={`text-sm font-bold ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                            {stop.label}
                           </span>
+                          {!isExcluded && (
+                            <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
+                              stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
+                            }`}>
+                              <Clock size={10} className="inline mr-0.5" />
+                              {stop.arrivalTime}
+                              {stop.departTime && ` – ${stop.departTime}`}
+                            </span>
+                          )}
+                          {!isExcluded && stop.waitMin && stop.waitMin > 0 && (
+                            <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                              WAIT {stop.waitMin} MIN
+                            </span>
+                          )}
+                          {!isExcluded && stop.isLate && (
+                            <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
+                              {stop.lateMin} MIN LATE
+                            </span>
+                          )}
+                          {isExcluded && (
+                            <span className="text-[10px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">
+                              SKIPPED
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-xs truncate ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-500'}`}>
+                          {stop.address}
+                        </p>
+                        {!isExcluded && stop.type === 'clean' && stop.durationMin && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {stop.durationMin} min estimated clean
+                          </p>
                         )}
-                        {stop.isLate && (
-                          <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
-                            {stop.lateMin} MIN LATE
-                          </span>
+                        {!isExcluded && stop.type === 'pickup' && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">5 min pickup window</p>
+                        )}
+                        {!isExcluded && i > 0 && stop.legDistanceKm !== undefined && (
+                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                            <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km drive • {Math.round(stop.legDurationMin || 0)} min
+                            {(stop.legDurationMin || 0) > 30 && (
+                              <span className="text-amber-600 font-bold ml-1">(tight)</span>
+                            )}
+                          </p>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 truncate">{stop.address}</p>
-                      {stop.type === 'clean' && stop.durationMin && (
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          {stop.durationMin} min estimated clean
-                        </p>
-                      )}
-                      {stop.type === 'pickup' && (
-                        <p className="text-[10px] text-slate-400 mt-0.5">5 min pickup window</p>
-                      )}
-                      {i > 0 && stop.legDistanceKm !== undefined && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                          <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km drive • {Math.round(stop.legDurationMin || 0)} min
-                          {(stop.legDurationMin || 0) > 30 && (
-                            <span className="text-amber-600 font-bold ml-1">(tight)</span>
-                          )}
-                        </p>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {teamHours.length > 0 && (
