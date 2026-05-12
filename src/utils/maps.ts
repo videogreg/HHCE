@@ -48,16 +48,9 @@ export const calculateRoute = (
     directionsService.route(
       routeRequest,
       (result: any, status: any) => {
-        if (
-          status === 'OK' &&
-          result &&
-          result.routes &&
-          result.routes[0] &&
-          result.routes[0].legs &&
-          result.routes[0].legs[0]
-        ) {
-          // Return the first leg directly so callers can use .distance.value and .duration.value
-          resolve(result.routes[0].legs[0]);
+        if (status === 'OK' && result) {
+          // Return the FULL DirectionsResult so callers can use .routes[0].legs and .routes[0].bounds
+          resolve(result);
         } else {
           console.error('Directions failed:', status);
           resolve(null);
