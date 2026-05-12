@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
-import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink } from 'lucide-react';
+import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus } from 'lucide-react';
 import type { Cleaner, Visit } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 interface RouteStop {
-  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home';
+  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'wait';
   label: string;
   address: string;
   arrivalTime: string;
@@ -24,6 +24,7 @@ interface RouteStop {
   teamMemberId?: string;
   latLng?: any;
   included?: boolean;
+  isCustom?: boolean;
 }
 
 interface TeamMemberHours {
@@ -34,12 +35,14 @@ interface TeamMemberHours {
 }
 
 interface RouteData {
-  driver: Cleaner;
+  driver: Cleaner | null;
   driverVisits: Visit[];
   teamMembersWithAddr: Cleaner[];
   driverHome: any;
   clientLocs: Record<string, any>;
   teamLocs: Record<string, any>;
+  isRelief: boolean;
+  reliefName: string;
 }
 
 export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -55,6 +58,15 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [apiError, setApiError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [routeUrl, setRouteUrl] = useState<string>('');
+  const [showAddFormAt, setShowAddFormAt] = useState<number | null>(null);
+  const [formType, setFormType] = useState<'pickup' | 'dropoff' | 'wait'>('pickup');
+  const [formAddress, setFormAddress] = useState('');
+  const [formDuration, setFormDuration] = useState(15);
+  const [formLabel, setFormLabel] = useState('');
+  const [formTeamMember, setFormTeamMember] = useState('');
+  const [isReliefMode, setIsReliefMode] = useState(false);
+  const [reliefName, setReliefName] = useState('');
+  const [reliefAddress, setReliefAddress] = useState('');
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
@@ -69,7 +81,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     visits.filter(v => v.date === dateStr && !v.cancelled).sort((a, b) => a.startTime.localeCompare(b.startTime)),
   [visits, dateStr]);
 
-  const drivers = useMemo(() => {
+  const regularDrivers = useMemo(() => {
     const driverIds = new Set<string>();
     dayVisits.forEach(v => {
       let ids = v.assignedCleanerIds || [];
@@ -115,6 +127,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; zIndex = 10; }
       else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
       else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
+      else if (stop.type === 'wait') { labelText = 'W'; color = '#0891b2'; zIndex = 9; }
 
       const marker = new (window as any).google.maps.Marker({
         position: stop.latLng,
@@ -174,7 +187,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const latLngs = includedStops.map(s => s.latLng).filter(Boolean);
 
     if (latLngs.length < 2) {
-      setApiError('Not enough stops to build a route. Please check at least 2 stops.');
+      setApiError('Not enough stops to build a route. Please include at least 2 stops.');
       setRouteStops(stops);
       setLoading(false);
       return;
@@ -184,7 +197,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const destination = latLngs[latLngs.length - 1];
     const waypoints = latLngs.slice(1, -1);
 
-    // Build Google Maps directions URL
     const originStr = `${origin.lat()},${origin.lng()}`;
     const destStr = `${destination.lat()},${destination.lng()}`;
     const waypointsStr = waypoints.map((ll: any) => `${ll.lat()},${ll.lng()}`).join('|');
@@ -269,12 +281,10 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       }
     }
 
-    // Calculate total wait time across included cleans only
     const totalWaitMin = includedStops
       .filter(s => s.type === 'clean')
       .reduce((sum, s) => sum + (s.waitMin || 0), 0);
 
-    // Driver door-to-door minutes MINUS wait time
     const firstIncluded = includedStops[0];
     const lastIncluded = includedStops[includedStops.length - 1];
     const startTime = parse(firstIncluded.arrivalTime, 'HH:mm', new Date());
@@ -283,13 +293,11 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
     const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
 
-    // Billable clean time (pure cleaning, no wait)
     const cleanTotalMinutes = includedStops
       .filter(s => s.type === 'clean')
       .reduce((sum, s) => sum + (s.durationMin || 0), 0);
     const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
 
-    // Actual driving minutes from Google Maps legs
     const actualDriveMin = Math.round(actualDriveSeconds / 60);
 
     const memberHours: TeamMemberHours[] = data.teamMembersWithAddr.map(tm => {
@@ -298,7 +306,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       const includedCleans = includedStops.filter(s => s.type === 'clean');
 
       if (!tm.isDriver) {
-        // Non-driver: first clean to last clean
         if (includedCleans.length === 0) {
           return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
         }
@@ -309,7 +316,6 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const minutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
         return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
       } else {
-        // Driver team member: pickup-to-dropoff, or clean-to-clean if skipped
         let startTime: Date;
         let endTime: Date;
 
@@ -340,7 +346,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setCleanHours(cleanTotalHours);
     setActualDriveMinutes(actualDriveMin);
     setTeamHours(memberHours);
-    setRouteStops(stops); // Update with new times on included stops
+    setRouteStops(stops);
 
     if (mapRef.current) {
       if (!mapInstance.current) {
@@ -382,16 +388,185 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     }, 400);
   };
 
+  const insertCustomStop = async (afterIndex: number) => {
+    if (!formAddress.trim()) return;
+
+    const loc = await geocodeAddress(formAddress);
+    if (!loc) {
+      setApiError(`Could not locate: ${formAddress}`);
+      return;
+    }
+
+    const selectedCleaner = cleaners.find(c => c.id === formTeamMember);
+    const autoLabel = formLabel.trim() || (
+      formType === 'pickup' ? `Pick up ${selectedCleaner?.name || ''}` :
+      formType === 'dropoff' ? `Drop off ${selectedCleaner?.name || ''}` :
+      formType === 'wait' ? 'Wait / Task' : 'Stop'
+    );
+
+    const newStop: RouteStop = {
+      type: formType === 'wait' ? 'wait' : formType,
+      label: autoLabel,
+      address: formAddress,
+      arrivalTime: '',
+      durationMin: formType === 'pickup' || formType === 'dropoff' ? 5 : formDuration,
+      latLng: loc,
+      included: true,
+      isCustom: true,
+      teamMemberId: formTeamMember || undefined,
+    };
+
+    const newStops = [...routeStops];
+    newStops.splice(afterIndex + 1, 0, newStop);
+    setRouteStops(newStops);
+    setShowAddFormAt(null);
+    setFormAddress('');
+    setFormLabel('');
+    setFormTeamMember('');
+    setFormDuration(15);
+
+    if (routeDataRef.current) {
+      setLoading(true);
+      setApiError(null);
+      processRoute(routeDataRef.current, newStops);
+    }
+  };
+
+  const addReliefStop = async () => {
+    if (!formAddress.trim()) return;
+
+    const loc = await geocodeAddress(formAddress);
+    if (!loc) {
+      setApiError(`Could not locate: ${formAddress}`);
+      return;
+    }
+
+    const selectedCleaner = cleaners.find(c => c.id === formTeamMember);
+    const autoLabel = formLabel.trim() || (
+      formType === 'pickup' ? `Pick up ${selectedCleaner?.name || ''}` :
+      formType === 'dropoff' ? `Drop off ${selectedCleaner?.name || ''}` :
+      formType === 'wait' ? 'Wait / Task' : 'Stop'
+    );
+
+    const newStop: RouteStop = {
+      type: formType === 'wait' ? 'wait' : formType,
+      label: autoLabel,
+      address: formAddress,
+      arrivalTime: '',
+      durationMin: formType === 'pickup' || formType === 'dropoff' ? 5 : formDuration,
+      latLng: loc,
+      included: true,
+      isCustom: true,
+      teamMemberId: formTeamMember || undefined,
+    };
+
+    const withoutHome = routeStops.filter(s => s.type !== 'home');
+    const homeStop = routeStops.find(s => s.type === 'home');
+    const newStops = homeStop
+      ? [...withoutHome, newStop, homeStop]
+      : [...routeStops, newStop];
+
+    setRouteStops(newStops);
+    setFormAddress('');
+    setFormLabel('');
+    setFormTeamMember('');
+    setFormDuration(15);
+
+    if (routeDataRef.current && newStops.length >= 2) {
+      setLoading(true);
+      setApiError(null);
+      processRoute(routeDataRef.current, newStops);
+    }
+  };
+
+  const addReliefHomeStop = async () => {
+    if (!reliefAddress) return;
+    const loc = await geocodeAddress(reliefAddress);
+    if (!loc) return;
+
+    const homeStop: RouteStop = {
+      type: 'home',
+      label: `Arrive Home — ${reliefName || 'Relief Driver'}`,
+      address: reliefAddress,
+      arrivalTime: '',
+      durationMin: 0,
+      latLng: loc,
+      included: true,
+    };
+
+    const newStops = [...routeStops, homeStop];
+    setRouteStops(newStops);
+
+    if (routeDataRef.current && newStops.length >= 2) {
+      setLoading(true);
+      setApiError(null);
+      processRoute(routeDataRef.current, newStops);
+    }
+  };
+
+  const startReliefRoute = async () => {
+    if (!reliefAddress.trim()) {
+      setApiError('Please enter the relief driver home address.');
+      return;
+    }
+    if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
+
+    setLoading(true);
+    setApiError(null);
+    setCopied(false);
+    setRouteUrl('');
+    setShowAddFormAt(null);
+    setIsReliefMode(true);
+    setSelectedDriver(null);
+
+    await loadGoogleMaps(API_KEY);
+
+    const homeLoc = await geocodeAddress(reliefAddress);
+    if (!homeLoc) {
+      setApiError('Could not locate relief driver home address.');
+      setLoading(false);
+      return;
+    }
+
+    const stops: RouteStop[] = [{
+      type: 'depart',
+      label: `Leave Home — ${reliefName || 'Relief Driver'}`,
+      address: reliefAddress,
+      arrivalTime: '',
+      durationMin: 0,
+      latLng: homeLoc,
+      included: true,
+    }];
+
+    routeDataRef.current = {
+      driver: null,
+      driverVisits: [],
+      teamMembersWithAddr: [],
+      driverHome: homeLoc,
+      clientLocs: {},
+      teamLocs: {},
+      isRelief: true,
+      reliefName: reliefName || 'Relief Driver',
+    };
+
+    setRouteStops(stops);
+    setLoading(false);
+  };
+
   const copyPlan = () => {
-    if (routeStops.length === 0 || !selectedDriver) return;
+    if (routeStops.length === 0) return;
     const includedStops = routeStops.filter(s => s.included !== false);
+    const isRelief = isReliefMode;
 
     const dateLabel = format(selectedDate, 'EEEE, MMM d, yyyy');
+    const driverLabel = isRelief
+      ? (reliefName || 'Relief Driver')
+      : (selectedDriver?.name || 'Driver');
 
     let text = `HHCE ROUTE PLAN\n`;
     text += `${dateLabel}\n`;
-    text += `Driver: ${selectedDriver.name}\n`;
-    if (teamHours.length > 0) {
+    text += `Driver: ${driverLabel}${isRelief ? ' (Relief / Shuttle)' : ''}\n`;
+    if (!isRelief && teamHours.length > 0) {
       const teamList = teamHours.map(t => `${t.name}${t.isDriver ? ' (Driver)' : ' (Cleaner)'}`).join(', ');
       text += `Team: ${teamList}\n`;
     }
@@ -418,6 +593,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
       } else if (stop.type === 'pickup') {
         text += `Pickup window: 5 min\n`;
+      } else if (stop.type === 'wait') {
+        text += `Wait / Task: ${stop.durationMin} min\n`;
       }
 
       if (i > 0 && stop.legDistanceKm !== undefined) {
@@ -438,9 +615,11 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     text += `═══════════════════════════════════════\n`;
     text += `TOTAL DISTANCE: ${totalKm.toFixed(1)} km\n`;
     text += `TOTAL DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door)\n`;
-    text += `BILLABLE CLEAN HOURS: ${cleanHours.toFixed(1)} hrs (revenue)\n`;
+    if (!isRelief) {
+      text += `BILLABLE CLEAN HOURS: ${cleanHours.toFixed(1)} hrs (revenue)\n`;
+    }
     text += `ACTUAL DRIVING MINUTES: ${actualDriveMinutes} min (Google Maps)\n`;
-    if (teamHours.length > 0) {
+    if (!isRelief && teamHours.length > 0) {
       text += `TEAM HOURS:\n`;
       teamHours.forEach(tm => {
         const payType = tm.isDriver ? 'door-to-door' : 'clean-to-clean';
@@ -464,6 +643,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setApiError(null);
     setCopied(false);
     setRouteUrl('');
+    setShowAddFormAt(null);
+    setIsReliefMode(false);
 
     await loadGoogleMaps(API_KEY);
 
@@ -588,10 +769,79 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       driverHome,
       clientLocs,
       teamLocs,
+      isRelief: false,
+      reliefName: '',
     };
 
     await processRoute(routeDataRef.current, stops);
   };
+
+  const renderAddForm = (isRelief: boolean, insertIndex?: number) => (
+    <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2 mb-3">
+      <div className="flex items-center gap-2 mb-1">
+        <Plus size={14} className="text-blue-600" />
+        <span className="text-xs font-bold text-slate-700">Add Stop</span>
+      </div>
+      <select
+        value={formType}
+        onChange={e => setFormType(e.target.value as 'pickup' | 'dropoff' | 'wait')}
+        className="w-full text-xs rounded-lg border-slate-300 p-2 bg-white"
+      >
+        <option value="pickup">Pick up</option>
+        <option value="dropoff">Drop off</option>
+        <option value="wait">Wait / Task</option>
+      </select>
+      <select
+        value={formTeamMember}
+        onChange={e => setFormTeamMember(e.target.value)}
+        className="w-full text-xs rounded-lg border-slate-300 p-2 bg-white"
+      >
+        <option value="">— Select Cleaner (optional) —</option>
+        {cleaners.filter(c => c.active).map(c => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+      <input
+        type="text"
+        placeholder="Address"
+        value={formAddress}
+        onChange={e => setFormAddress(e.target.value)}
+        className="w-full text-xs rounded-lg border-slate-300 p-2"
+      />
+      {formType === 'wait' && (
+        <input
+          type="number"
+          placeholder="Duration (minutes)"
+          value={formDuration}
+          onChange={e => setFormDuration(Number(e.target.value))}
+          className="w-full text-xs rounded-lg border-slate-300 p-2"
+        />
+      )}
+      <input
+        type="text"
+        placeholder="Label (optional)"
+        value={formLabel}
+        onChange={e => setFormLabel(e.target.value)}
+        className="w-full text-xs rounded-lg border-slate-300 p-2"
+      />
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => isRelief ? addReliefStop() : insertCustomStop(insertIndex ?? -1)}
+          className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
+        >
+          Add Stop
+        </button>
+        {!isRelief && (
+          <button
+            onClick={() => setShowAddFormAt(null)}
+            className="px-3 bg-slate-200 text-slate-700 text-xs font-bold py-2 rounded-lg hover:bg-slate-300 active:scale-95 transition-all"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
@@ -609,12 +859,12 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           Drivers on {format(selectedDate, 'EEEE, MMM d')}
         </label>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {drivers.map(d => (
+          {regularDrivers.map(d => (
             <button
               key={d.id}
               onClick={() => buildRoute(d)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedDriver?.id === d.id
+                selectedDriver?.id === d.id && !isReliefMode
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'bg-white text-slate-700 border border-slate-200 hover:border-blue-300'
               }`}
@@ -623,8 +873,54 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               {d.name}
             </button>
           ))}
-          {drivers.length === 0 && (
+          {regularDrivers.length === 0 && (
             <span className="text-sm text-slate-400 font-medium">No drivers scheduled today.</span>
+          )}
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-slate-200">
+          <button
+            onClick={() => {
+              setIsReliefMode(!isReliefMode);
+              if (!isReliefMode) {
+                setSelectedDriver(null);
+                setRouteStops([]);
+                setRouteUrl('');
+              }
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all active:scale-95 ${
+              isReliefMode
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'bg-white text-amber-700 border border-amber-200 hover:border-amber-400'
+            }`}
+          >
+            <Bus size={16} />
+            {isReliefMode ? 'Close Relief Mode' : 'Relief Driver Shuttle'}
+          </button>
+
+          {isReliefMode && (
+            <div className="mt-2 space-y-2">
+              <input
+                type="text"
+                placeholder="Relief driver name"
+                value={reliefName}
+                onChange={e => setReliefName(e.target.value)}
+                className="w-full text-xs rounded-lg border-slate-300 p-2"
+              />
+              <input
+                type="text"
+                placeholder="Relief driver home address"
+                value={reliefAddress}
+                onChange={e => setReliefAddress(e.target.value)}
+                className="w-full text-xs rounded-lg border-slate-300 p-2"
+              />
+              <button
+                onClick={startReliefRoute}
+                className="w-full bg-amber-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-amber-700 active:scale-95 transition-all"
+              >
+                Start Relief Route
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -640,7 +936,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {loading && (
             <div className="p-8 text-center">
               <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-sm text-slate-500 font-medium">Recalculating route...</p>
+              <p className="text-sm text-slate-500 font-medium">Calculating route...</p>
             </div>
           )}
 
@@ -656,12 +952,14 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <p className="text-2xl font-black text-green-700">{driverHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
                   <p className="text-[10px] text-green-600 font-medium mt-0.5">Door to door</p>
                 </div>
-                <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
-                  <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wider">Clean Hours</p>
-                  <p className="text-2xl font-black text-purple-700">{cleanHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
-                  <p className="text-[10px] text-purple-600 font-medium mt-0.5">Billable to clients</p>
-                </div>
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                {!isReliefMode && (
+                  <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
+                    <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wider">Clean Hours</p>
+                    <p className="text-2xl font-black text-purple-700">{cleanHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
+                    <p className="text-[10px] text-purple-600 font-medium mt-0.5">Billable to clients</p>
+                  </div>
+                )}
+                <div className={`p-3 bg-amber-50 rounded-xl border border-amber-100 ${isReliefMode ? 'col-span-2' : ''}`}>
                   <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Actual Drive</p>
                   <p className="text-2xl font-black text-amber-700">{actualDriveMinutes} <span className="text-sm font-bold">min</span></p>
                   <p className="text-[10px] text-amber-600 font-medium mt-0.5">Google Maps directions</p>
@@ -697,89 +995,134 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               <div className="space-y-0 mb-4">
                 {routeStops.map((stop, i) => {
                   const isExcluded = stop.included === false;
+                  const isLast = i === routeStops.length - 1;
                   return (
-                    <div key={i} className={`flex gap-3 relative ${isExcluded ? 'opacity-50' : ''}`}>
-                      {i < routeStops.length - 1 && (
-                        <div className="absolute left-[19px] top-10 bottom-0 w-0.5 bg-slate-200" />
-                      )}
-                      <div className="flex flex-col items-center shrink-0 z-10 pt-1">
-                        <input
-                          type="checkbox"
-                          checked={stop.included !== false}
-                          onChange={() => toggleStop(i)}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        />
-                      </div>
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 z-10 ${
-                        stop.type === 'depart' ? 'bg-blue-100 text-blue-600' :
-                        stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
-                        stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
-                        stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
-                        'bg-slate-100 text-slate-600'
-                      }`}>
-                        {stop.type === 'depart' && <Home size={18} />}
-                        {stop.type === 'pickup' && <Users size={18} />}
-                        {stop.type === 'clean' && <MapPin size={18} />}
-                        {stop.type === 'dropoff' && <Users size={18} />}
-                        {stop.type === 'home' && <Home size={18} />}
-                      </div>
+                    <React.Fragment key={i}>
+                      <div className={`flex gap-3 relative ${isExcluded ? 'opacity-50' : ''}`}>
+                        {i < routeStops.length - 1 && (
+                          <div className="absolute left-[19px] top-10 bottom-0 w-0.5 bg-slate-200" />
+                        )}
+                        <div className="flex flex-col items-center shrink-0 z-10 pt-1">
+                          <input
+                            type="checkbox"
+                            checked={stop.included !== false}
+                            onChange={() => toggleStop(i)}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </div>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 z-10 ${
+                          stop.type === 'depart' ? 'bg-blue-100 text-blue-600' :
+                          stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
+                          stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
+                          stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
+                          stop.type === 'wait' ? 'bg-cyan-100 text-cyan-600' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {stop.type === 'depart' && <Home size={18} />}
+                          {stop.type === 'pickup' && <Users size={18} />}
+                          {stop.type === 'clean' && <MapPin size={18} />}
+                          {stop.type === 'dropoff' && <Users size={18} />}
+                          {stop.type === 'wait' && <Clock size={18} />}
+                          {stop.type === 'home' && <Home size={18} />}
+                        </div>
 
-                      <div className="pb-5 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                          <span className={`text-sm font-bold ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                            {stop.label}
-                          </span>
-                          {!isExcluded && (
-                            <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
-                              stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
-                            }`}>
-                              <Clock size={10} className="inline mr-0.5" />
-                              {stop.arrivalTime}
-                              {stop.departTime && ` – ${stop.departTime}`}
+                        <div className="pb-5 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                            <span className={`text-sm font-bold ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                              {stop.label}
                             </span>
+                            {!isExcluded && (
+                              <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
+                                stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
+                              }`}>
+                                <Clock size={10} className="inline mr-0.5" />
+                                {stop.arrivalTime}
+                                {stop.departTime && ` – ${stop.departTime}`}
+                              </span>
+                            )}
+                            {!isExcluded && stop.waitMin && stop.waitMin > 0 && (
+                              <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                WAIT {stop.waitMin} MIN
+                              </span>
+                            )}
+                            {!isExcluded && stop.isLate && (
+                              <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
+                                {stop.lateMin} MIN LATE
+                              </span>
+                            )}
+                            {isExcluded && (
+                              <span className="text-[10px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">
+                                SKIPPED
+                              </span>
+                            )}
+                            {stop.isCustom && !isExcluded && (
+                              <span className="text-[10px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
+                                CUSTOM
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-xs truncate ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-500'}`}>
+                            {stop.address}
+                          </p>
+                          {!isExcluded && stop.type === 'clean' && stop.durationMin && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {stop.durationMin} min estimated clean
+                            </p>
                           )}
-                          {!isExcluded && stop.waitMin && stop.waitMin > 0 && (
-                            <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                              WAIT {stop.waitMin} MIN
-                            </span>
+                          {!isExcluded && stop.type === 'pickup' && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">5 min pickup window</p>
                           )}
-                          {!isExcluded && stop.isLate && (
-                            <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
-                              {stop.lateMin} MIN LATE
-                            </span>
+                          {!isExcluded && stop.type === 'wait' && stop.durationMin && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {stop.durationMin} min wait / task
+                            </p>
                           )}
-                          {isExcluded && (
-                            <span className="text-[10px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">
-                              SKIPPED
-                            </span>
+                          {!isExcluded && i > 0 && stop.legDistanceKm !== undefined && (
+                            <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                              <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km drive • {Math.round(stop.legDurationMin || 0)} min
+                              {(stop.legDurationMin || 0) > 30 && (
+                                <span className="text-amber-600 font-bold ml-1">(tight)</span>
+                              )}
+                            </p>
                           )}
                         </div>
-                        <p className={`text-xs truncate ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-500'}`}>
-                          {stop.address}
-                        </p>
-                        {!isExcluded && stop.type === 'clean' && stop.durationMin && (
-                          <p className="text-[10px] text-slate-400 mt-0.5">
-                            {stop.durationMin} min estimated clean
-                          </p>
-                        )}
-                        {!isExcluded && stop.type === 'pickup' && (
-                          <p className="text-[10px] text-slate-400 mt-0.5">5 min pickup window</p>
-                        )}
-                        {!isExcluded && i > 0 && stop.legDistanceKm !== undefined && (
-                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                            <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km drive • {Math.round(stop.legDurationMin || 0)} min
-                            {(stop.legDurationMin || 0) > 30 && (
-                              <span className="text-amber-600 font-bold ml-1">(tight)</span>
-                            )}
-                          </p>
-                        )}
                       </div>
-                    </div>
+
+                      {!isLast && showAddFormAt === i && (
+                        <div className="pl-14 py-1">
+                          {renderAddForm(false, i)}
+                        </div>
+                      )}
+
+                      {!isLast && (
+                        <div className="pl-14 py-1">
+                          <button
+                            onClick={() => setShowAddFormAt(showAddFormAt === i ? null : i)}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+                          >
+                            <Plus size={12} /> Add Stop
+                          </button>
+                        </div>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </div>
 
-              {teamHours.length > 0 && (
+              {/* Relief driver add form at bottom */}
+              {isReliefMode && (
+                <div className="mt-2 space-y-2">
+                  {renderAddForm(true)}
+                  <button
+                    onClick={addReliefHomeStop}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-sm bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 active:scale-95 transition-all"
+                  >
+                    <Home size={14} /> Add Home / End Route
+                  </button>
+                </div>
+              )}
+
+              {!isReliefMode && teamHours.length > 0 && (
                 <div className="border-t border-slate-200 pt-4">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1">
                     <Users size={10} /> Team Member Hours
@@ -809,10 +1152,18 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             </div>
           )}
 
-          {!loading && !selectedDriver && !apiError && (
+          {!loading && !selectedDriver && !isReliefMode && !apiError && (
             <div className="p-8 text-center">
               <Car className="mx-auto mb-3 text-slate-300" size={40} />
               <p className="text-sm text-slate-500 font-medium">Select a driver to calculate their route.</p>
+              <p className="text-xs text-slate-400 mt-1">Use Relief Driver Shuttle for non-cleaning shuttle runs.</p>
+            </div>
+          )}
+
+          {!loading && isReliefMode && routeStops.length === 0 && !apiError && (
+            <div className="p-8 text-center">
+              <Bus className="mx-auto mb-3 text-amber-300" size={40} />
+              <p className="text-sm text-slate-500 font-medium">Enter relief driver info and click Start Relief Route.</p>
             </div>
           )}
         </div>
