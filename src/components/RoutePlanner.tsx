@@ -959,7 +959,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       setTeamHours([]);
       setRouteUrl('');
       clearMarkers();
-      if (directionsRenderer.current) directionsRenderer.current.setMap(null);
+      if (directionsRenderer.current) {
+        directionsRenderer.current.setMap(null);
+        directionsRenderer.current = null;
+      }
     }
   };
 
@@ -1011,7 +1014,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
               setApiError(null);
               setRouteUrl('');
               clearMarkers();
-              if (directionsRenderer.current) directionsRenderer.current.setMap(null);
+              if (directionsRenderer.current) {
+                directionsRenderer.current.setMap(null);
+                directionsRenderer.current = null;
+              }
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
               reliefMode
