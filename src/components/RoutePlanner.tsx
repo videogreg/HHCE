@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
-import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, CircleDot } from 'lucide-react';
+import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, CircleDot, RotateCcw, Save } from 'lucide-react';
 import type { Cleaner, Visit } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -25,6 +25,7 @@ interface RouteStop {
   latLng?: any;
   included?: boolean;
   isCustom?: boolean;
+  targetTime?: string; // HH:mm - backtime constraint
 }
 
 interface TeamMemberHours {
@@ -45,6 +46,42 @@ interface RouteData {
   reliefName: string;
 }
 
+const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
+
+const getSavedRelief = (date: string): RouteStop[] | null => {
+  try {
+    const raw = localStorage.getItem(RELIEF_STORAGE_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[date] || null;
+  } catch {
+    return null;
+  }
+};
+
+const saveRelief = (date: string, stops: RouteStop[]) => {
+  try {
+    const raw = localStorage.getItem(RELIEF_STORAGE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[date] = stops;
+    localStorage.setItem(RELIEF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const clearRelief = (date: string) => {
+  try {
+    const raw = localStorage.getItem(RELIEF_STORAGE_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    delete all[date];
+    localStorage.setItem(RELIEF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
 export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { visits, cleaners, clients, teams, selectedDate } = useAppContext();
   const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(null);
@@ -64,9 +101,11 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [formDuration, setFormDuration] = useState(15);
   const [formLabel, setFormLabel] = useState('');
   const [formTeamMember, setFormTeamMember] = useState('');
+  const [formTargetTime, setFormTargetTime] = useState('');
   const [isReliefMode, setIsReliefMode] = useState(false);
   const [reliefName, setReliefName] = useState('');
   const [reliefAddress, setReliefAddress] = useState('');
+  const [savedNotice, setSavedNotice] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
@@ -96,6 +135,58 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     });
     return cleaners.filter(c => driverIds.has(c.id));
   }, [dayVisits, cleaners, teams]);
+
+  // Restore saved relief route when date changes
+  useEffect(() => {
+    const saved = getSavedRelief(dateStr);
+    if (saved && saved.length > 0) {
+      setIsReliefMode(true);
+      setSelectedDriver(null);
+      setRouteStops(saved);
+      // Re-geocode and recalculate
+      setTimeout(() => {
+        if (saved[0]?.address) setReliefAddress(saved[0].address);
+        if (saved[0]?.label) {
+          const name = saved[0].label.replace('Leave Home — ', '');
+          setReliefName(name);
+        }
+        // We need to re-run processRoute but latLng objects aren't serializable.
+        // So we'll rebuild from addresses.
+        rebuildSavedRelief(saved);
+      }, 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateStr]);
+
+  const rebuildSavedRelief = async (saved: RouteStop[]) => {
+    if (!API_KEY) return;
+    setLoading(true);
+    await loadGoogleMaps(API_KEY);
+
+    const stops: RouteStop[] = [];
+    for (const s of saved) {
+      if (s.latLng) {
+        stops.push({ ...s, latLng: s.latLng });
+      } else if (s.address) {
+        const loc = await geocodeAddress(s.address);
+        stops.push({ ...s, latLng: loc });
+      }
+    }
+
+    const homeLoc = stops[0]?.latLng;
+    routeDataRef.current = {
+      driver: null,
+      driverVisits: [],
+      teamMembersWithAddr: [],
+      driverHome: homeLoc,
+      clientLocs: {},
+      teamLocs: {},
+      isRelief: true,
+      reliefName: reliefName || 'Relief Driver',
+    };
+
+    await processRoute(routeDataRef.current, stops);
+  };
 
   useEffect(() => {
     if (API_KEY) loadGoogleMaps(API_KEY).catch(() => setApiError('Failed to load Google Maps'));
@@ -159,11 +250,12 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           <div style="font-size: 12px; color: #334155; margin-bottom: 5px; word-wrap: break-word; max-width: 200px;">
             ${stop.address}
           </div>
+          ${stop.targetTime ? `<div style="font-size: 11px; color: #2563eb; font-weight: 600;">🎯 Target: ${stop.targetTime}</div>` : ''}
           ${stop.arrivalTime ? `<div style="font-size: 11px; color: #475569;"><strong>Arrive:</strong> ${stop.arrivalTime}</div>` : ''}
           ${stop.departTime ? `<div style="font-size: 11px; color: #475569;"><strong>Depart:</strong> ${stop.departTime}</div>` : ''}
           ${stop.durationMin ? `<div style="font-size: 11px; color: #475569;"><strong>Duration:</strong> ${stop.durationMin} min</div>` : ''}
           ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (possible break)</div>` : ''}
-          ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">⚠️ Late ${stop.lateMin} min past window</div>` : ''}
+          ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">⚠️ Late ${stop.lateMin} min past target</div>` : ''}
           ${(i > 0 && stop.legDistanceKm !== undefined) ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid #e2e8f0; padding-top: 4px;">🚗 ${stop.legDistanceKm.toFixed(1)} km • ${Math.round(stop.legDurationMin || 0)} min drive</div>` : ''}
         </div>
       `;
@@ -219,24 +311,60 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     let totalDist = 0;
     let actualDriveSeconds = 0;
 
-    const firstCleanIdx = includedStops.findIndex(s => s.type === 'clean');
-    const firstCleanVisit = firstCleanIdx >= 0
-      ? data.driverVisits.find(dv => dv.id === includedStops[firstCleanIdx].visitId)
-      : null;
+    // Store leg durations for backtiming
+    const legDurationsMin: number[] = legs.map((leg: any) => Math.ceil(leg.duration.value / 60));
+
+    // --- BACKTIMING LOGIC ---
+    // Find if any stop has a targetTime constraint
+    const constrainedIndices = includedStops
+      .map((s, idx) => ({ idx, target: s.targetTime }))
+      .filter(x => x.target);
 
     let departTime: Date;
-    if (firstCleanVisit) {
-      departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
-      for (let i = firstCleanIdx; i > 0; i--) {
-        const leg = legs[i - 1];
-        departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
-        const prevStop = includedStops[i - 1];
-        if (prevStop.durationMin) {
-          departTime = addMinutes(departTime, -prevStop.durationMin);
+
+    if (constrainedIndices.length > 0) {
+      // For each constraint, calculate required home departure
+      let earliestHomeDep = new Date(8640000000000000); // max date
+
+      for (const { idx, target } of constrainedIndices) {
+        const targetDate = parse(target!, 'HH:mm', new Date());
+        // Work backwards from constraint to home
+        let neededArrivalAtPrev = targetDate;
+        for (let i = idx; i > 0; i--) {
+          // Subtract duration at previous stop
+          const prevStop = includedStops[i - 1];
+          const prevDuration = prevStop.durationMin || 0;
+          neededArrivalAtPrev = addMinutes(neededArrivalAtPrev, -prevDuration);
+          // Subtract drive time from prev to current
+          const driveMin = legDurationsMin[i - 1] || 0;
+          neededArrivalAtPrev = addMinutes(neededArrivalAtPrev, -driveMin);
+        }
+        if (neededArrivalAtPrev < earliestHomeDep) {
+          earliestHomeDep = neededArrivalAtPrev;
         }
       }
+
+      departTime = earliestHomeDep;
     } else {
-      departTime = parse('08:00', 'HH:mm', new Date());
+      // No constraints - default to 08:00 or first clean time
+      const firstCleanIdx = includedStops.findIndex(s => s.type === 'clean');
+      const firstCleanVisit = firstCleanIdx >= 0
+        ? data.driverVisits.find(dv => dv.id === includedStops[firstCleanIdx].visitId)
+        : null;
+
+      if (firstCleanVisit) {
+        departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
+        for (let i = firstCleanIdx; i > 0; i--) {
+          const leg = legs[i - 1];
+          departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
+          const prevStop = includedStops[i - 1];
+          if (prevStop.durationMin) {
+            departTime = addMinutes(departTime, -prevStop.durationMin);
+          }
+        }
+      } else {
+        departTime = parse('08:00', 'HH:mm', new Date());
+      }
     }
 
     let runningTime = new Date(departTime.getTime());
@@ -252,6 +380,15 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       includedStops[i].legDistanceKm = leg.distance.value / 1000;
       includedStops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
       includedStops[i].arrivalTime = format(runningTime, 'HH:mm');
+
+      // Check against targetTime
+      if (includedStops[i].targetTime) {
+        const target = parse(includedStops[i].targetTime!, 'HH:mm', new Date());
+        if (isAfter(runningTime, addMinutes(target, 15))) {
+          includedStops[i].isLate = true;
+          includedStops[i].lateMin = Math.ceil((runningTime.getTime() - target.getTime()) / 60000);
+        }
+      }
 
       if (includedStops[i].type === 'clean') {
         const v = data.driverVisits.find(dv => dv.id === includedStops[i].visitId);
@@ -417,6 +554,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       included: true,
       isCustom: true,
       teamMemberId: formTeamMember || undefined,
+      targetTime: formTargetTime || undefined,
     };
 
     const newStops = [...routeStops];
@@ -427,6 +565,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setFormLabel('');
     setFormTeamMember('');
     setFormDuration(15);
+    setFormTargetTime('');
 
     if (routeDataRef.current) {
       setLoading(true);
@@ -462,6 +601,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       included: true,
       isCustom: true,
       teamMemberId: formTeamMember || undefined,
+      targetTime: formTargetTime || undefined,
     };
 
     const withoutHome = routeStops.filter(s => s.type !== 'home');
@@ -475,6 +615,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setFormLabel('');
     setFormTeamMember('');
     setFormDuration(15);
+    setFormTargetTime('');
 
     if (routeDataRef.current && newStops.length >= 2) {
       setLoading(true);
@@ -506,6 +647,28 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       setApiError(null);
       processRoute(routeDataRef.current, newStops);
     }
+  };
+
+  const cancelReliefRoute = () => {
+    setRouteStops([]);
+    setRouteUrl('');
+    setTotalKm(0);
+    setDriverHours(0);
+    setActualDriveMinutes(0);
+    setApiError(null);
+    clearRelief(dateStr);
+  };
+
+  const saveCurrentReliefRoute = () => {
+    if (routeStops.length === 0) return;
+    // Strip latLng before saving (not serializable)
+    const serializable = routeStops.map(s => {
+      const { latLng, ...rest } = s;
+      return rest;
+    });
+    saveRelief(dateStr, serializable);
+    setSavedNotice(true);
+    setTimeout(() => setSavedNotice(false), 2000);
   };
 
   const startReliefRoute = async () => {
@@ -579,6 +742,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     includedStops.forEach((stop, i) => {
       text += `${stop.arrivalTime || '----'} — ${stop.label}\n`;
       text += `${stop.address}\n`;
+      if (stop.targetTime) {
+        text += `Target: ${stop.targetTime}\n`;
+      }
 
       if (stop.type === 'clean' && stop.visitId) {
         const v = dayVisits.find(dv => dv.id === stop.visitId);
@@ -831,6 +997,14 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         onChange={e => setFormAddress(e.target.value)}
         className="w-full text-xs rounded-lg border-slate-300 p-2"
       />
+      <input
+        type="time"
+        placeholder="Must arrive by (HH:mm)"
+        value={formTargetTime}
+        onChange={e => setFormTargetTime(e.target.value)}
+        className="w-full text-xs rounded-lg border-slate-300 p-2"
+      />
+      <p className="text-[10px] text-slate-400 -mt-1">Target time for backtiming (optional)</p>
       {formType !== 'pickup' && formType !== 'dropoff' && (
         <input
           type="number"
@@ -956,6 +1130,12 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             </div>
           )}
 
+          {savedNotice && (
+            <div className="m-4 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-700 font-bold flex items-center gap-2">
+              <Check size={14} /> Route saved for {format(selectedDate, 'MMM d')}
+            </div>
+          )}
+
           {loading && (
             <div className="p-8 text-center">
               <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
@@ -1014,6 +1194,23 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   </a>
                 )}
               </div>
+
+              {isReliefMode && routeStops.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <button
+                    onClick={saveCurrentReliefRoute}
+                    className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 active:scale-95 transition-all"
+                  >
+                    <Save size={14} /> Save for {format(selectedDate, 'MMM d')}
+                  </button>
+                  <button
+                    onClick={cancelReliefRoute}
+                    className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-sm bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 active:scale-95 transition-all"
+                  >
+                    <RotateCcw size={14} /> Cancel Route
+                  </button>
+                </div>
+              )}
 
               <div className="space-y-0 mb-4">
                 {routeStops.map((stop, i) => {
@@ -1083,6 +1280,11 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                             {stop.isCustom && !isExcluded && (
                               <span className="text-[10px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
                                 CUSTOM
+                              </span>
+                            )}
+                            {stop.targetTime && !isExcluded && (
+                              <span className="text-[10px] font-black bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">
+                                🎯 {stop.targetTime}
                               </span>
                             )}
                           </div>
