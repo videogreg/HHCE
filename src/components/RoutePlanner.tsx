@@ -186,7 +186,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDriver]);
 
-  // Auto-load relief route if opened from ScheduleBoard with initialReliefDate
+  // Auto-load relief driver if opened from ScheduleBoard with initialReliefDate
   useEffect(() => {
     if (initialReliefDate) {
       setReliefMode(true);
@@ -934,7 +934,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
       // Subtract previous stop's duration
       if (stops[i - 1].durationMin) {
-        departTime = addMinutes(departTime, -stops[i - 1].durationMin);
+        departTime = addMinutes(departTime, -(stops[i - 1].durationMin || 0));
       }
     }
 
@@ -955,7 +955,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
       // Check against target startTime for work stops
       if (stops[i].targetTime && stops[i].type !== 'home') {
-        const targetTime = parse(stops[i].targetTime, 'HH:mm', new Date());
+        const targetTime = parse(stops[i].targetTime || '08:00', 'HH:mm', new Date());
         const earliestStart = addMinutes(targetTime, -15);
         const latestStart = addMinutes(targetTime, 15);
 
@@ -1037,7 +1037,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   };
 
   const handleClearRelief = () => {
-    if (confirm('Delete saved relief route for this day?')) {
+    if (confirm('Delete saved relief driver for this day?')) {
       clearRelief(dateStr);
       setRouteStops([]);
       setReliefStops([]);
