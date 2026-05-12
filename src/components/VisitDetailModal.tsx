@@ -1,6 +1,5 @@
 import React from 'react';
-import { useAppContext } from '../context/AppContext';
-import { X, Clock, MapPin, Phone, Mail, Home, Calendar, FileText, DollarSign, User, Ban, AlertCircle, AlertTriangle } from 'lucide-react';
+import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, DollarSign, User, AlertCircle, AlertTriangle } from 'lucide-react';
 import type { Visit, Cleaner, Client } from '../types';
 
 interface VisitDetailModalProps {
@@ -16,7 +15,7 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
   visit,
   cleaners,
   clients,
-  teams,
+  teams: _teams,
   violations,
   onClose,
 }) => {

@@ -1,8 +1,14 @@
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
-import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, CircleDot, RotateCcw, Save } from 'lucide-react';
+import { Car, X, AlertTriangle, Navigation, Copy, Check, Plus, Bus, CircleDot, RotateCcw, Save } from 'lucide-react';
 import type { Cleaner, Visit } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -33,17 +39,6 @@ interface TeamMemberHours {
   minutes: number;
   hours: number;
   isDriver: boolean;
-}
-
-interface RouteData {
-  driver: Cleaner | null;
-  driverVisits: Visit[];
-  teamMembersWithAddr: Cleaner[];
-  driverHome: any;
-  clientLocs: Record<string, any>;
-  teamLocs: Record<string, any>;
-  isRelief: boolean;
-  reliefName: string;
 }
 
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
@@ -241,19 +236,21 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       for (const tm of teamMembersWithAddr) {
         if (teamLocs[tm.id] && driverHome) {
           const leg = await calculateRoute(driverHome, teamLocs[tm.id]);
-          const travelMin = Math.ceil((leg.duration.value || 0) / 60);
-          currentTime = addMinutes(currentTime, travelMin);
-          stops.push({
-            type: 'pickup',
-            label: `Pickup ${tm.name}`,
-            address: tm.address || '',
-            arrivalTime: format(currentTime, 'h:mm a'),
-            legDistanceKm: Math.round((leg.distance.value || 0) / 100) / 10,
-            legDurationMin: travelMin,
-            latLng: teamLocs[tm.id],
-            teamMemberId: tm.id,
-            included: true,
-          });
+          if (leg) {
+            const travelMin = Math.ceil((leg.duration.value || 0) / 60);
+            currentTime = addMinutes(currentTime, travelMin);
+            stops.push({
+              type: 'pickup',
+              label: `Pickup ${tm.name}`,
+              address: tm.address || '',
+              arrivalTime: format(currentTime, 'h:mm a'),
+              legDistanceKm: Math.round((leg.distance.value || 0) / 100) / 10,
+              legDurationMin: travelMin,
+              latLng: teamLocs[tm.id],
+              teamMemberId: tm.id,
+              included: true,
+            });
+          }
         }
       }
 
@@ -262,12 +259,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         const visit = driverVisits[i];
         const client = clients.find(c => c.id === visit.clientId);
         const clientLoc = client ? clientLocs[client.id] : null;
-        const prevLoc = i === 0 ? (teamMembersWithAddr.length > 0 ? teamLocs[teamMembersWithAddr[teamMembersWithAddr.length - 1].id] : driverHome) : clientLocs[clients.find(c => c.id === driverVisits[i - 1].clientId)?.id || ''];
+        const prevLoc = i === 0
+          ? (teamMembersWithAddr.length > 0 ? teamLocs[teamMembersWithAddr[teamMembersWithAddr.length - 1].id] : driverHome)
+          : clientLocs[clients.find(c => c.id === driverVisits[i - 1].clientId)?.id || ''];
 
         if (clientLoc && prevLoc) {
           const leg = await calculateRoute(prevLoc, clientLoc);
-          const travelMin = Math.ceil((leg.duration.value || 0) / 60);
-          currentTime = addMinutes(currentTime, travelMin);
+          if (leg) {
+            const travelMin = Math.ceil((leg.duration.value || 0) / 60);
+            currentTime = addMinutes(currentTime, travelMin);
+          }
         }
 
         const targetTime = parse(visit.startTime, 'HH:mm', selectedDate);
@@ -279,6 +280,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         const duration = visit.durationMinutes || 60;
         const departTime = addMinutes(currentTime, duration);
 
+        let legDistanceKm: number | undefined;
+        let legDurationMin: number | undefined;
+        if (clientLoc && prevLoc) {
+          const leg = await calculateRoute(prevLoc, clientLoc);
+          if (leg) {
+            legDistanceKm = Math.round((leg.distance.value || 0) / 100) / 10;
+            legDurationMin = Math.ceil((leg.duration.value || 0) / 60);
+          }
+        }
+
         stops.push({
           type: 'clean',
           label: `${client?.name || visit.clientName} — ${visit.jobType || 'Clean'}`,
@@ -286,8 +297,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           arrivalTime: format(currentTime, 'h:mm a'),
           departTime: format(departTime, 'h:mm a'),
           durationMin: duration,
-          legDistanceKm: clientLoc && prevLoc ? Math.round((await calculateRoute(prevLoc, clientLoc)).distance.value / 100) / 10 : undefined,
-          legDurationMin: clientLoc && prevLoc ? Math.ceil((await calculateRoute(prevLoc, clientLoc)).duration.value / 60) : undefined,
+          legDistanceKm,
+          legDurationMin,
           isLate,
           lateMin: lateMin > 0 ? lateMin : undefined,
           waitMin: waitMin > 0 ? waitMin : undefined,
@@ -307,18 +318,20 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       const lastLoc = lastClient ? clientLocs[lastClient.id] : null;
       if (lastLoc && driverHome) {
         const leg = await calculateRoute(lastLoc, driverHome);
-        const travelMin = Math.ceil((leg.duration.value || 0) / 60);
-        currentTime = addMinutes(currentTime, travelMin);
-        stops.push({
-          type: 'home',
-          label: 'Return Home',
-          address: driver?.address || 'Home',
-          arrivalTime: format(currentTime, 'h:mm a'),
-          legDistanceKm: Math.round((leg.distance.value || 0) / 100) / 10,
-          legDurationMin: travelMin,
-          latLng: driverHome,
-          included: true,
-        });
+        if (leg) {
+          const travelMin = Math.ceil((leg.duration.value || 0) / 60);
+          currentTime = addMinutes(currentTime, travelMin);
+          stops.push({
+            type: 'home',
+            label: 'Return Home',
+            address: driver?.address || 'Home',
+            arrivalTime: format(currentTime, 'h:mm a'),
+            legDistanceKm: Math.round((leg.distance.value || 0) / 100) / 10,
+            legDurationMin: travelMin,
+            latLng: driverHome,
+            included: true,
+          });
+        }
       }
 
       // Calculate team hours

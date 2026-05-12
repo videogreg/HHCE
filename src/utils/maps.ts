@@ -32,18 +32,21 @@ export const geocodeAddress = (address: string): Promise<any | null> => {
 export const calculateRoute = (
   origin: any,
   destination: any,
-  waypoints: any[]
+  waypoints?: any[]
 ): Promise<any | null> => {
   return new Promise((resolve) => {
     const directionsService = new (window as any).google.maps.DirectionsService();
+    const routeRequest: any = {
+      origin,
+      destination,
+      optimizeWaypoints: false,
+      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+    };
+    if (waypoints && waypoints.length > 0) {
+      routeRequest.waypoints = waypoints.map((loc: any) => ({ location: loc, stopover: true }));
+    }
     directionsService.route(
-      {
-        origin,
-        destination,
-        waypoints: waypoints.map((loc: any) => ({ location: loc, stopover: true })),
-        optimizeWaypoints: false,
-        travelMode: (window as any).google.maps.TravelMode.DRIVING,
-      },
+      routeRequest,
       (result: any, status: any) => {
         if (status === 'OK' && result) {
           resolve(result);

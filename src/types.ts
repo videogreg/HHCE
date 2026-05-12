@@ -9,8 +9,8 @@ export interface Cleaner {
   cannotWorkWith: string[]; // Cleaner IDs
   active: boolean;
   phone?: string;
-  email?: string;      // NEW
-  address?: string;    // NEW
+  email?: string;
+  address?: string;
   notes?: string;
   color?: string; // hex color for UI
 }
@@ -27,6 +27,7 @@ export interface Client {
   avoidCleaners: string[];     // Cleaner IDs
   durationMinutes: number; // Default clean duration
   phone?: string;
+  email?: string;
   notes?: string;
 }
 
@@ -43,6 +44,9 @@ export interface Visit {
   assignedCleanerIds?: string[]; // Optional direct assignment override
   cancelled: boolean;
   teamName?: string;
+  jobType?: string;
+  price?: number;
+  notes?: string;
   dismissedViolations?: string[]; // IDs of alerts the user has dismissed for this visit
 }
 
