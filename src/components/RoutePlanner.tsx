@@ -986,16 +986,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const included = stops.filter(s => s.included !== false);
     const totalDriveMin = Math.round(actualDriveSeconds / 60);
     const workMins = included.filter(s => s.type !== 'depart' && s.type !== 'home').reduce((sum, s) => sum + (s.durationMin || 0), 0);
-    const waitMins = included.filter(s => s.waitMin && s.waitMin > 0).reduce((sum, s) => sum + (s.waitMin || 0), 0);
 
-    // Driver hours: home departure to home return minus wait time
+    // Driver hours: total elapsed from leaving home to arriving back home
     const firstStop = included[0];
     const lastStop = included[included.length - 1];
     let driverHrs = 0;
-    if (firstStop?.arrivalTime && lastStop?.departTime) {
+    if (firstStop?.arrivalTime && (lastStop?.departTime || lastStop?.arrivalTime)) {
       const start = parse(firstStop.arrivalTime, 'HH:mm', new Date());
-      const end = parse(lastStop.departTime, 'HH:mm', new Date());
-      const totalMin = Math.round((end.getTime() - start.getTime()) / 60000) - waitMins;
+      const end = parse(lastStop.departTime || lastStop.arrivalTime, 'HH:mm', new Date());
+      const totalMin = Math.round((end.getTime() - start.getTime()) / 60000);
       driverHrs = Math.round((totalMin / 60) * 10) / 10;
     }
 
