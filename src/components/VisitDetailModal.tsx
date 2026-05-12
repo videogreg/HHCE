@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, DollarSign, User, AlertCircle, AlertTriangle } from 'lucide-react';
+import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, User, AlertCircle, AlertTriangle } from 'lucide-react';
 import type { Visit, Cleaner, Client } from '../types';
 
 interface VisitDetailModalProps {
