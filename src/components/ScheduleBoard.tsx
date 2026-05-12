@@ -176,7 +176,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     }
   }, [dateStr, routeRefreshKey]);
 
-  const hasDriverRoutes = regularDrivers.length > 0 || reliefRouteInfo !== null;
 
   return (
     <div className="space-y-4 animate-slide-up">
