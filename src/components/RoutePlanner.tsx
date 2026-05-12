@@ -9,7 +9,7 @@ import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
 import { Car, X, AlertTriangle, Navigation, Copy, Check, Plus, Bus, CircleDot, RotateCcw, Save } from 'lucide-react';
-import type { Cleaner, Visit } from '../types';
+import type { Cleaner } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
