@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
-import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus } from 'lucide-react';
+import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, CircleDot } from 'lucide-react';
 import type { Cleaner, Visit } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 interface RouteStop {
-  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'wait';
+  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'wait' | 'other';
   label: string;
   address: string;
   arrivalTime: string;
@@ -59,7 +59,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [copied, setCopied] = useState(false);
   const [routeUrl, setRouteUrl] = useState<string>('');
   const [showAddFormAt, setShowAddFormAt] = useState<number | null>(null);
-  const [formType, setFormType] = useState<'pickup' | 'dropoff' | 'wait'>('pickup');
+  const [formType, setFormType] = useState<'pickup' | 'dropoff' | 'wait' | 'other'>('pickup');
   const [formAddress, setFormAddress] = useState('');
   const [formDuration, setFormDuration] = useState(15);
   const [formLabel, setFormLabel] = useState('');
@@ -113,6 +113,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     let cleanCount = 0;
     let pickupCount = 0;
     let dropoffCount = 0;
+    let otherCount = 0;
     let activeInfoWindow: any = null;
 
     stops.forEach((stop, i) => {
@@ -128,6 +129,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
       else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
       else if (stop.type === 'wait') { labelText = 'W'; color = '#0891b2'; zIndex = 9; }
+      else if (stop.type === 'other') { labelText = `O${++otherCount}`; color = '#be185d'; zIndex = 9; }
 
       const marker = new (window as any).google.maps.Marker({
         position: stop.latLng,
@@ -401,11 +403,12 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const autoLabel = formLabel.trim() || (
       formType === 'pickup' ? `Pick up ${selectedCleaner?.name || ''}` :
       formType === 'dropoff' ? `Drop off ${selectedCleaner?.name || ''}` :
-      formType === 'wait' ? 'Wait / Task' : 'Stop'
+      formType === 'wait' ? 'Wait / Task' :
+      formType === 'other' ? 'Other Stop' : 'Stop'
     );
 
     const newStop: RouteStop = {
-      type: formType === 'wait' ? 'wait' : formType,
+      type: formType === 'wait' ? 'wait' : formType === 'other' ? 'other' : formType,
       label: autoLabel,
       address: formAddress,
       arrivalTime: '',
@@ -445,11 +448,12 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const autoLabel = formLabel.trim() || (
       formType === 'pickup' ? `Pick up ${selectedCleaner?.name || ''}` :
       formType === 'dropoff' ? `Drop off ${selectedCleaner?.name || ''}` :
-      formType === 'wait' ? 'Wait / Task' : 'Stop'
+      formType === 'wait' ? 'Wait / Task' :
+      formType === 'other' ? 'Other Stop' : 'Stop'
     );
 
     const newStop: RouteStop = {
-      type: formType === 'wait' ? 'wait' : formType,
+      type: formType === 'wait' ? 'wait' : formType === 'other' ? 'other' : formType,
       label: autoLabel,
       address: formAddress,
       arrivalTime: '',
@@ -595,6 +599,8 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         text += `Pickup window: 5 min\n`;
       } else if (stop.type === 'wait') {
         text += `Wait / Task: ${stop.durationMin} min\n`;
+      } else if (stop.type === 'other') {
+        text += `Stop duration: ${stop.durationMin} min\n`;
       }
 
       if (i > 0 && stop.legDistanceKm !== undefined) {
@@ -776,6 +782,22 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     await processRoute(routeDataRef.current, stops);
   };
 
+  const handleTeamMemberChange = (value: string) => {
+    setFormTeamMember(value);
+    const cleaner = cleaners.find(c => c.id === value);
+    if (cleaner && cleaner.address && (formType === 'pickup' || formType === 'dropoff')) {
+      setFormAddress(cleaner.address);
+    }
+  };
+
+  const handleFormTypeChange = (value: 'pickup' | 'dropoff' | 'wait' | 'other') => {
+    setFormType(value);
+    const cleaner = cleaners.find(c => c.id === formTeamMember);
+    if (cleaner && cleaner.address && (value === 'pickup' || value === 'dropoff')) {
+      setFormAddress(cleaner.address);
+    }
+  };
+
   const renderAddForm = (isRelief: boolean, insertIndex?: number) => (
     <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2 mb-3">
       <div className="flex items-center gap-2 mb-1">
@@ -784,16 +806,17 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       </div>
       <select
         value={formType}
-        onChange={e => setFormType(e.target.value as 'pickup' | 'dropoff' | 'wait')}
+        onChange={e => handleFormTypeChange(e.target.value as 'pickup' | 'dropoff' | 'wait' | 'other')}
         className="w-full text-xs rounded-lg border-slate-300 p-2 bg-white"
       >
         <option value="pickup">Pick up</option>
         <option value="dropoff">Drop off</option>
         <option value="wait">Wait / Task</option>
+        <option value="other">Other Stop</option>
       </select>
       <select
         value={formTeamMember}
-        onChange={e => setFormTeamMember(e.target.value)}
+        onChange={e => handleTeamMemberChange(e.target.value)}
         className="w-full text-xs rounded-lg border-slate-300 p-2 bg-white"
       >
         <option value="">— Select Cleaner (optional) —</option>
@@ -808,7 +831,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         onChange={e => setFormAddress(e.target.value)}
         className="w-full text-xs rounded-lg border-slate-300 p-2"
       />
-      {formType === 'wait' && (
+      {formType !== 'pickup' && formType !== 'dropoff' && (
         <input
           type="number"
           placeholder="Duration (minutes)"
@@ -1016,6 +1039,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                           stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
                           stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
                           stop.type === 'wait' ? 'bg-cyan-100 text-cyan-600' :
+                          stop.type === 'other' ? 'bg-pink-100 text-pink-600' :
                           'bg-slate-100 text-slate-600'
                         }`}>
                           {stop.type === 'depart' && <Home size={18} />}
@@ -1023,6 +1047,7 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                           {stop.type === 'clean' && <MapPin size={18} />}
                           {stop.type === 'dropoff' && <Users size={18} />}
                           {stop.type === 'wait' && <Clock size={18} />}
+                          {stop.type === 'other' && <CircleDot size={18} />}
                           {stop.type === 'home' && <Home size={18} />}
                         </div>
 
@@ -1072,9 +1097,9 @@ export const RoutePlanner: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                           {!isExcluded && stop.type === 'pickup' && (
                             <p className="text-[10px] text-slate-400 mt-0.5">5 min pickup window</p>
                           )}
-                          {!isExcluded && stop.type === 'wait' && stop.durationMin && (
+                          {!isExcluded && (stop.type === 'wait' || stop.type === 'other') && stop.durationMin && (
                             <p className="text-[10px] text-slate-400 mt-0.5">
-                              {stop.durationMin} min wait / task
+                              {stop.durationMin} min stop duration
                             </p>
                           )}
                           {!isExcluded && i > 0 && stop.legDistanceKm !== undefined && (
