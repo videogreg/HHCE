@@ -443,7 +443,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 </div>
               </button>
             )}
-            {/* Plan Relief Route — always available */}
+            {/* Plan Relief Driver — always available */}
             <button
               onClick={() => setActiveRoutePlanner({ type: 'relief', date: dateStr })}
               className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 border-dashed hover:border-amber-400 hover:shadow-sm hover:bg-amber-100 transition-all active:scale-95 shrink-0 min-w-[140px]"
@@ -452,8 +452,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 <Bus size={16} className="text-amber-600" />
               </div>
               <div className="text-left">
-                <p className="text-xs font-bold text-amber-800">Plan Relief Route</p>
-                <p className="text-[10px] text-amber-600">Create new route</p>
+                <p className="text-xs font-bold text-amber-800">Plan Relief Driver</p>
+                <p className="text-[10px] text-amber-600">Create new driver route</p>
               </div>
             </button>
           </div>

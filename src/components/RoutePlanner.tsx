@@ -31,6 +31,7 @@ interface RouteStop {
   latLng?: any;
   included?: boolean;
   isCustom?: boolean;
+  targetTime?: string;
 }
 
 interface TeamMemberHours {
@@ -54,6 +55,7 @@ interface ReliefStopInput {
   type: 'pickup' | 'clean' | 'dropoff' | 'other';
   label: string;
   address: string;
+  startTime: string; // HH:mm — target start time for this stop
   durationMin: number;
 }
 
@@ -120,6 +122,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [newStopType, setNewStopType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
   const [newStopLabel, setNewStopLabel] = useState('');
   const [newStopAddress, setNewStopAddress] = useState('');
+  const [newStopStartTime, setNewStopStartTime] = useState('09:00');
   const [newStopDuration, setNewStopDuration] = useState(60);
   const [reliefSaved, setReliefSaved] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -156,6 +159,20 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (API_KEY) loadGoogleMaps(API_KEY).catch(() => setApiError('Failed to load Google Maps'));
   }, []);
 
+  // Auto-fill cleaner address when typing a known cleaner name for pickup/dropoff
+  useEffect(() => {
+    if ((newStopType === 'pickup' || newStopType === 'dropoff') && newStopLabel.trim()) {
+      const matched = cleaners.find(c =>
+        c.name.toLowerCase() === newStopLabel.trim().toLowerCase() ||
+        c.name.toLowerCase().includes(newStopLabel.trim().toLowerCase())
+      );
+      if (matched?.address) {
+        setNewStopAddress(matched.address);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newStopLabel, newStopType]);
+
   // Auto-calculate if opened from ScheduleBoard with initialDriver
   useEffect(() => {
     if (initialDriver) {
@@ -179,9 +196,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         setReliefSaved(true);
         const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
         setReliefName(name);
-        // Recalculate summary stats from saved stops
         recalcStatsFromStops(saved);
-        // Render map
         setTimeout(() => renderMap(saved), 300);
       }
     }
@@ -192,11 +207,22 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const included = stops.filter(s => s.included !== false);
     const totalDist = included.reduce((sum, s) => sum + (s.legDistanceKm || 0), 0);
     const totalDrive = included.reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
-    const cleanMins = included.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const workMins = included.filter(s => s.type !== 'depart' && s.type !== 'home').reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const waitMins = included.filter(s => s.waitMin && s.waitMin > 0).reduce((sum, s) => sum + (s.waitMin || 0), 0);
+    // Driver hours = total time from first to last stop minus wait time
+    const firstStop = included[0];
+    const lastStop = included[included.length - 1];
+    let driverHrs = 0;
+    if (firstStop?.arrivalTime && lastStop?.departTime) {
+      const start = parse(firstStop.arrivalTime, 'HH:mm', new Date());
+      const end = parse(lastStop.departTime, 'HH:mm', new Date());
+      const totalMin = Math.round((end.getTime() - start.getTime()) / 60000) - waitMins;
+      driverHrs = Math.round((totalMin / 60) * 10) / 10;
+    }
     setTotalKm(totalDist);
     setActualDriveMinutes(totalDrive);
-    setDriverHours(0);
-    setCleanHours(Math.round((cleanMins / 60) * 10) / 10);
+    setDriverHours(driverHrs);
+    setCleanHours(Math.round((workMins / 60) * 10) / 10);
     setTeamHours([]);
   };
 
@@ -303,7 +329,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           ${stop.arrivalTime ? `<div style="font-size: 11px; color: #475569;"><strong>Arrive:</strong> ${stop.arrivalTime}</div>` : ''}
           ${stop.departTime ? `<div style="font-size: 11px; color: #475569;"><strong>Depart:</strong> ${stop.departTime}</div>` : ''}
           ${stop.durationMin ? `<div style="font-size: 11px; color: #475569;"><strong>Duration:</strong> ${stop.durationMin} min</div>` : ''}
-          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (possible break)</div>` : ''}
+          ${stop.targetTime ? `<div style="font-size: 11px; color: #475569;"><strong>Target:</strong> ${stop.targetTime}</div>` : ''}
+          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (arrived early)</div>` : ''}
           ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">⚠️ Late ${stop.lateMin} min past window</div>` : ''}
           ${(i > 0 && stop.legDistanceKm !== undefined) ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid #e2e8f0; padding-top: 4px;">🚗 ${stop.legDistanceKm.toFixed(1)} km • ${Math.round(stop.legDurationMin || 0)} min drive</div>` : ''}
         </div>
@@ -535,7 +562,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         setApiError(null);
         processRoute(routeDataRef.current, newStops);
       } else if (reliefMode) {
-        // For relief mode, just recalc stats without full re-process
         recalcStatsFromStops(newStops);
         saveRelief(dateStr, newStops);
         setReliefSaved(true);
@@ -762,19 +788,21 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     await processRoute(routeDataRef.current, stops);
   };
 
-  // RELIEF ROUTE FUNCTIONS
+  // RELIEF DRIVER FUNCTIONS
   const addReliefStopInput = () => {
-    if (!newStopLabel || !newStopAddress) return;
+    if (!newStopLabel || !newStopAddress || !newStopStartTime) return;
     const stop: ReliefStopInput = {
       id: `relief_${Date.now()}`,
       type: newStopType,
       label: newStopLabel,
       address: newStopAddress,
+      startTime: newStopStartTime,
       durationMin: newStopDuration,
     };
     setReliefStops(prev => [...prev, stop]);
     setNewStopLabel('');
     setNewStopAddress('');
+    setNewStopStartTime('09:00');
     setNewStopDuration(newStopType === 'pickup' || newStopType === 'dropoff' ? 5 : 60);
     setShowAddStop(false);
   };
@@ -787,6 +815,9 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
     if (!reliefHomeAddress.trim()) { setApiError('Please enter a home address for the relief driver'); return; }
     if (reliefStops.length === 0) { setApiError('Please add at least one stop'); return; }
+    // Validate all stops have startTime
+    const missingTime = reliefStops.find(s => !s.startTime || !s.startTime.trim());
+    if (missingTime) { setApiError(`Stop "${missingTime.label}" is missing a start time`); return; }
 
     setLoading(true);
     setApiError(null);
@@ -821,7 +852,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return;
     }
 
-    // Build stops array
+    // Build stops array with target times
     const stops: RouteStop[] = [];
     stops.push({
       type: 'depart',
@@ -843,6 +874,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         address: rs.address,
         arrivalTime: '',
         durationMin: rs.durationMin,
+        targetTime: rs.startTime,
         latLng: stopLocs[rs.id],
         included: true,
       });
@@ -884,9 +916,31 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     let totalDist = 0;
     let actualDriveSeconds = 0;
 
-    // Start at 8:00 AM for relief routes
-    let runningTime = parse('08:00', 'HH:mm', new Date());
-    stops[0].arrivalTime = format(runningTime, 'HH:mm');
+    // Find anchor: first non-home stop with a targetTime
+    let anchorIdx = -1;
+    for (let i = 0; i < stops.length; i++) {
+      if (stops[i].type !== 'depart' && stops[i].type !== 'home' && stops[i].targetTime) {
+        anchorIdx = i;
+        break;
+      }
+    }
+    if (anchorIdx < 0) anchorIdx = 1;
+
+    // Work backward from anchor to find home departure time
+    let departTime = parse(stops[anchorIdx].targetTime!, 'HH:mm', new Date());
+    for (let i = anchorIdx; i > 0; i--) {
+      const leg = legs[i - 1];
+      // Subtract drive time
+      departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
+      // Subtract previous stop's duration
+      if (stops[i - 1].durationMin) {
+        departTime = addMinutes(departTime, -stops[i - 1].durationMin);
+      }
+    }
+
+    // Work forward from home departure
+    let runningTime = new Date(departTime.getTime());
+    stops[0].arrivalTime = format(runningTime, 'HH:mm'); // Leave home time
 
     for (let i = 1; i < stops.length; i++) {
       const leg = legs[i - 1];
@@ -899,19 +953,55 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
       stops[i].arrivalTime = format(runningTime, 'HH:mm');
 
-      if (stops[i].durationMin) {
+      // Check against target startTime for work stops
+      if (stops[i].targetTime && stops[i].type !== 'home') {
+        const targetTime = parse(stops[i].targetTime, 'HH:mm', new Date());
+        const earliestStart = addMinutes(targetTime, -15);
+        const latestStart = addMinutes(targetTime, 15);
+
+        if (isBefore(runningTime, earliestStart)) {
+          // Arrived early — wait until earliest start
+          stops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
+          stops[i].actualStartTime = format(earliestStart, 'HH:mm');
+          runningTime = addMinutes(earliestStart, stops[i].durationMin || 0);
+        } else if (isAfter(runningTime, latestStart)) {
+          // Arrived late
+          stops[i].isLate = true;
+          stops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
+          stops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
+        } else {
+          // On time
+          stops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
+        }
+        stops[i].departTime = format(runningTime, 'HH:mm');
+      } else if (stops[i].durationMin) {
         runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
         stops[i].departTime = format(runningTime, 'HH:mm');
       }
     }
 
+    // Calculate stats
+    const included = stops.filter(s => s.included !== false);
     const totalDriveMin = Math.round(actualDriveSeconds / 60);
-    const cleanMins = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
-    const cleanHrs = Math.round((cleanMins / 60) * 10) / 10;
+    const workMins = included.filter(s => s.type !== 'depart' && s.type !== 'home').reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const waitMins = included.filter(s => s.waitMin && s.waitMin > 0).reduce((sum, s) => sum + (s.waitMin || 0), 0);
+
+    // Driver hours: home departure to home return minus wait time
+    const firstStop = included[0];
+    const lastStop = included[included.length - 1];
+    let driverHrs = 0;
+    if (firstStop?.arrivalTime && lastStop?.departTime) {
+      const start = parse(firstStop.arrivalTime, 'HH:mm', new Date());
+      const end = parse(lastStop.departTime, 'HH:mm', new Date());
+      const totalMin = Math.round((end.getTime() - start.getTime()) / 60000) - waitMins;
+      driverHrs = Math.round((totalMin / 60) * 10) / 10;
+    }
 
     setTotalKm(Math.round(totalDist / 100) / 10);
-    setDriverHours(0);
-    setCleanHours(cleanHrs);
+    setDriverHours(driverHrs);
+    setCleanHours(Math.round((workMins / 60) * 10) / 10);
     setActualDriveMinutes(totalDriveMin);
     setTeamHours([]);
     setRouteStops(stops);
@@ -935,7 +1025,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }
       directionsRenderer.current.setDirections(routeResult);
       mapInstance.current.fitBounds(routeResult.routes[0].bounds);
-      addMarkers(mapInstance.current, stops);
+      addMarkers(mapInstance.current, included);
     }
 
     setLoading(false);
@@ -979,7 +1069,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
       <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-          {reliefMode ? `Relief Route — ${format(selectedDate, 'EEEE, MMM d')}` : `Drivers on ${format(selectedDate, 'EEEE, MMM d')}`}
+          {reliefMode ? `Relief Driver — ${format(selectedDate, 'EEEE, MMM d')}` : `Drivers on ${format(selectedDate, 'EEEE, MMM d')}`}
         </label>
         <div className="flex gap-2 overflow-x-auto pb-1">
           {!reliefMode && drivers.map(d => (
@@ -1026,7 +1116,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             }`}
           >
             <Bus size={16} />
-            {reliefMode ? 'Exit Relief Mode' : 'Relief Route'}
+            {reliefMode ? 'Exit Relief Driver' : 'Relief Driver'}
           </button>
         </div>
       </div>
@@ -1046,7 +1136,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             </div>
           )}
 
-          {/* RELIEF MODE SETUP PANEL */}
+          {/* RELIEF DRIVER SETUP PANEL */}
           {reliefMode && routeStops.length === 0 && !loading && (
             <div className="p-4 space-y-4">
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
@@ -1097,7 +1187,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-slate-800 truncate">{stop.label}</p>
                         <p className="text-[10px] text-slate-500 truncate">{stop.address}</p>
-                        <p className="text-[10px] text-slate-400">{stop.durationMin} min • {stop.type}</p>
+                        <p className="text-[10px] text-slate-400">
+                          <Clock size={9} className="inline mr-0.5" />
+                          Start {stop.startTime} • {stop.durationMin} min • {stop.type}
+                        </p>
                       </div>
                       <button
                         onClick={() => removeReliefStopInput(stop.id)}
@@ -1150,20 +1243,32 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                     <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium text-slate-500">Duration (min):</label>
-                      <input
-                        type="number"
-                        value={newStopDuration}
-                        onChange={e => setNewStopDuration(Number(e.target.value))}
-                        className="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm font-medium"
-                      />
-                      <button
-                        onClick={addReliefStopInput}
-                        className="ml-auto px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors active:scale-95"
-                      >
-                        Add
-                      </button>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Start Time</label>
+                        <input
+                          type="time"
+                          value={newStopStartTime}
+                          onChange={e => setNewStopStartTime(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Duration (min)</label>
+                        <input
+                          type="number"
+                          value={newStopDuration}
+                          onChange={e => setNewStopDuration(Number(e.target.value))}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium"
+                        />
+                      </div>
                     </div>
+                    <button
+                      onClick={addReliefStopInput}
+                      disabled={!newStopLabel || !newStopAddress || !newStopStartTime}
+                      className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 active:scale-95"
+                    >
+                      Add Stop
+                    </button>
                   </div>
                 )}
               </div>
@@ -1173,7 +1278,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 disabled={reliefStops.length === 0 || !reliefHomeAddress.trim()}
                 className="w-full py-3 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
               >
-                <Bus size={16} /> Calculate Relief Route
+                <Bus size={16} /> Calculate Relief Driver Route
               </button>
             </div>
           )}
@@ -1237,7 +1342,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                     disabled={reliefSaved}
                     className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-600 transition-colors disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2"
                   >
-                    <Save size={14} /> {reliefSaved ? 'Route Saved' : 'Save Relief Route'}
+                    <Save size={14} /> {reliefSaved ? 'Route Saved' : 'Save Relief Driver'}
                   </button>
                   <button
                     onClick={handleClearRelief}
@@ -1313,6 +1418,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                         <p className={`text-xs truncate ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-500'}`}>
                           {stop.address}
                         </p>
+                        {!isExcluded && stop.targetTime && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Target: {stop.targetTime}
+                            {stop.actualStartTime && stop.actualStartTime !== stop.arrivalTime && ` • Actual: ${stop.actualStartTime}`}
+                          </p>
+                        )}
                         {!isExcluded && stop.type === 'clean' && stop.durationMin && (
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             {stop.durationMin} min estimated clean
@@ -1375,8 +1486,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           {reliefMode && routeStops.length === 0 && !loading && reliefStops.length === 0 && (
             <div className="p-8 text-center">
               <Bus className="mx-auto mb-3 text-slate-300" size={40} />
-              <p className="text-sm text-slate-500 font-medium">Add stops to build a relief route.</p>
-              <p className="text-xs text-slate-400 mt-1">Enter driver name, home address, and add stops.</p>
+              <p className="text-sm text-slate-500 font-medium">Add stops to build a relief driver route.</p>
+              <p className="text-xs text-slate-400 mt-1">Enter driver name, home address, and add stops with start times.</p>
             </div>
           )}
         </div>
