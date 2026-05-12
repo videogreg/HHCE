@@ -4,8 +4,8 @@ import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
 import { RoutePlanner } from './RoutePlanner';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car } from 'lucide-react';
-import type { Visit } from '../types';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus } from 'lucide-react';
+import type { Visit, Cleaner } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, isSameMonth, isSameDay, getDay
@@ -18,12 +18,18 @@ interface ScheduleBoardProps {
   onFocusClear?: () => void;
 }
 
+interface ReliefRouteInfo {
+  name: string;
+  stopCount: number;
+}
+
 export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
-  const [showRoutePlanner, setShowRoutePlanner] = useState(false);
+  const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner } | { type: 'relief'; date: string } | null>(null);
+  const [routeRefreshKey, setRouteRefreshKey] = useState(0);
 
   useEffect(() => {
     setCurrentMonth(selectedDate);
@@ -138,6 +144,40 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const modalVisit = modalVisitId ? dayVisits.find(v => v.id === modalVisitId) || null : null;
   const modalViolations = modalVisit ? getVisibleViolationsForVisit(modalVisit) : [];
 
+  // Drivers with visits today (excluding cancelled)
+  const regularDrivers = useMemo(() => {
+    const driverIds = new Set<string>();
+    dayVisits.filter(v => !v.cancelled).forEach(v => {
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const team = teams.find(t => t.id === v.assignedTeamId);
+        if (team) ids = team.cleanerIds;
+      }
+      ids.forEach(id => {
+        const c = cleaners.find(x => x.id === id);
+        if (c?.isDriver && c.active) driverIds.add(id);
+      });
+    });
+    return cleaners.filter(c => driverIds.has(c.id));
+  }, [dayVisits, cleaners, teams]);
+
+  // Check for saved relief route
+  const reliefRouteInfo = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('hhce_relief_routes');
+      if (!raw) return null;
+      const all = JSON.parse(raw);
+      const saved = all[dateStr];
+      if (!saved || saved.length === 0) return null;
+      const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
+      return { name, stopCount: saved.length } as ReliefRouteInfo;
+    } catch {
+      return null;
+    }
+  }, [dateStr, routeRefreshKey]);
+
+  const hasDriverRoutes = regularDrivers.length > 0 || reliefRouteInfo !== null;
+
   return (
     <div className="space-y-4 animate-slide-up">
       {isSameDay(selectedDate, new Date()) && hasMorningIssues && (
@@ -215,15 +255,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               Jump to Today
             </button>
           </div>
-        )}
-
-        {dayVisits.length > 0 && (
-          <button
-            onClick={() => setShowRoutePlanner(true)}
-            className="w-full mt-2 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-700 transition-colors"
-          >
-            <Car size={14} /> Plan Driver Routes
-          </button>
         )}
 
         {viewMode === 'day' && (
@@ -368,6 +399,55 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       </div>
 
+      {/* Driver Routes List */}
+      {viewMode === 'day' && hasDriverRoutes && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {regularDrivers.map(driver => {
+              const driverVisits = dayVisits.filter(v => {
+                if (v.cancelled) return false;
+                let ids = v.assignedCleanerIds || [];
+                if (ids.length === 0) {
+                  const t = teams.find(tm => tm.id === v.assignedTeamId);
+                  if (t) ids = t.cleanerIds;
+                }
+                return ids.includes(driver.id);
+              });
+              return (
+                <button
+                  key={driver.id}
+                  onClick={() => setActiveRoutePlanner({ type: 'driver', driver })}
+                  className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px]"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                    <Car size={16} className="text-blue-600" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-slate-800">{driver.name}</p>
+                    <p className="text-[10px] text-slate-500">{driverVisits.length} visit{driverVisits.length !== 1 ? 's' : ''}</p>
+                  </div>
+                </button>
+              );
+            })}
+            {reliefRouteInfo && (
+              <button
+                onClick={() => setActiveRoutePlanner({ type: 'relief', date: dateStr })}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px]"
+              >
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <Bus size={16} className="text-amber-600" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-amber-800">{reliefRouteInfo.name}</p>
+                  <p className="text-[10px] text-amber-600">{reliefRouteInfo.stopCount} stop{reliefRouteInfo.stopCount !== 1 ? 's' : ''}</p>
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {viewMode === 'day' && (
         <>
           {dayVisits.length === 0 && (
@@ -431,7 +511,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                     <div className="flex gap-1 shrink-0">
                       {hasDriverAssigned && (
                         <button
-                          onClick={() => setShowRoutePlanner(true)}
+                          onClick={() => {
+                            const driver = assignedCleaners.find(c => c?.isDriver);
+                            if (driver) setActiveRoutePlanner({ type: 'driver', driver });
+                          }}
                           className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 active:scale-95"
                           title="View driver route"
                         >
@@ -546,8 +629,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         />
       )}
 
-      {showRoutePlanner && (
-        <RoutePlanner onClose={() => setShowRoutePlanner(false)} />
+      {activeRoutePlanner && (
+        <RoutePlanner
+          onClose={() => {
+            setActiveRoutePlanner(null);
+            setRouteRefreshKey(k => k + 1);
+          }}
+          initialDriver={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver : undefined}
+          initialReliefDate={activeRoutePlanner.type === 'relief' ? activeRoutePlanner.date : undefined}
+        />
       )}
     </div>
   );

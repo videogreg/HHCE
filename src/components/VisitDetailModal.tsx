@@ -1,153 +1,187 @@
 import React from 'react';
-import type { Visit, Cleaner, Client, Team, ConstraintViolation } from '../types';
-import { formatTotalHours } from '../utils/hours';
-import { X, Phone, MapPin, Users, AlertCircle, AlertTriangle, FileText, Ban } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { useAppContext } from '../context/AppContext';
+import { X, Clock, MapPin, Phone, Mail, Home, Calendar, FileText, DollarSign, User, Ban, AlertCircle, AlertTriangle } from 'lucide-react';
+import type { Visit, Cleaner, Client } from '../types';
 
-interface Props {
+interface VisitDetailModalProps {
   visit: Visit;
   cleaners: Cleaner[];
   clients: Client[];
-  teams: Team[];
-  violations: ConstraintViolation[];
+  teams: any[];
+  violations: any[];
   onClose: () => void;
 }
 
-export const VisitDetailModal: React.FC<Props> = ({ visit, cleaners, clients, teams, violations, onClose }) => {
+export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
+  visit,
+  cleaners,
+  clients,
+  teams,
+  violations,
+  onClose,
+}) => {
   const client = clients.find(c => c.id === visit.clientId);
-  const team = teams.find(t => t.id === visit.assignedTeamId);
-
-  let assignedCleanerIds = visit.assignedCleanerIds || [];
-  if (assignedCleanerIds.length === 0 && team) {
-    assignedCleanerIds = team.cleanerIds;
-  }
-  const assignedCleaners = assignedCleanerIds
+  const assignedIds = visit.assignedCleanerIds || [];
+  const assignedCleaners = assignedIds
     .map(id => cleaners.find(c => c.id === id))
     .filter(Boolean);
 
-  const hasError = violations.some(v => v.severity === 'error');
+  const totalHours = ((visit.durationMinutes || 0) / 60).toFixed(1);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
-        
-        <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between rounded-t-2xl z-10">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Visit Details</h2>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
-            <X size={18} />
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md max-h-[90vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-sm font-black text-slate-800">{visit.clientName}</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              {visit.jobType || 'Cleaning Visit'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl hover:bg-slate-100 active:scale-95 transition-all"
+          >
+            <X size={20} className="text-slate-500" />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
-          {/* Client Card */}
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-            <h3 className="text-sm font-bold text-blue-900 mb-1">{visit.clientName}</h3>
-            <div className="space-y-1.5">
-              <div className="flex items-start gap-2 text-xs text-blue-800">
-                <MapPin size={12} className="mt-0.5 shrink-0" />
-                <span>{visit.clientAddress}</span>
-              </div>
-              {visit.clientZone && (
-                <div className="flex items-center gap-2 text-xs text-blue-700 font-medium">
-                  <span className="bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">Zone</span>
-                  {visit.clientZone}
-                </div>
-              )}
-              {client?.phone && (
-                <a href={`tel:${client.phone}`} className="flex items-center gap-2 text-xs text-blue-700 font-bold hover:underline">
-                  <Phone size={12} /> {client.phone}
-                </a>
-              )}
-              {client?.notes && (
-                <div className="flex items-start gap-2 text-xs text-blue-700 mt-1">
-                  <FileText size={12} className="mt-0.5 shrink-0" />
-                  <span className="italic">{client.notes}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Visit Info Grid */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date</div>
-              <div className="text-sm font-bold text-slate-700">
-                {visit.date ? format(parseISO(visit.date), 'EEE, MMM d, yyyy') : '—'}
-              </div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</div>
-              <div className="text-sm font-bold text-slate-700">{visit.startTime}</div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Duration</div>
-              <div className="text-sm font-bold text-slate-700">{formatTotalHours(visit.durationMinutes)}</div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team</div>
-              <div className="text-sm font-bold text-slate-700">{team?.name || 'Unassigned'}</div>
-            </div>
-          </div>
-
-          {/* Cleaners */}
-          <div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-              <Users size={12} /> Assigned Cleaners
-            </div>
-            <div className="space-y-2">
-              {assignedCleaners.map(c => (
-                <div key={c!.id} className={`flex items-center justify-between p-2 rounded-xl border ${c!.active ? 'bg-white border-slate-200' : 'bg-red-50 border-red-200'}`}>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c!.color || '#94a3b8' }} />
-                    <span className={`text-xs font-bold ${c!.active ? 'text-slate-700' : 'text-red-700 line-through'}`}>{c!.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {c!.phone && (
-                      <a href={`tel:${c!.phone}`} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100">
-                        <Phone size={12} />
-                      </a>
-                    )}
-                    {!c!.active && <span className="text-[10px] font-black text-red-600 uppercase">Sick</span>}
-                  </div>
-                </div>
-              ))}
-              {assignedCleaners.length === 0 && (
-                <p className="text-xs text-slate-400 italic">No cleaners assigned</p>
-              )}
-            </div>
-          </div>
-
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Violations */}
           {violations.length > 0 && (
-            <div className={`rounded-xl p-3 border ${hasError ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-              <div className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1">
-                {hasError ? <AlertCircle size={12} className="text-red-600" /> : <AlertTriangle size={12} className="text-amber-600" />}
-                <span className={hasError ? 'text-red-700' : 'text-amber-700'}>Schedule Issues</span>
-              </div>
-              <div className="space-y-1">
-                {violations.map((v, i) => (
-                  <p key={i} className={`text-xs font-medium ${v.severity === 'error' ? 'text-red-600' : 'text-amber-700'}`}>
-                    • {v.message}
-                  </p>
-                ))}
-              </div>
+            <div className="space-y-2">
+              {violations.map(v => (
+                <div
+                  key={v.id}
+                  className={`flex items-start gap-2 p-2.5 rounded-xl text-xs font-medium ${
+                    v.severity === 'error'
+                      ? 'bg-red-50 text-red-700 border border-red-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}
+                >
+                  {v.severity === 'error'
+                    ? <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    : <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  }
+                  {v.message}
+                </div>
+              ))}
             </div>
           )}
 
-          {/* Cancelled Badge */}
-          {visit.cancelled && (
-            <div className="bg-slate-100 rounded-xl p-3 text-center">
-              <span className="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 uppercase tracking-widest">
-                <Ban size={12} /> Visit Cancelled
-              </span>
+          {/* Info Grid — NO TEAM FIELD */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Calendar size={12} className="text-slate-400" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Date</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800">{visit.date}</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Clock size={12} className="text-slate-400" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Start Time</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800">{visit.startTime}</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Clock size={12} className="text-slate-400" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Duration</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800">{totalHours} hrs ({visit.durationMinutes || 0} min)</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <DollarSign size={12} className="text-slate-400" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Price</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800">${visit.price?.toFixed(2) || '0.00'}</p>
+            </div>
+          </div>
+
+          {/* Address */}
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+            <div className="flex items-center gap-1.5 mb-1">
+              <MapPin size={12} className="text-slate-400" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Address</span>
+            </div>
+            <p className="text-xs font-medium text-slate-700">{visit.clientAddress || client?.address || 'No address on file'}</p>
+            {visit.clientZone && (
+              <p className="text-[10px] text-slate-500 mt-1">Zone: {visit.clientZone}</p>
+            )}
+          </div>
+
+          {/* Assigned Cleaners */}
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+            <div className="flex items-center gap-1.5 mb-2">
+              <User size={12} className="text-slate-400" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Assigned Cleaners</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {assignedCleaners.length > 0 ? (
+                assignedCleaners.map(c => (
+                  <span
+                    key={c!.id}
+                    className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 flex items-center gap-1"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.color || '#94a3b8' }} />
+                    {c!.name}
+                    {c!.isDriver && <span className="text-blue-600">(Driver)</span>}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[10px] text-slate-400 font-medium">No cleaners assigned</span>
+              )}
+            </div>
+          </div>
+
+          {/* Client notes */}
+          {client?.notes && (
+            <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <FileText size={12} className="text-amber-500" />
+                <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">House Notes</span>
+              </div>
+              <p className="text-xs text-amber-800 font-medium">{client.notes}</p>
             </div>
           )}
-        </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex gap-2 rounded-b-2xl">
-          <button onClick={onClose} className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors">
-            Close
-          </button>
+          {/* Visit notes */}
+          {visit.notes && (
+            <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <FileText size={12} className="text-blue-500" />
+                <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Visit Notes</span>
+              </div>
+              <p className="text-xs text-blue-800 font-medium">{visit.notes}</p>
+            </div>
+          )}
+
+          {/* Contact */}
+          {(client?.phone || client?.email) && (
+            <div className="flex gap-2">
+              {client?.phone && (
+                <a
+                  href={`tel:${client.phone}`}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors active:scale-95"
+                >
+                  <Phone size={14} /> Call
+                </a>
+              )}
+              {client?.email && (
+                <a
+                  href={`mailto:${client.email}`}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors active:scale-95"
+                >
+                  <Mail size={14} /> Email
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
