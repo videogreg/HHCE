@@ -137,6 +137,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (initialDriver && mapsReady) {
       handleCalculateRoute(initialDriver);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDriver, mapsReady]);
 
   const dayVisits = useMemo(() => {
