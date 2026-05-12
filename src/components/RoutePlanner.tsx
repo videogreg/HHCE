@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
-import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, Save, RotateCcw } from 'lucide-react';
+import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, Save, RotateCcw, Trash2 } from 'lucide-react';
 import type { Cleaner, Visit } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -47,6 +47,14 @@ interface RouteData {
   driverHome: any;
   clientLocs: Record<string, any>;
   teamLocs: Record<string, any>;
+}
+
+interface ReliefStopInput {
+  id: string;
+  type: 'pickup' | 'clean' | 'dropoff' | 'other';
+  label: string;
+  address: string;
+  durationMin: number;
 }
 
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
@@ -96,6 +104,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(initialDriver || null);
   const [reliefMode, setReliefMode] = useState(!!initialReliefDate);
   const [reliefName, setReliefName] = useState('Relief Driver');
+  const [reliefHomeAddress, setReliefHomeAddress] = useState('');
+  const [reliefStops, setReliefStops] = useState<ReliefStopInput[]>([]);
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
@@ -107,9 +117,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [copied, setCopied] = useState(false);
   const [routeUrl, setRouteUrl] = useState<string>('');
   const [showAddStop, setShowAddStop] = useState(false);
-  const [newStopAddress, setNewStopAddress] = useState('');
+  const [newStopType, setNewStopType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
   const [newStopLabel, setNewStopLabel] = useState('');
-  const [newStopDuration, setNewStopDuration] = useState(30);
+  const [newStopAddress, setNewStopAddress] = useState('');
+  const [newStopDuration, setNewStopDuration] = useState(60);
   const [reliefSaved, setReliefSaved] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
@@ -150,7 +161,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (initialDriver) {
       setSelectedDriver(initialDriver);
       setReliefMode(false);
-      // Small delay to ensure Google Maps is loaded
       const timer = setTimeout(() => {
         buildRoute(initialDriver);
       }, 500);
@@ -164,24 +174,75 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (initialReliefDate) {
       setReliefMode(true);
       const saved = getSavedRelief(initialReliefDate);
-      if (saved) {
+      if (saved && saved.length > 0) {
         setRouteStops(saved);
         setReliefSaved(true);
         const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
         setReliefName(name);
         // Recalculate summary stats from saved stops
-        const included = saved.filter(s => s.included !== false);
-        const totalDist = included.reduce((sum, s) => sum + (s.legDistanceKm || 0), 0);
-        const totalDrive = included.reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
-        setTotalKm(totalDist);
-        setActualDriveMinutes(totalDrive);
-        setDriverHours(0);
-        setCleanHours(0);
-        setTeamHours([]);
-        setLoading(false);
+        recalcStatsFromStops(saved);
+        // Render map
+        setTimeout(() => renderMap(saved), 300);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReliefDate]);
+
+  const recalcStatsFromStops = (stops: RouteStop[]) => {
+    const included = stops.filter(s => s.included !== false);
+    const totalDist = included.reduce((sum, s) => sum + (s.legDistanceKm || 0), 0);
+    const totalDrive = included.reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
+    const cleanMins = included.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    setTotalKm(totalDist);
+    setActualDriveMinutes(totalDrive);
+    setDriverHours(0);
+    setCleanHours(Math.round((cleanMins / 60) * 10) / 10);
+    setTeamHours([]);
+  };
+
+  const renderMap = (stops: RouteStop[]) => {
+    const included = stops.filter(s => s.included !== false);
+    const latLngs = included.map(s => s.latLng).filter(Boolean);
+    if (latLngs.length < 2 || !mapRef.current || !window.google) return;
+
+    const origin = latLngs[0];
+    const destination = latLngs[latLngs.length - 1];
+    const waypoints = latLngs.slice(1, -1);
+
+    if (!mapInstance.current) {
+      mapInstance.current = new window.google.maps.Map(mapRef.current, {
+        zoom: 12,
+        center: origin,
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+      });
+    }
+    if (!directionsRenderer.current) {
+      directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+        map: mapInstance.current,
+        suppressMarkers: true,
+      });
+    }
+
+    const directionsService = new window.google.maps.DirectionsService();
+    directionsService.route(
+      {
+        origin,
+        destination,
+        waypoints: waypoints.map((ll: any) => ({ location: ll, stopover: true })),
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false,
+      },
+      (result: any, status: any) => {
+        if (status === window.google.maps.DirectionsStatus.OK) {
+          directionsRenderer.current.setDirections(result);
+          mapInstance.current.fitBounds(result.routes[0].bounds);
+          addMarkers(mapInstance.current, included);
+        }
+      }
+    );
+  };
 
   const clearMarkers = () => {
     markersRef.current.forEach(m => m.setMap(null));
@@ -469,10 +530,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      if (routeDataRef.current) {
+      if (routeDataRef.current && !reliefMode) {
         setLoading(true);
         setApiError(null);
         processRoute(routeDataRef.current, newStops);
+      } else if (reliefMode) {
+        // For relief mode, just recalc stats without full re-process
+        recalcStatsFromStops(newStops);
+        saveRelief(dateStr, newStops);
+        setReliefSaved(true);
+        renderMap(newStops);
       }
     }, 400);
   };
@@ -515,6 +582,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         }
       } else if (stop.type === 'pickup') {
         text += `Pickup window: 5 min\n`;
+      } else if (stop.type === 'dropoff') {
+        text += `Dropoff\n`;
+      } else if (stop.type === 'other' && stop.durationMin) {
+        text += `Duration: ${stop.durationMin} min\n`;
       }
 
       if (i > 0 && stop.legDistanceKm !== undefined) {
@@ -691,27 +762,183 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     await processRoute(routeDataRef.current, stops);
   };
 
-  // Relief route handlers
-  const handleAddCustomStop = () => {
-    if (!newStopAddress || !newStopLabel) return;
-    const newStop: RouteStop = {
-      type: 'other',
+  // RELIEF ROUTE FUNCTIONS
+  const addReliefStopInput = () => {
+    if (!newStopLabel || !newStopAddress) return;
+    const stop: ReliefStopInput = {
+      id: `relief_${Date.now()}`,
+      type: newStopType,
       label: newStopLabel,
       address: newStopAddress,
-      arrivalTime: '',
       durationMin: newStopDuration,
-      isCustom: true,
-      included: true,
-      latLng: null,
     };
-    const updated = [...routeStops, newStop];
-    setRouteStops(updated);
-    setNewStopAddress('');
+    setReliefStops(prev => [...prev, stop]);
     setNewStopLabel('');
-    setNewStopDuration(30);
+    setNewStopAddress('');
+    setNewStopDuration(newStopType === 'pickup' || newStopType === 'dropoff' ? 5 : 60);
     setShowAddStop(false);
-    saveRelief(dateStr, updated);
-    setReliefSaved(true);
+  };
+
+  const removeReliefStopInput = (id: string) => {
+    setReliefStops(prev => prev.filter(s => s.id !== id));
+  };
+
+  const calculateReliefRoute = async () => {
+    if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
+    if (!reliefHomeAddress.trim()) { setApiError('Please enter a home address for the relief driver'); return; }
+    if (reliefStops.length === 0) { setApiError('Please add at least one stop'); return; }
+
+    setLoading(true);
+    setApiError(null);
+    setCopied(false);
+    setRouteUrl('');
+
+    await loadGoogleMaps(API_KEY);
+
+    // Geocode home
+    const homeLoc = await geocodeAddress(reliefHomeAddress.trim());
+    if (!homeLoc) {
+      setApiError(`Could not locate home address: ${reliefHomeAddress}`);
+      setLoading(false);
+      return;
+    }
+
+    // Geocode all stops
+    const stopLocs: Record<string, any> = {};
+    const missing: string[] = [];
+    for (const stop of reliefStops) {
+      const loc = await geocodeAddress(stop.address.trim());
+      if (loc) {
+        stopLocs[stop.id] = loc;
+      } else {
+        missing.push(stop.label);
+      }
+    }
+
+    if (missing.length > 0) {
+      setApiError(`Could not locate: ${missing.join(', ')}. Please check addresses.`);
+      setLoading(false);
+      return;
+    }
+
+    // Build stops array
+    const stops: RouteStop[] = [];
+    stops.push({
+      type: 'depart',
+      label: `Leave Home — ${reliefName}`,
+      address: reliefHomeAddress,
+      arrivalTime: '',
+      durationMin: 0,
+      latLng: homeLoc,
+      included: true,
+    });
+
+    for (const rs of reliefStops) {
+      stops.push({
+        type: rs.type,
+        label: rs.type === 'pickup' ? `Pick up ${rs.label}` :
+               rs.type === 'dropoff' ? `Drop off ${rs.label}` :
+               rs.type === 'clean' ? `Clean — ${rs.label}` :
+               rs.label,
+        address: rs.address,
+        arrivalTime: '',
+        durationMin: rs.durationMin,
+        latLng: stopLocs[rs.id],
+        included: true,
+      });
+    }
+
+    stops.push({
+      type: 'home',
+      label: `Arrive Home — ${reliefName}`,
+      address: reliefHomeAddress,
+      arrivalTime: '',
+      durationMin: 0,
+      latLng: homeLoc,
+      included: true,
+    });
+
+    // Calculate route with Google Maps
+    const latLngs = stops.map(s => s.latLng).filter(Boolean);
+    const origin = latLngs[0];
+    const destination = latLngs[latLngs.length - 1];
+    const waypoints = latLngs.slice(1, -1);
+
+    // Build URL
+    const originStr = `${origin.lat()},${origin.lng()}`;
+    const destStr = `${destination.lat()},${destination.lng()}`;
+    const waypointsStr = waypoints.map((ll: any) => `${ll.lat()},${ll.lng()}`).join('|');
+    const mapsUrl = waypointsStr
+      ? `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}&waypoints=${waypointsStr}`
+      : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
+    setRouteUrl(mapsUrl);
+
+    const routeResult = await calculateRoute(origin, destination, waypoints);
+    if (!routeResult) {
+      setApiError('Could not calculate route. Check addresses.');
+      setLoading(false);
+      return;
+    }
+
+    const legs = routeResult.routes[0].legs;
+    let totalDist = 0;
+    let actualDriveSeconds = 0;
+
+    // Start at 8:00 AM for relief routes
+    let runningTime = parse('08:00', 'HH:mm', new Date());
+    stops[0].arrivalTime = format(runningTime, 'HH:mm');
+
+    for (let i = 1; i < stops.length; i++) {
+      const leg = legs[i - 1];
+      totalDist += leg.distance.value;
+      actualDriveSeconds += leg.duration.value;
+      const driveMs = leg.duration.value * 1000;
+      runningTime = new Date(runningTime.getTime() + driveMs);
+
+      stops[i].legDistanceKm = leg.distance.value / 1000;
+      stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+      stops[i].arrivalTime = format(runningTime, 'HH:mm');
+
+      if (stops[i].durationMin) {
+        runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
+        stops[i].departTime = format(runningTime, 'HH:mm');
+      }
+    }
+
+    const totalDriveMin = Math.round(actualDriveSeconds / 60);
+    const cleanMins = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const cleanHrs = Math.round((cleanMins / 60) * 10) / 10;
+
+    setTotalKm(Math.round(totalDist / 100) / 10);
+    setDriverHours(0);
+    setCleanHours(cleanHrs);
+    setActualDriveMinutes(totalDriveMin);
+    setTeamHours([]);
+    setRouteStops(stops);
+
+    // Render map
+    if (mapRef.current) {
+      if (!mapInstance.current) {
+        mapInstance.current = new window.google.maps.Map(mapRef.current, {
+          zoom: 12,
+          center: origin,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+        });
+      }
+      if (!directionsRenderer.current) {
+        directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+          map: mapInstance.current,
+          suppressMarkers: true,
+        });
+      }
+      directionsRenderer.current.setDirections(routeResult);
+      mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+      addMarkers(mapInstance.current, stops);
+    }
+
+    setLoading(false);
   };
 
   const handleSaveRelief = () => {
@@ -723,12 +950,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (confirm('Delete saved relief route for this day?')) {
       clearRelief(dateStr);
       setRouteStops([]);
+      setReliefStops([]);
       setReliefSaved(false);
       setTotalKm(0);
       setDriverHours(0);
       setCleanHours(0);
       setActualDriveMinutes(0);
       setTeamHours([]);
+      setRouteUrl('');
+      clearMarkers();
+      if (directionsRenderer.current) directionsRenderer.current.setMap(null);
     }
   };
 
@@ -768,15 +999,18 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           {!initialDriver && !initialReliefDate && (
             <button
               onClick={() => {
-                setReliefMode(!reliefMode);
+                const enteringRelief = !reliefMode;
+                setReliefMode(enteringRelief);
                 setSelectedDriver(null);
-                setRouteStops([]);
-                setTotalKm(0);
-                setDriverHours(0);
-                setCleanHours(0);
-                setActualDriveMinutes(0);
-                setTeamHours([]);
-                setApiError(null);
+                if (!enteringRelief) {
+                  setRouteStops([]);
+                  setTotalKm(0);
+                  setDriverHours(0);
+                  setCleanHours(0);
+                  setActualDriveMinutes(0);
+                  setTeamHours([]);
+                  setApiError(null);
+                }
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
                 reliefMode
@@ -789,31 +1023,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             </button>
           )}
         </div>
-
-        {reliefMode && (
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              type="text"
-              value={reliefName}
-              onChange={e => setReliefName(e.target.value)}
-              placeholder="Relief driver name"
-              className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-            <button
-              onClick={handleSaveRelief}
-              disabled={reliefSaved}
-              className="px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors disabled:opacity-50 active:scale-95 flex items-center gap-1"
-            >
-              <Save size={14} /> {reliefSaved ? 'Saved' : 'Save'}
-            </button>
-            <button
-              onClick={handleClearRelief}
-              className="px-3 py-2 bg-red-100 text-red-600 rounded-xl text-xs font-bold hover:bg-red-200 transition-colors active:scale-95 flex items-center gap-1"
-            >
-              <RotateCcw size={14} /> Clear
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
@@ -831,6 +1040,139 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             </div>
           )}
 
+          {/* RELIEF MODE SETUP PANEL */}
+          {reliefMode && routeStops.length === 0 && !loading && (
+            <div className="p-4 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-black text-amber-800 flex items-center gap-2">
+                  <Bus size={16} /> Relief Driver Setup
+                </h3>
+
+                <div>
+                  <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block mb-1">Driver Name</label>
+                  <input
+                    type="text"
+                    value={reliefName}
+                    onChange={e => setReliefName(e.target.value)}
+                    placeholder="e.g. Backup Driver"
+                    className="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block mb-1">Home Address</label>
+                  <input
+                    type="text"
+                    value={reliefHomeAddress}
+                    onChange={e => setReliefHomeAddress(e.target.value)}
+                    placeholder="e.g. 123 Main St, Kitchener"
+                    className="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Added stops list */}
+              {reliefStops.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Planned Stops ({reliefStops.length})</p>
+                  {reliefStops.map((stop, idx) => (
+                    <div key={stop.id} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                        stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
+                        stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
+                        stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
+                        'bg-pink-100 text-pink-600'
+                      }`}>
+                        {stop.type === 'pickup' && <Users size={14} />}
+                        {stop.type === 'clean' && <MapPin size={14} />}
+                        {stop.type === 'dropoff' && <Users size={14} />}
+                        {stop.type === 'other' && <MapPin size={14} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">{stop.label}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{stop.address}</p>
+                        <p className="text-[10px] text-slate-400">{stop.durationMin} min • {stop.type}</p>
+                      </div>
+                      <button
+                        onClick={() => removeReliefStopInput(stop.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors active:scale-95"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add stop form */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                <button
+                  onClick={() => setShowAddStop(!showAddStop)}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors active:scale-95"
+                >
+                  <Plus size={14} /> {showAddStop ? 'Cancel' : 'Add Stop'}
+                </button>
+
+                {showAddStop && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <select
+                      value={newStopType}
+                      onChange={e => {
+                        const t = e.target.value as any;
+                        setNewStopType(t);
+                        setNewStopDuration(t === 'pickup' || t === 'dropoff' ? 5 : 60);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                    >
+                      <option value="pickup">Pickup (team member)</option>
+                      <option value="clean">Clean (client)</option>
+                      <option value="dropoff">Dropoff (team member)</option>
+                      <option value="other">Other stop</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={newStopLabel}
+                      onChange={e => setNewStopLabel(e.target.value)}
+                      placeholder={newStopType === 'pickup' ? 'Team member name' : newStopType === 'clean' ? 'Client name' : newStopType === 'dropoff' ? 'Team member name' : 'Stop label'}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    />
+                    <input
+                      type="text"
+                      value={newStopAddress}
+                      onChange={e => setNewStopAddress(e.target.value)}
+                      placeholder="Address"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    />
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-medium text-slate-500">Duration (min):</label>
+                      <input
+                        type="number"
+                        value={newStopDuration}
+                        onChange={e => setNewStopDuration(Number(e.target.value))}
+                        className="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm font-medium"
+                      />
+                      <button
+                        onClick={addReliefStopInput}
+                        className="ml-auto px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors active:scale-95"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={calculateReliefRoute}
+                disabled={reliefStops.length === 0 || !reliefHomeAddress.trim()}
+                className="w-full py-3 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Bus size={16} /> Calculate Relief Route
+              </button>
+            </div>
+          )}
+
+          {/* ROUTE DISPLAY (shared for regular and relief) */}
           {!loading && routeStops.length > 0 && (
             <div className="p-4">
               <div className="grid grid-cols-2 gap-3 mb-4">
@@ -881,47 +1223,22 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 )}
               </div>
 
+              {/* Relief save/clear buttons */}
               {reliefMode && (
-                <div className="mb-3">
+                <div className="flex gap-2 mb-4">
                   <button
-                    onClick={() => setShowAddStop(!showAddStop)}
-                    className="w-full flex items-center justify-center gap-2 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors active:scale-95"
+                    onClick={handleSaveRelief}
+                    disabled={reliefSaved}
+                    className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-600 transition-colors disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2"
                   >
-                    <Plus size={14} /> {showAddStop ? 'Cancel' : 'Add Custom Stop'}
+                    <Save size={14} /> {reliefSaved ? 'Route Saved' : 'Save Relief Route'}
                   </button>
-                  {showAddStop && (
-                    <div className="mt-2 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                      <input
-                        type="text"
-                        value={newStopLabel}
-                        onChange={e => setNewStopLabel(e.target.value)}
-                        placeholder="Stop label"
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      />
-                      <input
-                        type="text"
-                        value={newStopAddress}
-                        onChange={e => setNewStopAddress(e.target.value)}
-                        placeholder="Address"
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      />
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs font-medium text-slate-500">Duration (min):</label>
-                        <input
-                          type="number"
-                          value={newStopDuration}
-                          onChange={e => setNewStopDuration(Number(e.target.value))}
-                          className="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm font-medium"
-                        />
-                        <button
-                          onClick={handleAddCustomStop}
-                          className="ml-auto px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    onClick={handleClearRelief}
+                    className="px-4 py-2.5 bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-red-200 transition-colors active:scale-95 flex items-center gap-2"
+                  >
+                    <RotateCcw size={14} /> Clear
+                  </button>
                 </div>
               )}
 
@@ -1049,10 +1366,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             </div>
           )}
 
-          {reliefMode && routeStops.length === 0 && !loading && (
+          {reliefMode && routeStops.length === 0 && !loading && reliefStops.length === 0 && (
             <div className="p-8 text-center">
               <Bus className="mx-auto mb-3 text-slate-300" size={40} />
               <p className="text-sm text-slate-500 font-medium">Add stops to build a relief route.</p>
+              <p className="text-xs text-slate-400 mt-1">Enter driver name, home address, and add stops.</p>
             </div>
           )}
         </div>
