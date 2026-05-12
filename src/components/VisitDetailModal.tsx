@@ -70,8 +70,8 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
             </div>
           )}
 
-          {/* Info Grid — NO TEAM FIELD */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Info Grid — Date, Start Time, Duration only */}
+          <div className="grid grid-cols-3 gap-2">
             <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
               <div className="flex items-center gap-1.5 mb-1">
                 <Calendar size={12} className="text-slate-400" />
@@ -92,13 +92,6 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Duration</span>
               </div>
               <p className="text-xs font-bold text-slate-800">{totalHours} hrs ({visit.durationMinutes || 0} min)</p>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="flex items-center gap-1.5 mb-1">
-                <DollarSign size={12} className="text-slate-400" />
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Price</span>
-              </div>
-              <p className="text-xs font-bold text-slate-800">${visit.price?.toFixed(2) || '0.00'}</p>
             </div>
           </div>
 
