@@ -125,6 +125,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [newStopStartTime, setNewStopStartTime] = useState('09:00');
   const [newStopDuration, setNewStopDuration] = useState(60);
   const [reliefSaved, setReliefSaved] = useState(false);
+
+  // Extra stop add-on state (for regular driver routes)
+  const [showAddExtra, setShowAddExtra] = useState(false);
+  const [extraType, setExtraType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
+  const [extraLabel, setExtraLabel] = useState('');
+  const [extraAddress, setExtraAddress] = useState('');
+  const [extraStartTime, setExtraStartTime] = useState('09:00');
+  const [extraDuration, setExtraDuration] = useState(60);
+  const [extraNotes, setExtraNotes] = useState('');
+  const [extraTeamMembers, setExtraTeamMembers] = useState<string[]>([]);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
@@ -389,9 +399,17 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     let actualDriveSeconds = 0;
 
     const firstCleanIdx = includedStops.findIndex(s => s.type === 'clean');
-    const firstCleanVisit = firstCleanIdx >= 0
-      ? data.driverVisits.find(dv => dv.id === includedStops[firstCleanIdx].visitId)
-      : null;
+    let firstCleanVisit = null;
+    if (firstCleanIdx >= 0) {
+      const stop = includedStops[firstCleanIdx];
+      if (stop.visitId) {
+        firstCleanVisit = data.driverVisits.find(dv => dv.id === stop.visitId);
+      }
+      // For add-on cleans without visitId, use targetTime as anchor
+      if (!firstCleanVisit && stop.targetTime) {
+        firstCleanVisit = { startTime: stop.targetTime, durationMinutes: stop.durationMin || 60 } as Visit;
+      }
+    }
 
     let departTime: Date;
     if (firstCleanVisit) {
@@ -423,7 +441,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       includedStops[i].arrivalTime = format(runningTime, 'HH:mm');
 
       if (includedStops[i].type === 'clean') {
-        const v = data.driverVisits.find(dv => dv.id === includedStops[i].visitId);
+        let v = data.driverVisits.find(dv => dv.id === includedStops[i].visitId);
+        // For add-on cleans without visitId, use targetTime
+        if (!v && includedStops[i].targetTime) {
+          v = { startTime: includedStops[i].targetTime, durationMinutes: includedStops[i].durationMin || 60 } as Visit;
+        }
         if (v) {
           const scheduledStart = parse(v.startTime, 'HH:mm', new Date());
           const earliestStart = addMinutes(scheduledStart, -15);
@@ -1470,6 +1492,116 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* ADD EXTRA STOP — only for regular driver routes */}
+              {!reliefMode && routeStops.length > 0 && (
+                <div className="border-t border-slate-200 pt-4 mt-4">
+                  <button
+                    onClick={() => setShowAddExtra(!showAddExtra)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors active:scale-95 mb-3"
+                  >
+                    <Plus size={14} /> {showAddExtra ? 'Cancel' : 'Add Extra Stop'}
+                  </button>
+
+                  {showAddExtra && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      <select
+                        value={extraType}
+                        onChange={e => {
+                          const t = e.target.value as any;
+                          setExtraType(t);
+                          setExtraDuration(t === 'pickup' || t === 'dropoff' ? 5 : 60);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                      >
+                        <option value="pickup">Pickup (team member)</option>
+                        <option value="clean">Clean (client)</option>
+                        <option value="dropoff">Dropoff (team member)</option>
+                        <option value="other">Other stop</option>
+                      </select>
+
+                      <input
+                        type="text"
+                        value={extraLabel}
+                        onChange={e => setExtraLabel(e.target.value)}
+                        placeholder={extraType === 'pickup' ? 'Team member name' : extraType === 'clean' ? 'Client name' : extraType === 'dropoff' ? 'Team member name' : 'Stop label'}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+
+                      <input
+                        type="text"
+                        value={extraAddress}
+                        onChange={e => setExtraAddress(e.target.value)}
+                        placeholder="Address"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+
+                      {extraType === 'other' && (
+                        <textarea
+                          value={extraNotes}
+                          onChange={e => setExtraNotes(e.target.value)}
+                          placeholder="Additional information about this stop..."
+                          rows={2}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                        />
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Start Time</label>
+                          <input
+                            type="time"
+                            value={extraStartTime}
+                            onChange={e => setExtraStartTime(e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Duration (min)</label>
+                          <input
+                            type="number"
+                            value={extraDuration}
+                            onChange={e => setExtraDuration(Number(e.target.value))}
+                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Team member checkboxes */}
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Who is in the car?</label>
+                        <div className="flex flex-wrap gap-2">
+                          {cleaners.filter(c => c.active).map(c => (
+                            <label key={c.id} className="flex items-center gap-1.5 text-xs text-slate-700 bg-white px-2 py-1 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+                              <input
+                                type="checkbox"
+                                checked={extraTeamMembers.includes(c.id)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setExtraTeamMembers(prev => [...prev, c.id]);
+                                  } else {
+                                    setExtraTeamMembers(prev => prev.filter(id => id !== c.id));
+                                  }
+                                }}
+                                className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                              />
+                              <span className="font-medium">{c.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={addExtraStop}
+                        disabled={!extraLabel || !extraAddress || !extraStartTime}
+                        className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-blue-700 transition-colors disabled:opacity-50 active:scale-95"
+                      >
+                        Add to Route
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
