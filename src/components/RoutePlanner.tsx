@@ -996,32 +996,32 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           {!reliefMode && drivers.length === 0 && (
             <span className="text-sm text-slate-400 font-medium">No drivers scheduled today.</span>
           )}
-          {!initialDriver && !initialReliefDate && (
-            <button
-              onClick={() => {
-                const enteringRelief = !reliefMode;
-                setReliefMode(enteringRelief);
-                setSelectedDriver(null);
-                if (!enteringRelief) {
-                  setRouteStops([]);
-                  setTotalKm(0);
-                  setDriverHours(0);
-                  setCleanHours(0);
-                  setActualDriveMinutes(0);
-                  setTeamHours([]);
-                  setApiError(null);
-                }
-              }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                reliefMode
-                  ? 'bg-amber-500 text-white shadow-md'
-                  : 'bg-white text-amber-700 border border-amber-200 hover:border-amber-400'
-              }`}
-            >
-              <Bus size={16} />
-              {reliefMode ? 'Exit Relief Mode' : 'Relief Route'}
-            </button>
-          )}
+          <button
+            onClick={() => {
+              const enteringRelief = !reliefMode;
+              setReliefMode(enteringRelief);
+              setSelectedDriver(null);
+              setRouteStops([]);
+              setReliefStops([]);
+              setTotalKm(0);
+              setDriverHours(0);
+              setCleanHours(0);
+              setActualDriveMinutes(0);
+              setTeamHours([]);
+              setApiError(null);
+              setRouteUrl('');
+              clearMarkers();
+              if (directionsRenderer.current) directionsRenderer.current.setMap(null);
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+              reliefMode
+                ? 'bg-amber-500 text-white shadow-md'
+                : 'bg-white text-amber-700 border border-amber-200 hover:border-amber-400'
+            }`}
+          >
+            <Bus size={16} />
+            {reliefMode ? 'Exit Relief Mode' : 'Relief Route'}
+          </button>
         </div>
       </div>
 

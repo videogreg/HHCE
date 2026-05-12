@@ -399,8 +399,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       </div>
 
-      {/* Driver Routes List */}
-      {viewMode === 'day' && hasDriverRoutes && (
+      {/* Driver Routes List — always visible in day view */}
+      {viewMode === 'day' && (
         <div className="space-y-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -444,6 +444,19 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 </div>
               </button>
             )}
+            {/* Plan Relief Route — always available */}
+            <button
+              onClick={() => setActiveRoutePlanner({ type: 'relief', date: dateStr })}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 border-dashed hover:border-amber-400 hover:shadow-sm hover:bg-amber-100 transition-all active:scale-95 shrink-0 min-w-[140px]"
+            >
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                <Bus size={16} className="text-amber-600" />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-amber-800">Plan Relief Route</p>
+                <p className="text-[10px] text-amber-600">Create new route</p>
+              </div>
+            </button>
           </div>
         </div>
       )}
