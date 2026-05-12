@@ -1077,6 +1077,136 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   };
 
+
+  // EXTRA STOP ADD-ON FUNCTIONS
+  const addExtraStop = async () => {
+    if (!extraLabel || !extraAddress || !extraStartTime) {
+      setApiError('Please fill in label, address, and start time');
+      return;
+    }
+    if (!routeDataRef.current) {
+      setApiError('No active driver route. Select a driver first.');
+      return;
+    }
+
+    setLoading(true);
+    setApiError(null);
+
+    // Geocode address
+    const loc = await geocodeAddress(extraAddress.trim());
+    if (!loc) {
+      setApiError(`Could not locate: ${extraAddress}`);
+      setLoading(false);
+      return;
+    }
+
+    // Check for conflicts with existing stops
+    const newStart = parse(extraStartTime, 'HH:mm', new Date());
+    const newEnd = addMinutes(newStart, extraDuration);
+    const conflicts: string[] = [];
+    const alerts: string[] = [];
+
+    for (const stop of routeStops) {
+      if (stop.included === false || stop.type === 'depart' || stop.type === 'home') continue;
+      const stopStart = stop.arrivalTime ? parse(stop.arrivalTime, 'HH:mm', new Date()) : null;
+      const stopEnd = stop.departTime ? parse(stop.departTime, 'HH:mm', new Date()) : (stopStart ? addMinutes(stopStart, stop.durationMin || 0) : null);
+      if (!stopStart || !stopEnd) continue;
+
+      // Check overlap
+      if (newStart < stopEnd && newEnd > stopStart) {
+        if (stop.type === 'clean' && extraType === 'clean') {
+          alerts.push(`Overlaps existing clean: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
+        } else {
+          conflicts.push(`Conflicts with: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
+        }
+      }
+    }
+
+    if (alerts.length > 0) {
+      setApiError('ALERT: ' + alerts.join('; '));
+      setLoading(false);
+      return;
+    }
+
+    // Build new stop
+    let stopLabel = extraType === 'pickup' ? `Pick up ${extraLabel}` :
+                    extraType === 'dropoff' ? `Drop off ${extraLabel}` :
+                    extraType === 'clean' ? `Clean — ${extraLabel}` :
+                    extraLabel;
+    if (extraType === 'other' && extraNotes.trim()) {
+      stopLabel += ` — ${extraNotes.trim()}`;
+    }
+    if (extraTeamMembers.length > 0) {
+      const memberNames = extraTeamMembers.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ');
+      if (memberNames) stopLabel += ` [${memberNames}]`;
+    }
+    const newStop: RouteStop = {
+      type: extraType,
+      label: stopLabel,
+      address: extraAddress,
+      arrivalTime: '',
+      durationMin: extraDuration,
+      targetTime: extraStartTime,
+      latLng: loc,
+      included: true,
+      isCustom: true,
+    };
+
+    // Insert into routeStops at correct chronological position (before home)
+    const updatedStops = [...routeStops];
+    let insertIdx = updatedStops.length - 1; // Before home
+    for (let i = 0; i < updatedStops.length; i++) {
+      const s = updatedStops[i];
+      const t = s.targetTime || s.arrivalTime;
+      if (t && t > extraStartTime && s.type !== 'home') {
+        insertIdx = i;
+        break;
+      }
+    }
+    updatedStops.splice(insertIdx, 0, newStop);
+
+    // If pickup, add cleaner to teamMembersWithAddr if known
+    if (extraType === 'pickup') {
+      const matched = cleaners.find(c =>
+        c.name.toLowerCase() === extraLabel.trim().toLowerCase() ||
+        c.name.toLowerCase().includes(extraLabel.trim().toLowerCase())
+      );
+      if (matched && matched.address && !routeDataRef.current.teamMembersWithAddr.find(tm => tm.id === matched.id)) {
+        routeDataRef.current.teamMembersWithAddr.push(matched);
+      }
+    }
+
+    // Recalculate route
+    await processRoute(routeDataRef.current, updatedStops);
+
+    if (conflicts.length > 0) {
+      setApiError('WARNING: ' + conflicts.join('; '));
+    }
+
+    // Reset form
+    setExtraLabel('');
+    setExtraAddress('');
+    setExtraStartTime('09:00');
+    setExtraDuration(60);
+    setExtraNotes('');
+    setExtraTeamMembers([]);
+    setShowAddExtra(false);
+    setLoading(false);
+  };
+
+  const removeExtraStop = (index: number) => {
+    const stop = routeStops[index];
+    if (!stop.isCustom) return;
+    const updated = routeStops.filter((_, i) => i !== index);
+    setRouteStops(updated);
+    if (routeDataRef.current) {
+      setLoading(true);
+      setApiError(null);
+      processRoute(routeDataRef.current, updated).then(() => setLoading(false));
+    }
+  };
+
+
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shrink-0">
