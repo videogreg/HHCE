@@ -161,8 +161,12 @@ export const ScheduleBuilder: React.FC = () => {
       }
     }
 
-    slots.sort((a, b) => b.score - a.score);
-    return slots[0] || null;
+    // Hard safety filter: never suggest cleaners the client avoids
+    const validSlots = selectedClient
+      ? slots.filter(s => !s.cleanerIds.some(id => selectedClient.avoidCleaners.includes(id)))
+      : slots;
+    validSlots.sort((a, b) => b.score - a.score);
+    return validSlots[0] || null;
   }, [selectedClient, newVisit.durationMinutes, dayVisits, cleaners]);
 
   // Auto-apply suggestion when client or duration changes

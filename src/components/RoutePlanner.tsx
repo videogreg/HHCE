@@ -428,6 +428,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
     setRouteUrl(mapsUrl);
 
+    // Pre-flight: every included stop must have a valid latLng
+    const missingLatLng = includedStops.filter(s => !s.latLng);
+    if (missingLatLng.length > 0) {
+      setApiError(`Cannot route: missing map location for ${missingLatLng.map(s => s.label).join(', ')}. Check the address.`);
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
+
     const routeResult = await calculateRoute(origin, destination, waypoints);
     if (!routeResult) {
       setApiError('Could not calculate route. Check addresses.');
@@ -437,6 +446,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     const legs = routeResult.routes[0].legs;
+    const expectedLegs = includedStops.length - 1;
+    if (legs.length < expectedLegs) {
+      setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address, or a location is unreachable.`);
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
     let totalDist = 0;
     let actualDriveSeconds = 0;
 
@@ -473,6 +489,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
     for (let i = 1; i < includedStops.length; i++) {
       const leg = legs[i - 1];
+      if (!leg) {
+        includedStops[i].arrivalTime = format(runningTime, 'HH:mm');
+        continue;
+      }
       totalDist += leg.distance.value;
       actualDriveSeconds += leg.duration.value;
       const driveMs = leg.duration.value * 1000;
@@ -1084,6 +1104,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
     setRouteUrl(mapsUrl);
 
+    // Pre-flight: every included stop must have a valid latLng
+    const missingLatLng = includedStops.filter(s => !s.latLng);
+    if (missingLatLng.length > 0) {
+      setApiError(`Cannot route: missing map location for ${missingLatLng.map(s => s.label).join(', ')}. Check the address.`);
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
+
     const routeResult = await calculateRoute(origin, destination, waypoints);
     if (!routeResult) {
       setApiError('Could not calculate route. Check addresses.');
@@ -1092,6 +1121,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     const legs = routeResult.routes[0].legs;
+    const expectedLegs = includedStops.length - 1;
+    if (legs.length < expectedLegs) {
+      setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address, or a location is unreachable.`);
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
     let totalDist = 0;
     let actualDriveSeconds = 0;
 
