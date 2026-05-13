@@ -543,7 +543,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       const tm = cleaners.find(c => c.id === id);
       if (!tm) return null;
 
-      // Find this cleaner's pickup and dropoff stops
+      // Find this cleaner's pickup and dropoff stops by teamMemberId OR by label
       const pickupIdx = includedStops.findIndex(s =>
         (s.type === 'pickup' && s.teamMemberId === id) ||
         (s.type === 'pickup' && s.label === `Pick up ${tm.name}`)
@@ -553,27 +553,44 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         (s.type === 'dropoff' && s.label === `Drop off ${tm.name}`)
       );
 
-      // Find all cleans between pickup and dropoff
+      // Find cleans this cleaner actually worked on (between pickup and dropoff)
       let relevantCleans: RouteStop[] = [];
-      if (pickupIdx >= 0 && dropoffIdx >= 0 && dropoffIdx > pickupIdx) {
-        relevantCleans = includedStops.slice(pickupIdx + 1, dropoffIdx).filter(s => s.type === 'clean');
-      } else if (pickupIdx >= 0 && dropoffIdx < 0) {
-        // Picked up but never dropped off — use all cleans after pickup
-        relevantCleans = includedStops.slice(pickupIdx + 1).filter(s => s.type === 'clean');
-      } else if (pickupIdx < 0 && dropoffIdx >= 0) {
-        // No pickup but has dropoff — use all cleans before dropoff
-        relevantCleans = includedStops.slice(0, dropoffIdx).filter(s => s.type === 'clean');
-      } else {
-        // No pickup or dropoff — use all cleans (original behavior)
-        relevantCleans = includedStops.filter(s => s.type === 'clean');
+      let searchStart = 0;
+      let searchEnd = includedStops.length;
+
+      if (pickupIdx >= 0) searchStart = pickupIdx + 1;
+      if (dropoffIdx >= 0) searchEnd = dropoffIdx;
+
+      const candidateCleans = includedStops.slice(searchStart, searchEnd).filter(s => s.type === 'clean');
+
+      // For each clean, check if this cleaner is assigned to it
+      for (const clean of candidateCleans) {
+        if (!clean.visitId) {
+          // Add-on clean without visitId — check if this cleaner is in extraTeamMembers
+          // or if the clean label mentions them
+          relevantCleans.push(clean);
+          continue;
+        }
+        const visit = data.driverVisits.find(v => v.id === clean.visitId);
+        if (visit) {
+          let assignedIds = visit.assignedCleanerIds || [];
+          if (assignedIds.length === 0) {
+            const team = teams.find(t => t.id === visit.assignedTeamId);
+            if (team) assignedIds = team.cleanerIds;
+          }
+          if (assignedIds.includes(id)) {
+            relevantCleans.push(clean);
+          }
+        }
       }
 
       if (!tm.isDriver) {
         // Non-driver: ONLY paid for cleans they actually work
-        // If no cleans between pickup and dropoff → 0 hours
+        // If no cleans between pickup and dropoff → 0 hours (they just got a ride)
         if (relevantCleans.length === 0) {
           return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
         }
+        // Hours = from start of first clean they worked to end of last clean they worked
         const firstClean = relevantCleans[0];
         const lastClean = relevantCleans[relevantCleans.length - 1];
         const cleanStart = parse(firstClean.actualStartTime || firstClean.arrivalTime, 'HH:mm', new Date());
