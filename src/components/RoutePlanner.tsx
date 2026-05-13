@@ -1184,55 +1184,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return;
     }
 
-    // Check for conflicts with existing stops
-    const newStart = parse(extraStartTime, 'HH:mm', new Date());
-    const newEnd = addMinutes(newStart, extraDuration);
-    const conflicts: string[] = [];
-    const alerts: string[] = [];
-
-    for (const stop of routeStops) {
-      if (stop.included === false || stop.type === 'depart' || stop.type === 'home') continue;
-      const stopStart = stop.arrivalTime ? parse(stop.arrivalTime, 'HH:mm', new Date()) : null;
-      const stopEnd = stop.departTime ? parse(stop.departTime, 'HH:mm', new Date()) : (stopStart ? addMinutes(stopStart, stop.durationMin || 0) : null);
-      if (!stopStart || !stopEnd) continue;
-
-      // Check overlap
-      if (newStart < stopEnd && newEnd > stopStart) {
-        if (stop.type === 'clean' && extraType === 'clean') {
-          alerts.push(`Overlaps existing clean: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
-        } else {
-          conflicts.push(`Conflicts with: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
-        }
-      }
-    }
-
-    if (alerts.length > 0) {
-      // Save alert violations to localStorage so they appear on calendar
-      const existing = getExtraViolations(dateStr);
-      const newAlerts: ConstraintViolation[] = alerts.map((msg, idx) => ({
-        id: `extra_alert_${Date.now()}_${idx}`,
-        visitId: routeStops.find(s => s.type === 'clean' && s.included !== false)?.visitId || '',
-        message: msg,
-        severity: 'error',
-      }));
-      saveExtraViolations(dateStr, [...existing, ...newAlerts]);
-      setApiError('ALERT: ' + alerts.join('; '));
-      setLoading(false);
-      return;
-    }
-
-    if (conflicts.length > 0) {
-      // Save warning violations to localStorage so they appear on calendar
-      const existing = getExtraViolations(dateStr);
-      const newWarnings: ConstraintViolation[] = conflicts.map((msg, idx) => ({
-        id: `extra_warn_${Date.now()}_${idx}`,
-        visitId: routeStops.find(s => s.type === 'clean' && s.included !== false)?.visitId || '',
-        message: msg,
-        severity: 'warning',
-      }));
-      saveExtraViolations(dateStr, [...existing, ...newWarnings]);
-    }
-
     // Build new stop
     let stopLabel = extraType === 'pickup' ? `Pick up ${extraLabel}` :
                     extraType === 'dropoff' ? `Drop off ${extraLabel}` :
@@ -1262,7 +1213,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     let insertIdx = updatedStops.length - 1; // Before home
     for (let i = 0; i < updatedStops.length; i++) {
       const s = updatedStops[i];
-      const t = s.targetTime || s.arrivalTime;
+      let t = s.targetTime;
+      // For scheduled cleans, look up their original start time from visit data
+      if (!t && s.visitId) {
+        const v = dayVisits.find(dv => dv.id === s.visitId);
+        if (v) t = v.startTime;
+      }
       if (t && t > extraStartTime && s.type !== 'home') {
         insertIdx = i;
         break;
@@ -1281,11 +1237,41 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }
     }
 
-    // Recalculate route
+    // Recalculate route — this handles backward timing from target times
     await processRoute(routeDataRef.current, updatedStops);
 
+    // Check for conflicts AFTER recalculation (using actual calculated times)
+    const conflicts: string[] = [];
+    const newStart = parse(extraStartTime, 'HH:mm', new Date());
+    const newEnd = addMinutes(newStart, extraDuration);
+
+    for (const stop of updatedStops) {
+      if (stop.included === false || stop.type === 'depart' || stop.type === 'home') continue;
+      if (stop === newStop) continue; // Don't check against itself
+      const stopStart = stop.arrivalTime ? parse(stop.arrivalTime, 'HH:mm', new Date()) : null;
+      const stopEnd = stop.departTime ? parse(stop.departTime, 'HH:mm', new Date()) : (stopStart ? addMinutes(stopStart, stop.durationMin || 0) : null);
+      if (!stopStart || !stopEnd) continue;
+
+      if (newStart < stopEnd && newEnd > stopStart) {
+        if (stop.type === 'clean' && extraType === 'clean') {
+          conflicts.push(`ALERT: Overlaps existing clean: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
+        } else {
+          conflicts.push(`WARNING: Conflicts with: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
+        }
+      }
+    }
+
     if (conflicts.length > 0) {
-      setApiError('WARNING: ' + conflicts.join('; '));
+      // Save violations to localStorage so they appear on calendar
+      const existing = getExtraViolations(dateStr);
+      const newVios: ConstraintViolation[] = conflicts.map((msg, idx) => ({
+        id: `extra_${Date.now()}_${idx}`,
+        visitId: updatedStops.find(s => s.type === 'clean' && s.included !== false)?.visitId || '',
+        message: msg,
+        severity: msg.startsWith('ALERT') ? 'error' : 'warning',
+      }));
+      saveExtraViolations(dateStr, [...existing, ...newVios]);
+      setApiError(conflicts.join('; '));
     }
 
     // Reset form
