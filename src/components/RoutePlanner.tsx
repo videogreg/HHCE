@@ -1231,8 +1231,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   };
 
   const handleClearExtraStops = () => {
-    if (selectedDriver && confirm('Remove all extra stops from this driver's route?')) {
-      clearExtraStops(dateStr, selectedDriver.id);
+    if (selectedDriver && confirm("Remove all extra stops from this driver's route?")) {
+      try {
+        const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+        if (raw) {
+          const all = JSON.parse(raw);
+          delete all[`${dateStr}_${selectedDriver.id}`];
+          localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
+        }
+      } catch { /* ignore */ }
       setExtraSaved(false);
       if (routeDataRef.current) {
         const originalStops = routeStops.filter(s => !s.isCustom);
@@ -1241,17 +1248,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }
     }
   };
-
-  // EXTRA STOP ADD-ON FUNCTIONS
-  const addExtraStop = async () => {
-    if (!extraLabel || !extraAddress || !extraStartTime) {
-      setApiError('Please fill in label, address, and start time');
-      return;
-    }
-    if (!routeDataRef.current) {
-      setApiError('No active driver route. Select a driver first.');
-      return;
-    }
 
     setLoading(true);
     setApiError(null);
