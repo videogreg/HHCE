@@ -118,19 +118,7 @@ const saveExtraViolations = (date: string, violations: ConstraintViolation[]) =>
   }
 };
 
-const dismissExtraViolation = (date: string, violationId: string) => {
-  try {
-    const raw = localStorage.getItem(EXTRA_VIOLATIONS_KEY);
-    if (!raw) return;
-    const all = JSON.parse(raw);
-    if (all[date]) {
-      all[date] = all[date].filter((v: any) => v.id !== violationId);
-      localStorage.setItem(EXTRA_VIOLATIONS_KEY, JSON.stringify(all));
-    }
-  } catch {
-    // ignore
-  }
-};
+
 
 interface RoutePlannerProps {
   onClose: () => void;
