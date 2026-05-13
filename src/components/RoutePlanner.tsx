@@ -1104,10 +1104,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
     setRouteUrl(mapsUrl);
 
-    // Pre-flight: every included stop must have a valid latLng
-    const missingLatLng = includedStops.filter(s => !s.latLng);
+    // Pre-flight: every stop must have a valid latLng
+    const missingLatLng = stops.filter((s: RouteStop) => !s.latLng);
     if (missingLatLng.length > 0) {
-      setApiError(`Cannot route: missing map location for ${missingLatLng.map(s => s.label).join(', ')}. Check the address.`);
+      setApiError(`Cannot route: missing map location for ${missingLatLng.map((s: RouteStop) => s.label).join(', ')}. Check the address.`);
       setRouteStops(stops);
       setLoading(false);
       return;
@@ -1121,7 +1121,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     const legs = routeResult.routes[0].legs;
-    const expectedLegs = includedStops.length - 1;
+    const expectedLegs = stops.length - 1;
     if (legs.length < expectedLegs) {
       setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address, or a location is unreachable.`);
       setRouteStops(stops);
