@@ -62,28 +62,6 @@ interface ReliefStopInput {
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
 const EXTRA_VIOLATIONS_KEY = 'hhce_extra_violations';
 const EXTRA_STOPS_KEY = 'hhce_extra_stops';
-const saveExtraStops = (date: string, driverId: string, stops: RouteStop[]) => {
-  try {
-    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
-    const all = raw ? JSON.parse(raw) : {};
-    all[`${date}_${driverId}`] = stops.filter(s => s.isCustom);
-    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
-  } catch {
-    // ignore
-  }
-};
-
-const getExtraStops = (date: string, driverId: string): RouteStop[] | null => {
-  try {
-    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
-    if (!raw) return null;
-    const all = JSON.parse(raw);
-    return all[`${date}_${driverId}`] || null;
-  } catch {
-    return null;
-  }
-};
-
 
 const getSavedRelief = (date: string): RouteStop[] | null => {
   try {
@@ -102,6 +80,17 @@ const saveRelief = (date: string, stops: RouteStop[]) => {
     const all = raw ? JSON.parse(raw) : {};
     all[date] = stops;
     localStorage.setItem(RELIEF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const saveExtraStops = (date: string, driverId: string, stops: RouteStop[]) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[`${date}_${driverId}`] = stops.filter(s => s.isCustom);
+    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
   } catch {
     // ignore
   }
@@ -1265,14 +1254,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       setExtraSaved(false);
       if (routeDataRef.current) {
         const originalStops = routeStops.filter(s => !s.isCustom);
-  const addExtraStop = async () => {
         setLoading(true);
         processRoute(routeDataRef.current, originalStops).then(() => setLoading(false));
       }
     }
   };
 
-    setLoading(true);
+
+  const addExtraStop = async () => {
+    if (!routeDataRef.current) return;
     setApiError(null);
 
     // Geocode address
@@ -1332,13 +1322,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         c.name.toLowerCase() === extraLabel.trim().toLowerCase() ||
         c.name.toLowerCase().includes(extraLabel.trim().toLowerCase())
       );
-      if (matched && matched.address && !routeDataRef.current.teamMembersWithAddr.find(tm => tm.id === matched.id)) {
-        routeDataRef.current.teamMembersWithAddr.push(matched);
+    if (matched && matched.address && !routeDataRef.current!.teamMembersWithAddr.find(tm => tm.id === matched.id)) {
+      routeDataRef.current!.teamMembersWithAddr.push(matched);
       }
     }
 
     // Recalculate route — this handles backward timing from target times
-    await processRoute(routeDataRef.current, updatedStops);
+    await processRoute(routeDataRef.current!, updatedStops);
 
     // Check for conflicts AFTER recalculation (using actual calculated times)
     const conflicts: string[] = [];
