@@ -526,7 +526,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const allTeamMemberIds = new Set<string>();
     data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
     // Also find cleaners from extra pickup/dropoff stops
-    includedStops.forEach((s, idx) => {
+    includedStops.forEach((s) => {
       if (s.type === 'pickup' && s.label.startsWith('Pick up ')) {
         const name = s.label.replace('Pick up ', '');
         const c = cleaners.find(x => x.name === name);
