@@ -495,7 +495,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         }
       } else if (includedStops[i].targetTime && includedStops[i].type !== 'home') {
         // Non-clean stops with targetTime (pickup/dropoff/other): same ±15 min grace as cleans
-        const targetTime = parse(includedStops[i].targetTime, 'HH:mm', new Date());
+        const targetTime = parse(includedStops[i].targetTime || '08:00', 'HH:mm', new Date());
         const earliestStart = addMinutes(targetTime, -15);
         const latestStart = addMinutes(targetTime, 15);
 
