@@ -61,6 +61,7 @@ interface ReliefStopInput {
 
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
 const EXTRA_VIOLATIONS_KEY = 'hhce_extra_violations';
+const EXTRA_STOPS_KEY = 'hhce_extra_stops';
 
 const getSavedRelief = (date: string): RouteStop[] | null => {
   try {
@@ -104,6 +105,40 @@ const getExtraViolations = (date: string): ConstraintViolation[] => {
     return all[date] || [];
   } catch {
     return [];
+  }
+};
+
+const getSavedExtraStops = (date: string, driverId: string): RouteStop[] | null => {
+  try {
+    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[`${date}_${driverId}`] || null;
+  } catch {
+    return null;
+  }
+};
+
+const saveExtraStops = (date: string, driverId: string, stops: RouteStop[]) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[`${date}_${driverId}`] = stops;
+    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const clearExtraStops = (date: string, driverId: string) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    delete all[`${date}_${driverId}`];
+    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
   }
 };
 
@@ -153,6 +188,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   // Extra stop add-on state (for regular driver routes)
   const [showAddExtra, setShowAddExtra] = useState(false);
+  const [extraSaved, setExtraSaved] = useState(false);
   const [extraType, setExtraType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
   const [extraLabel, setExtraLabel] = useState('');
   const [extraAddress, setExtraAddress] = useState('');
@@ -790,6 +826,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setApiError(null);
     setCopied(false);
     setRouteUrl('');
+    setExtraSaved(false);
 
     await loadGoogleMaps(API_KEY);
 
@@ -917,6 +954,29 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     };
 
     await processRoute(routeDataRef.current, stops);
+
+    // Check for saved extra stops and merge them in
+    const savedExtras = getSavedExtraStops(dateStr, driver.id);
+    if (savedExtras && savedExtras.length > 0) {
+      const customStops = savedExtras.filter(s => s.isCustom);
+      if (customStops.length > 0) {
+        const merged = [...stops, ...customStops];
+        // Sort by targetTime/arrivalTime
+        merged.sort((a, b) => {
+          const ta = a.targetTime || a.arrivalTime || '99:99';
+          const tb = b.targetTime || b.arrivalTime || '99:99';
+          return ta.localeCompare(tb);
+        });
+        // Ensure home is last
+        const homeIdx = merged.findIndex(s => s.type === 'home');
+        if (homeIdx >= 0) {
+          const home = merged.splice(homeIdx, 1)[0];
+          merged.push(home);
+        }
+        await processRoute(routeDataRef.current, merged);
+        setExtraSaved(true);
+      }
+    }
   };
 
   // RELIEF DRIVER FUNCTIONS
@@ -1605,6 +1665,25 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                     className="px-4 py-2.5 bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-red-200 transition-colors active:scale-95 flex items-center gap-2"
                   >
                     <RotateCcw size={14} /> Clear
+                  </button>
+                </div>
+              )}
+
+              {/* Regular driver: save/clear extra stops */}
+              {!reliefMode && selectedDriver && routeStops.some(s => s.isCustom) && (
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={handleSaveExtraStops}
+                    disabled={extraSaved}
+                    className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-blue-700 transition-colors disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Save size={14} /> {extraSaved ? 'Saved' : 'Save Extra Stops'}
+                  </button>
+                  <button
+                    onClick={handleClearExtraStops}
+                    className="px-4 py-2.5 bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-red-200 transition-colors active:scale-95 flex items-center gap-2"
+                  >
+                    <RotateCcw size={14} /> Clear Extras
                   </button>
                 </div>
               )}
