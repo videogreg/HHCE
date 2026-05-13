@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import type { Visit, Cleaner, Client } from '../types';
+import type { Visit, Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Upload, X, Car, Star, Ban, Check, Bus } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Upload, X, Car, Star, Ban, Check } from 'lucide-react';
 import { format, addDays, subDays, isSameDay, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 import { checkConstraints } from '../utils/scheduler';
 import { parseVisitsCSV } from '../utils/csvParser';
