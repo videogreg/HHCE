@@ -197,7 +197,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       const saved = all[dateStr];
       if (!saved || saved.length === 0) return null;
       const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
-      return { name, stopCount: saved.length } as ReliefRouteInfo;
+      return { name, stopCount: saved.filter((s: any) => s.type !== 'depart' && s.type !== 'home').length } as ReliefRouteInfo;
     } catch {
       return null;
     }
