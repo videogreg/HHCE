@@ -1490,7 +1490,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
               {/* Added stops list */}
               {reliefStops.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Planned Stops ({reliefStops.length})</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Planned Stops ({reliefStops.filter(s => s.type !== 'depart' && s.type !== 'home').length})</p>
                   {reliefStops.map((stop) => (
                     <div key={stop.id} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
