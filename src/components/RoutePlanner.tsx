@@ -522,39 +522,81 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     // Actual driving minutes from Google Maps legs
     const actualDriveMin = Math.round(actualDriveSeconds / 60);
 
-    const memberHours: TeamMemberHours[] = data.teamMembersWithAddr.map(tm => {
-      const includedPickup = includedStops.find(s => s.type === 'pickup' && s.teamMemberId === tm.id);
-      const includedDropoff = includedStops.find(s => s.type === 'dropoff' && s.teamMemberId === tm.id);
-      const includedCleans = includedStops.filter(s => s.type === 'clean');
+    // Build comprehensive team member list including extra pickups/dropoffs
+    const allTeamMemberIds = new Set<string>();
+    data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
+    // Also find cleaners from extra pickup/dropoff stops
+    includedStops.forEach((s, idx) => {
+      if (s.type === 'pickup' && s.label.startsWith('Pick up ')) {
+        const name = s.label.replace('Pick up ', '');
+        const c = cleaners.find(x => x.name === name);
+        if (c) allTeamMemberIds.add(c.id);
+      }
+      if (s.type === 'dropoff' && s.label.startsWith('Drop off ')) {
+        const name = s.label.replace('Drop off ', '');
+        const c = cleaners.find(x => x.name === name);
+        if (c) allTeamMemberIds.add(c.id);
+      }
+    });
+
+    const memberHours: TeamMemberHours[] = Array.from(allTeamMemberIds).map(id => {
+      const tm = cleaners.find(c => c.id === id);
+      if (!tm) return null;
+
+      // Find this cleaner's pickup and dropoff stops
+      const pickupIdx = includedStops.findIndex(s =>
+        (s.type === 'pickup' && s.teamMemberId === id) ||
+        (s.type === 'pickup' && s.label === `Pick up ${tm.name}`)
+      );
+      const dropoffIdx = includedStops.findIndex(s =>
+        (s.type === 'dropoff' && s.teamMemberId === id) ||
+        (s.type === 'dropoff' && s.label === `Drop off ${tm.name}`)
+      );
+
+      // Find all cleans between pickup and dropoff
+      let relevantCleans: RouteStop[] = [];
+      if (pickupIdx >= 0 && dropoffIdx >= 0 && dropoffIdx > pickupIdx) {
+        relevantCleans = includedStops.slice(pickupIdx + 1, dropoffIdx).filter(s => s.type === 'clean');
+      } else if (pickupIdx >= 0 && dropoffIdx < 0) {
+        // Picked up but never dropped off — use all cleans after pickup
+        relevantCleans = includedStops.slice(pickupIdx + 1).filter(s => s.type === 'clean');
+      } else if (pickupIdx < 0 && dropoffIdx >= 0) {
+        // No pickup but has dropoff — use all cleans before dropoff
+        relevantCleans = includedStops.slice(0, dropoffIdx).filter(s => s.type === 'clean');
+      } else {
+        // No pickup or dropoff — use all cleans (original behavior)
+        relevantCleans = includedStops.filter(s => s.type === 'clean');
+      }
 
       if (!tm.isDriver) {
-        // Non-driver: first clean to last clean
-        if (includedCleans.length === 0) {
+        // Non-driver: ONLY paid for cleans they actually work
+        // If no cleans between pickup and dropoff → 0 hours
+        if (relevantCleans.length === 0) {
           return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
         }
-        const firstClean = includedCleans[0];
-        const lastClean = includedCleans[includedCleans.length - 1];
+        const firstClean = relevantCleans[0];
+        const lastClean = relevantCleans[relevantCleans.length - 1];
         const cleanStart = parse(firstClean.actualStartTime || firstClean.arrivalTime, 'HH:mm', new Date());
         const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
         const minutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
         return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
       } else {
-        // Driver team member: pickup-to-dropoff, or clean-to-clean if skipped
+        // Driver team member: door-to-door (pickup to dropoff, or clean-to-clean)
         let startTime: Date;
         let endTime: Date;
 
-        if (includedPickup) {
-          startTime = parse(includedPickup.arrivalTime, 'HH:mm', new Date());
-        } else if (includedCleans.length > 0) {
-          startTime = parse(includedCleans[0].actualStartTime || includedCleans[0].arrivalTime, 'HH:mm', new Date());
+        if (pickupIdx >= 0) {
+          startTime = parse(includedStops[pickupIdx].arrivalTime, 'HH:mm', new Date());
+        } else if (relevantCleans.length > 0) {
+          startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
         } else {
           return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
         }
 
-        if (includedDropoff) {
-          endTime = parse(includedDropoff.arrivalTime, 'HH:mm', new Date());
-        } else if (includedCleans.length > 0) {
-          endTime = parse(includedCleans[includedCleans.length - 1].departTime || includedCleans[includedCleans.length - 1].arrivalTime, 'HH:mm', new Date());
+        if (dropoffIdx >= 0) {
+          endTime = parse(includedStops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
+        } else if (relevantCleans.length > 0) {
+          endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
         } else {
           return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
         }
@@ -563,7 +605,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         const minutes = rawMinutes - totalWaitMin;
         return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: true };
       }
-    });
+    }).filter(Boolean) as TeamMemberHours[];
 
     setTotalKm(Math.round(totalDist / 100) / 10);
     setDriverHours(driverTotalHours);
