@@ -493,6 +493,31 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             includedStops[i].departTime = format(runningTime, 'HH:mm');
           }
         }
+      } else if (includedStops[i].targetTime && includedStops[i].type !== 'home') {
+        // Non-clean stops with targetTime (pickup/dropoff/other): same ±15 min grace as cleans
+        const targetTime = parse(includedStops[i].targetTime, 'HH:mm', new Date());
+        const earliestStart = addMinutes(targetTime, -15);
+        const latestStart = addMinutes(targetTime, 15);
+
+        if (isBefore(runningTime, earliestStart)) {
+          // Arrived more than 15 min early — wait until window opens
+          includedStops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
+          includedStops[i].actualStartTime = format(earliestStart, 'HH:mm');
+          runningTime = addMinutes(earliestStart, includedStops[i].durationMin || 0);
+          includedStops[i].departTime = format(runningTime, 'HH:mm');
+        } else if (isAfter(runningTime, latestStart)) {
+          // Arrived more than 15 min late
+          includedStops[i].isLate = true;
+          includedStops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
+          includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
+          includedStops[i].departTime = format(runningTime, 'HH:mm');
+        } else {
+          // Within ±15 min window — start immediately, no wait/late
+          includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
+          includedStops[i].departTime = format(runningTime, 'HH:mm');
+        }
       } else if (includedStops[i].durationMin) {
         runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
         includedStops[i].departTime = format(runningTime, 'HH:mm');
@@ -1219,7 +1244,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         const v = dayVisits.find(dv => dv.id === s.visitId);
         if (v) t = v.startTime;
       }
-      if (t && t > extraStartTime && s.type !== 'home') {
+      // Use >= so same-time stops insert before (dropoff before clean)
+      if (t && t >= extraStartTime && s.type !== 'home') {
         insertIdx = i;
         break;
       }
