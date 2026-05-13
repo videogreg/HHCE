@@ -1194,18 +1194,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setLoading(false);
   };
 
-  const removeExtraStop = (index: number) => {
-    const stop = routeStops[index];
-    if (!stop.isCustom) return;
-    const updated = routeStops.filter((_, i) => i !== index);
-    setRouteStops(updated);
-    if (routeDataRef.current) {
-      setLoading(true);
-      setApiError(null);
-      processRoute(routeDataRef.current, updated).then(() => setLoading(false));
-    }
-  };
-
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
