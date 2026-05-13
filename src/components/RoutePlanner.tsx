@@ -108,39 +108,9 @@ const getExtraViolations = (date: string): ConstraintViolation[] => {
   }
 };
 
-const getSavedExtraStops = (date: string, driverId: string): RouteStop[] | null => {
-  try {
-    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
-    if (!raw) return null;
-    const all = JSON.parse(raw);
-    return all[`${date}_${driverId}`] || null;
-  } catch {
-    return null;
-  }
-};
 
-const saveExtraStops = (date: string, driverId: string, stops: RouteStop[]) => {
-  try {
-    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
-    const all = raw ? JSON.parse(raw) : {};
-    all[`${date}_${driverId}`] = stops;
-    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
-  } catch {
-    // ignore
-  }
-};
 
-const clearExtraStops = (date: string, driverId: string) => {
-  try {
-    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
-    if (!raw) return;
-    const all = JSON.parse(raw);
-    delete all[`${date}_${driverId}`];
-    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
-  } catch {
-    // ignore
-  }
-};
+
 
 const saveExtraViolations = (date: string, violations: ConstraintViolation[]) => {
   try {
@@ -956,7 +926,14 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     await processRoute(routeDataRef.current, stops);
 
     // Check for saved extra stops and merge them in
-    const savedExtras = getSavedExtraStops(dateStr, driver.id);
+    let savedExtras: RouteStop[] | null = null;
+    try {
+      const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+      if (raw) {
+        const all = JSON.parse(raw);
+        savedExtras = all[`${dateStr}_${driver.id}`] || null;
+      }
+    } catch { /* ignore */ }
     if (savedExtras && savedExtras.length > 0) {
       const customStops = savedExtras.filter(s => s.isCustom);
       if (customStops.length > 0) {
@@ -1246,6 +1223,24 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   };
 
+  const handleSaveExtraStops = () => {
+    if (selectedDriver) {
+      saveExtraStops(dateStr, selectedDriver.id, routeStops);
+      setExtraSaved(true);
+    }
+  };
+
+  const handleClearExtraStops = () => {
+    if (selectedDriver && confirm('Remove all extra stops from this driver's route?')) {
+      clearExtraStops(dateStr, selectedDriver.id);
+      setExtraSaved(false);
+      if (routeDataRef.current) {
+        const originalStops = routeStops.filter(s => !s.isCustom);
+        setLoading(true);
+        processRoute(routeDataRef.current, originalStops).then(() => setLoading(false));
+      }
+    }
+  };
 
   // EXTRA STOP ADD-ON FUNCTIONS
   const addExtraStop = async () => {

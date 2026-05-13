@@ -147,25 +147,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     });
   };
 
-  const getDayHasWarning = (d: Date) => {
-    const ds = format(d, 'yyyy-MM-dd');
-    const dVisits = visits.filter(v => v.date === ds);
-    const vios = checkConstraints(dVisits, cleaners, clients, teams);
-    // Include extra stop violations (warnings only)
-    let extraVios: ConstraintViolation[] = [];
-    try {
-      const raw = localStorage.getItem('hhce_extra_violations');
-      if (raw) {
-        const all = JSON.parse(raw);
-        extraVios = (all[ds] || []).filter((v: any) => v.severity === 'warning');
-      }
-    } catch { /* ignore */ }
-    const allVios = [...vios, ...extraVios];
-    return allVios.some((v: any) => {
-      const visit = dVisits.find(dv => dv.id === v.visitId);
-      return v.severity === 'warning' && !visit?.dismissedViolations?.includes(v.id);
-    });
-  };
+
 
   const stats = {
     total: dayVisits.filter(v => v.durationMinutes > 0 && v.clientId && v.clientName).length,
