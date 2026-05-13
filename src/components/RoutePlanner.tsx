@@ -9,7 +9,7 @@ import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
 import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, Save, RotateCcw, Trash2 } from 'lucide-react';
-import type { Cleaner, Visit } from '../types';
+import type { Cleaner, Visit, ConstraintViolation } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -60,6 +60,7 @@ interface ReliefStopInput {
 }
 
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
+const EXTRA_VIOLATIONS_KEY = 'hhce_extra_violations';
 
 const getSavedRelief = (date: string): RouteStop[] | null => {
   try {
@@ -90,6 +91,42 @@ const clearRelief = (date: string) => {
     const all = JSON.parse(raw);
     delete all[date];
     localStorage.setItem(RELIEF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const getExtraViolations = (date: string): ConstraintViolation[] => {
+  try {
+    const raw = localStorage.getItem(EXTRA_VIOLATIONS_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw);
+    return all[date] || [];
+  } catch {
+    return [];
+  }
+};
+
+const saveExtraViolations = (date: string, violations: ConstraintViolation[]) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_VIOLATIONS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[date] = violations;
+    localStorage.setItem(EXTRA_VIOLATIONS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const dismissExtraViolation = (date: string, violationId: string) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_VIOLATIONS_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    if (all[date]) {
+      all[date] = all[date].filter((v: any) => v.id !== violationId);
+      localStorage.setItem(EXTRA_VIOLATIONS_KEY, JSON.stringify(all));
+    }
   } catch {
     // ignore
   }
@@ -1123,9 +1160,30 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     if (alerts.length > 0) {
+      // Save alert violations to localStorage so they appear on calendar
+      const existing = getExtraViolations(dateStr);
+      const newAlerts: ConstraintViolation[] = alerts.map((msg, idx) => ({
+        id: `extra_alert_${Date.now()}_${idx}`,
+        visitId: routeStops.find(s => s.type === 'clean' && s.included !== false)?.visitId || '',
+        message: msg,
+        severity: 'error',
+      }));
+      saveExtraViolations(dateStr, [...existing, ...newAlerts]);
       setApiError('ALERT: ' + alerts.join('; '));
       setLoading(false);
       return;
+    }
+
+    if (conflicts.length > 0) {
+      // Save warning violations to localStorage so they appear on calendar
+      const existing = getExtraViolations(dateStr);
+      const newWarnings: ConstraintViolation[] = conflicts.map((msg, idx) => ({
+        id: `extra_warn_${Date.now()}_${idx}`,
+        visitId: routeStops.find(s => s.type === 'clean' && s.included !== false)?.visitId || '',
+        message: msg,
+        severity: 'warning',
+      }));
+      saveExtraViolations(dateStr, [...existing, ...newWarnings]);
     }
 
     // Build new stop

@@ -51,12 +51,13 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   }, [focusVisitId, dayVisits, onFocusClear]);
 
   const allViolations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
-  const violations = allViolations.filter(v => {
+  // Note: allViolationsMerged (below) includes extra stop violations for display
+  const violations = allViolationsMerged.filter(v => {
     const visit = dayVisits.find(dv => dv.id === v.visitId);
     return !visit?.dismissedViolations?.includes(v.id);
   });
 
-  const getViolationsForVisit = (visitId: string) => allViolations.filter(v => v.visitId === visitId);
+  const getViolationsForVisit = (visitId: string) => allViolationsMerged.filter(v => v.visitId === visitId);
   const getVisibleViolationsForVisit = (visit: Visit) => {
     const vios = getViolationsForVisit(visit.id);
     return vios.filter(v => !visit.dismissedViolations?.includes(v.id));
@@ -111,19 +112,29 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const paddingDays = Array.from({ length: startDayIndex }, () => null);
   const calendarDays = [...paddingDays, ...daysInMonth];
 
-  const getDayVisitCount = (d: Date) => visits.filter(v => v.date === format(d, 'yyyy-MM-dd') && !v.cancelled).length;
+  const getDayVisitCount = (d: Date) => visits.filter(v => v.date === format(d, 'yyyy-MM-dd') && !v.cancelled && v.durationMinutes > 0 && v.clientId && v.clientName).length;
   const getDayHasError = (d: Date) => {
     const ds = format(d, 'yyyy-MM-dd');
     const dVisits = visits.filter(v => v.date === ds);
     const vios = checkConstraints(dVisits, cleaners, clients, teams);
-    return vios.some(v => {
+    // Include extra stop violations
+    let extraVios: ConstraintViolation[] = [];
+    try {
+      const raw = localStorage.getItem('hhce_extra_violations');
+      if (raw) {
+        const all = JSON.parse(raw);
+        extraVios = (all[ds] || []).filter((v: ConstraintViolation) => v.severity === 'error');
+      }
+    } catch { /* ignore */ }
+    const allVios = [...vios, ...extraVios];
+    return allVios.some(v => {
       const visit = dVisits.find(dv => dv.id === v.visitId);
       return v.severity === 'error' && !visit?.dismissedViolations?.includes(v.id);
     });
   };
 
   const stats = {
-    total: dayVisits.length,
+    total: dayVisits.filter(v => v.durationMinutes > 0 && v.clientId && v.clientName).length,
     cancelled: dayVisits.filter(v => v.cancelled).length,
     errors: errorCount,
     warnings: warningCount,
@@ -261,7 +272,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             {dayViewDays.map(d => {
               const isSelected = isSameDay(d, selectedDate);
               const ds = format(d, 'yyyy-MM-dd');
-              const count = visits.filter(v => v.date === ds && !v.cancelled).length;
+              const count = visits.filter(v => v.date === ds && !v.cancelled && v.durationMinutes > 0 && v.clientId && v.clientName).length;
               const isToday = isSameDay(d, new Date());
               const hasErr = getDayHasError(d);
               return (
@@ -607,9 +618,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                             {v.message}
                           </span>
                           <button
-                            onClick={() => dismissViolation(visit.id, v.id)}
+                            onClick={() => {
+                              if (v.id.startsWith('extra_')) {
+                                dismissExtraViolation(v.id);
+                              } else {
+                                dismissViolation(visit.id, v.id);
+                              }
+                            }}
                             className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors active:scale-95"
-                            title="Dismiss this alert for this visit"
+                            title="Dismiss this alert"
                           >
                             <X size={8} /> Dismiss
                           </button>
