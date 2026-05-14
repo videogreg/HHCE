@@ -24,7 +24,7 @@ interface ReliefRouteInfo {
   stopCount: number;
 }
 
-export const ScheduleBoard: React.FC<<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
+export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -470,9 +470,7 @@ export const ScheduleBoard: React.FC<<ScheduleBoardProps> = ({ focusVisitId, onF
             </div>
           </div>
         )}
-      </div>
-
-      <div className="grid grid-cols-4 gap-2">
+      </div>      <div className="grid grid-cols-4 gap-2">
         <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
           <div className="text-lg font-black text-slate-800">{stats.total}</div>
           <div className="text-[9px] font-bold text-slate-400 uppercase">Total</div>
