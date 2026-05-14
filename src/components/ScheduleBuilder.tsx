@@ -169,17 +169,7 @@ export const ScheduleBuilder: React.FC = () => {
     return validSlots[0] || null;
   }, [selectedClient, newVisit.durationMinutes, dayVisits, cleaners]);
 
-  // Auto-apply suggestion when client or duration changes
-  useEffect(() => {
-    if (suggestion && suggestion.startTime && suggestion.cleanerIds.length > 0 && newVisit.clientId) {
-      setNewVisit(prev => ({
-        ...prev,
-        startTime: suggestion.startTime,
-        assignedCleanerIds: suggestion.cleanerIds,
-        assignedTeamId: ''
-      }));
-    }
-  }, [suggestion, newVisit.clientId]);
+  // Suggestion is displayed but NEVER auto-applied — user has final say
 
   const addVisit = () => {
     if (!newVisit.clientId) return;
@@ -312,7 +302,6 @@ export const ScheduleBuilder: React.FC = () => {
     }
     return { label: `Done at ${lastEnd}`, color: 'bg-green-50 text-green-700 border-green-200', icon: 'check' };
   };
-
   return (
     <div className="space-y-4 animate-slide-up">
       <div className="flex items-center justify-between">
