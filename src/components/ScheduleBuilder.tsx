@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Visit, Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
