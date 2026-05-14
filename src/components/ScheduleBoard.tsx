@@ -4,8 +4,7 @@ import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
 import { RoutePlanner } from './RoutePlanner';
-import { FixModal } from './FixModal';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus, Wrench } from 'lucide-react';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus } from 'lucide-react';
 import type { Visit, Cleaner, ConstraintViolation } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
@@ -24,14 +23,13 @@ interface ReliefRouteInfo {
   stopCount: number;
 }
 
-export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
+export const ScheduleBoard: React.FC<<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
   const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner } | { type: 'relief'; date: string } | null>(null);
   const [routeRefreshKey, setRouteRefreshKey] = useState(0);
-  const [showFixModal, setShowFixModal] = useState(false);
 
   useEffect(() => {
     setCurrentMonth(selectedDate);
@@ -494,15 +492,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       </div>
 
       {viewMode === 'day' && (
-        <button
-          onClick={() => setShowFixModal(true)}
-          className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-sm uppercase tracking-wider hover:bg-red-700 transition-colors active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-red-200"
-        >
-          <Wrench size={18} /> FIX Today's Schedule
-        </button>
-      )}
-
-      {viewMode === 'day' && (
         <div className="space-y-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -787,10 +776,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           initialDriver={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver : undefined}
           initialReliefDate={activeRoutePlanner.type === 'relief' ? activeRoutePlanner.date : undefined}
         />
-      )}
-
-      {showFixModal && (
-        <FixModal onClose={() => setShowFixModal(false)} />
       )}
     </div>
   );
