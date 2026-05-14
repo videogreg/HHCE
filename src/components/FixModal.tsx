@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight } from 'lucide-react';
-import type { Visit, Cleaner } from '../types';
+import type { Visit } from '../types';
 import { checkConstraints } from '../utils/scheduler';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 
