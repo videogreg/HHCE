@@ -4,8 +4,8 @@ import type { Cleaner, Client, Visit, Team } from '../types';
 
 describe('checkConstraints', () => {
   const mockCleaners: Cleaner[] = [
-    { id: 'c1', name: 'Alice', isDriver: true, active: true, cannotWorkWith: [], color: '#dbeafe' },
-    { id: 'c2', name: 'Bob', isDriver: false, active: true, cannotWorkWith: ['c1'], color: '#d1fae5' },
+    { id: 'c1', name: 'Alice', isDriver: true, active: true, cannotWorkWith: [], unavailableDays: [], color: '#dbeafe' },
+    { id: 'c2', name: 'Bob', isDriver: false, active: true, cannotWorkWith: ['c1'], unavailableDays: [], color: '#d1fae5' },
   ];
 
   const mockClients: Client[] = [
@@ -31,6 +31,6 @@ describe('checkConstraints', () => {
     ];
 
     const violations = checkConstraints(visits, mockCleaners, mockClients, mockTeams);
-    expect(violations.some(v => v.severity === 'error' && v.message.includes('before client\'s 10:00'))).toBe(true);
+    expect(violations.some(v => v.severity === 'error' && v.message.includes('before client's 10:00'))).toBe(true);
   });
 });
