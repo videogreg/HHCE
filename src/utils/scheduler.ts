@@ -48,6 +48,23 @@ export const checkConstraints = (
       }
     }
 
+    // Check cleaner unavailable days
+    teamCleaners.forEach(cleaner => {
+      if (cleaner.unavailableDays.length > 0) {
+        const visitDate = new Date(visit.date + 'T00:00:00');
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+        const visitDay = dayNames[visitDate.getDay()];
+        if (cleaner.unavailableDays.includes(visitDay)) {
+          violations.push({
+            id: hashString(`${visit.id}-unavailable-${cleaner.id}-${visitDay}`),
+            visitId: visit.id,
+            message: `${cleaner.name} is unavailable on ${visitDay}s.`,
+            severity: 'error'
+          });
+        }
+      }
+    });
+
     const visitStart = timeToDate(visit.startTime);
     if (client.notBefore && isBefore(visitStart, timeToDate(client.notBefore))) {
       violations.push({

@@ -36,12 +36,12 @@ const formatLocalDate = (d: Date): string => {
 };
 
 const createDemoData = (): AppState => {
-  const c1: Cleaner = { id: 'c1', name: 'Sarah', isDriver: true, canStartAt: '08:00', mustBeOffBy: '15:00', cannotWorkWith: [], active: true, phone: '555-0101', color: CLEANER_COLORS[0] };
-  const c2: Cleaner = { id: 'c2', name: 'Mike', isDriver: true, canStartAt: '09:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '555-0102', color: CLEANER_COLORS[1] };
-  const c3: Cleaner = { id: 'c3', name: 'Jessica', isDriver: false, canStartAt: '08:30', mustBeOffBy: '14:30', cannotWorkWith: ['c5'], active: true, phone: '555-0103', color: CLEANER_COLORS[2] };
-  const c4: Cleaner = { id: 'c4', name: 'David', isDriver: true, canStartAt: '08:00', mustBeOffBy: '16:00', cannotWorkWith: [], active: true, phone: '555-0104', color: CLEANER_COLORS[3] };
-  const c5: Cleaner = { id: 'c5', name: 'Emma', isDriver: false, canStartAt: '10:00', mustBeOffBy: '15:00', cannotWorkWith: ['c3'], active: true, phone: '555-0105', color: CLEANER_COLORS[4] };
-  const c6: Cleaner = { id: 'c6', name: 'Alex', isDriver: true, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '555-0106', color: CLEANER_COLORS[5] };
+  const c1: Cleaner = { id: 'c1', name: 'Sarah', isDriver: true, canStartAt: '08:00', mustBeOffBy: '15:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '555-0101', color: CLEANER_COLORS[0] };
+  const c2: Cleaner = { id: 'c2', name: 'Mike', isDriver: true, canStartAt: '09:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '555-0102', color: CLEANER_COLORS[1] };
+  const c3: Cleaner = { id: 'c3', name: 'Jessica', isDriver: false, canStartAt: '08:30', mustBeOffBy: '14:30', cannotWorkWith: ['c5'], unavailableDays: [], active: true, phone: '555-0103', color: CLEANER_COLORS[2] };
+  const c4: Cleaner = { id: 'c4', name: 'David', isDriver: true, canStartAt: '08:00', mustBeOffBy: '16:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '555-0104', color: CLEANER_COLORS[3] };
+  const c5: Cleaner = { id: 'c5', name: 'Emma', isDriver: false, canStartAt: '10:00', mustBeOffBy: '15:00', cannotWorkWith: ['c3'], unavailableDays: [], active: true, phone: '555-0105', color: CLEANER_COLORS[4] };
+  const c6: Cleaner = { id: 'c6', name: 'Alex', isDriver: true, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '555-0106', color: CLEANER_COLORS[5] };
 
   const cleaners = [c1, c2, c3, c4, c5, c6];
 

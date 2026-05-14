@@ -25,7 +25,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Cleaner>>({});
   const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
-    name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', email: '', address: '', notes: ''
+    name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: ''
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
@@ -51,6 +51,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
       canStartAt: newCleaner.canStartAt || '08:00',
       mustBeOffBy: newCleaner.mustBeOffBy || '17:00',
       cannotWorkWith: newCleaner.cannotWorkWith || [],
+      unavailableDays: newCleaner.unavailableDays || [],
       active: true,
       phone: newCleaner.phone || '',
       email: newCleaner.email || '',
@@ -59,7 +60,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
       color: COLORS[idx].dot
     };
     setCleaners([...cleaners, cleaner]);
-    setNewCleaner({ name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], active: true, phone: '', email: '', address: '', notes: '' });
+    setNewCleaner({ name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: '' });
     setShowAdd(false);
   };
 
@@ -264,6 +265,35 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
             <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={newCleaner.notes} onChange={e => setNewCleaner({ ...newCleaner, notes: e.target.value })} placeholder="e.g. Picks up kids at 2:30pm" />
           </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Unavailable Days</label>
+            <div className="flex flex-wrap gap-2">
+              {(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] as const).map(day => (
+                <label key={day} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
+                  (newCleaner.unavailableDays || []).includes(day)
+                    ? 'bg-red-100 text-red-700 border-red-200'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                }`}>
+                  <input
+                    type="checkbox"
+                    className="hidden"
+                    checked={(newCleaner.unavailableDays || []).includes(day)}
+                    onChange={e => {
+                      const current = newCleaner.unavailableDays || [];
+                      setNewCleaner({
+                        ...newCleaner,
+                        unavailableDays: e.target.checked
+                          ? [...current, day]
+                          : current.filter(d => d !== day)
+                      });
+                    }}
+                  />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Red = cannot work this day. Schedule alerts will enforce this.</p>
+          </div>
           <button onClick={addCleaner} disabled={!newCleaner.name?.trim()}
             className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-40 transition-colors active:scale-[0.98]">
             Add Cleaner
@@ -341,6 +371,19 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                     </div>
                   )}
 
+                  {cleaner.unavailableDays.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-1.5">Unavailable</p>
+                      <div className="flex flex-wrap gap-1">
+                        {cleaner.unavailableDays.map(day => (
+                          <span key={day} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                            {day}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {cleaner.notes && (
                     <div className="flex items-start gap-2 text-xs text-slate-600 bg-white/60 rounded-lg p-2">
                       <FileText size={12} className="mt-0.5 shrink-0" /> {cleaner.notes}
@@ -407,6 +450,35 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
                       <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Unavailable Days</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] as const).map(day => (
+                          <label key={day} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border cursor-pointer transition-colors ${
+                            (editForm.unavailableDays || []).includes(day)
+                              ? 'bg-red-100 text-red-700 border-red-200'
+                              : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={(editForm.unavailableDays || []).includes(day)}
+                              onChange={e => {
+                                const current = editForm.unavailableDays || [];
+                                setEditForm({
+                                  ...editForm,
+                                  unavailableDays: e.target.checked
+                                    ? [...current, day]
+                                    : current.filter(d => d !== day)
+                                });
+                              }}
+                            />
+                            {day.slice(0, 3)}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-[9px] text-slate-400 mt-1">Red = cannot work. Alerts will block scheduling.</p>
                     </div>
                     <div>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Cannot work with</p>

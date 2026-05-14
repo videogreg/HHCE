@@ -7,6 +7,7 @@ export interface Cleaner {
   canStartAt?: string; // HH:mm
   mustBeOffBy?: string; // HH:mm
   cannotWorkWith: string[]; // Cleaner IDs
+  unavailableDays: DayOfWeek[]; // Days they cannot work (e.g. religious observance)
   active: boolean;
   phone?: string;
   email?: string;
