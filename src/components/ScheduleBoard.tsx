@@ -163,6 +163,17 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   };
 
 
+  const getDayHasLate = (d: Date): boolean => {
+    const ds = format(d, 'yyyy-MM-dd');
+    try {
+      const raw = localStorage.getItem('hhce_late_alerts');
+      if (!raw) return false;
+      const all = JSON.parse(raw);
+      const dayAlerts = all[ds] || [];
+      return dayAlerts.some((a: any) => !a.dismissed);
+    } catch { return false; }
+  };
+
 
   const lateAlerts = (() => {
     try {
@@ -265,7 +276,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             </div>
           </div>
           <div className="space-y-1.5">
-            {lateAlerts.map((alert) => (
+            {lateAlerts.map((alert: any) => (
               <div key={alert.id} className="flex items-center justify-between bg-white/10 rounded-lg px-3 py-2">
                 <span className="text-xs font-bold">
                   {alert.driverName}: {alert.label} — arriving {alert.lateMin} min late ({alert.arrivalTime})
@@ -374,6 +385,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             })}
           </div>
         )}
+
         {viewMode === 'week' && (
           <div className="bg-slate-100 rounded-xl p-2">
             <div className="grid grid-cols-7 gap-1.5 mb-1">
@@ -411,7 +423,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       {count}
                     </span>
                     {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />}
-                    {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
                     {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
                   </button>
                 );
@@ -457,7 +468,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       {count}
                     </span>
                     {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />}
-                    {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
                     {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
                   </button>
                 );

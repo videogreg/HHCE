@@ -82,18 +82,7 @@ const saveLateAlerts = (date: string, alerts: any[]) => {
   } catch { /* ignore */ }
 };
 
-const dismissLateAlert = (date: string, alertId: string) => {
-  try {
-    const raw = localStorage.getItem(LATE_ALERTS_KEY);
-    if (!raw) return;
-    const all = JSON.parse(raw);
-    if (all[date]) {
-      all[date] = all[date].filter((a: any) => a.id !== alertId);
-      if (all[date].length === 0) delete all[date];
-      localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
-    }
-  } catch { /* ignore */ }
-};
+
 
 const getSavedRelief = (date: string): RouteStop[] | null => {
   try {
@@ -1244,6 +1233,9 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }
     }
 
+    // Calculate stats
+    const included = stops.filter(s => s.included !== false);
+
     // Save late alerts for relief driver (>25 min = 15 min grace + 10 min buffer)
     const lateAlerts = included
       .filter(s => s.isLate && (s.lateMin || 0) > 25)
@@ -1258,9 +1250,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }));
     const existingAlerts = getLateAlerts(dateStr).filter((a: any) => a.driverName !== reliefName);
     saveLateAlerts(dateStr, [...existingAlerts, ...lateAlerts]);
-
-    // Calculate stats
-    const included = stops.filter(s => s.included !== false);
     const totalDriveMin = Math.round(actualDriveSeconds / 60);
     const workMins = included.filter(s => s.type !== 'depart' && s.type !== 'home').reduce((sum, s) => sum + (s.durationMin || 0), 0);
 
