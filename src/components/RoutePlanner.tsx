@@ -751,7 +751,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     setLoading(false);
-  }, []);
+  }, [dateStr, cleaners, teams]);
 
   const toggleStop = (index: number) => {
     const newStops = routeStops.map((s, i) =>
