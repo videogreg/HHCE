@@ -50,7 +50,7 @@ export const checkConstraints = (
 
     // Check cleaner unavailable days
     teamCleaners.forEach(cleaner => {
-      if (cleaner.unavailableDays.length > 0) {
+      if ((cleaner.unavailableDays || []).length > 0) {
         const visitDate = new Date(visit.date + 'T00:00:00');
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
         const visitDay = dayNames[visitDate.getDay()];

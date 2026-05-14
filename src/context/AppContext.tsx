@@ -109,6 +109,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (data?.data) {
         const parsed = data.data as AppState;
+        // Migrate old cleaner data: add unavailableDays if missing
+        if (parsed.cleaners) {
+          parsed.cleaners = parsed.cleaners.map(c => ({
+            ...c,
+            unavailableDays: c.unavailableDays || []
+          }));
+        }
         if (parsed.cleaners) setCleaners(parsed.cleaners);
         if (parsed.clients) setClients(parsed.clients);
         if (parsed.visits) setVisits(parsed.visits);
@@ -128,7 +135,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         (payload) => {
           const parsed = payload.new.data as AppState;
           skipNextSave.current = true;
-          if (parsed.cleaners) setCleaners(parsed.cleaners);
+          if (parsed.cleaners) {
+            parsed.cleaners = parsed.cleaners.map((c: any) => ({ ...c, unavailableDays: c.unavailableDays || [] }));
+            setCleaners(parsed.cleaners);
+          }
           if (parsed.clients) setClients(parsed.clients);
           if (parsed.visits) setVisits(parsed.visits);
           if (parsed.teams) setTeams(parsed.teams);
