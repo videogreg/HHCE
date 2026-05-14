@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, Car, Clock, MapPin, User, ChevronRight, Star, Ban } from 'lucide-react';
-import type { Visit, Cleaner, Client } from '../types';
+import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight } from 'lucide-react';
+import type { Visit, Cleaner } from '../types';
 import { checkConstraints } from '../utils/scheduler';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 
@@ -93,7 +93,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     if (affectedVisits.length === 0) return [];
 
     const props: Proposal[] = [];
-    const duration = visit => {
+    const duration = (visit: Visit) => {
       const c = clients.find(cl => cl.id === visit.clientId);
       return visit.durationMinutes || c?.durationMinutes || 120;
     };
@@ -179,7 +179,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
       if (!client) return;
       const dur = duration(v);
 
-      let bestSlot: { driver: Cleaner; startTime: string; partner?: Cleaner } | null = null;
+      let bestSlot: any = null;
       let bestScore = 0;
 
       Object.entries(driverRoutes).forEach(([driverId, route]) => {
