@@ -31,6 +31,6 @@ describe('checkConstraints', () => {
     ];
 
     const violations = checkConstraints(visits, mockCleaners, mockClients, mockTeams);
-    expect(violations.some(v => v.severity === 'error' && v.message.includes('before client's 10:00'))).toBe(true);
+    expect(violations.some(v => v.severity === 'error' && v.message.includes("before client's 10:00"))).toBe(true);
   });
 });
