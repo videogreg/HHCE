@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, User, AlertCircle, AlertTriangle, Pencil, Save, RotateCcw, Car, Ban, Star } from 'lucide-react';
 import type { Visit, Cleaner, Client, ConstraintViolation } from '../types';
 import { checkConstraints } from '../utils/scheduler';
-import { format, parse } from 'date-fns';
 
 interface VisitDetailModalProps {
   visit: Visit;
@@ -157,8 +156,7 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
                 <Clock size={12} className="text-slate-400" />
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Start Time</span>
               </div>
-              {isEditing ? (
-                <input
+              {isEditing ? (                <input
                   type="time"
                   value={editTime}
                   onChange={e => setEditTime(e.target.value)}
