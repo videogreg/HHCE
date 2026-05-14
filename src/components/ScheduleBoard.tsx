@@ -24,7 +24,7 @@ interface ReliefRouteInfo {
   stopCount: number;
 }
 
-export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
+export const ScheduleBoard: React.FC<<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -148,7 +148,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     const ds = format(d, 'yyyy-MM-dd');
     const dVisits = visits.filter(v => v.date === ds);
     const vios = checkConstraints(dVisits, cleaners, clients, teams);
-    // Include extra stop violations (errors only)
     let extraVios: ConstraintViolation[] = [];
     try {
       const raw = localStorage.getItem('hhce_extra_violations');
@@ -164,7 +163,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     });
   };
 
-
   const getDayHasLate = (d: Date): boolean => {
     const ds = format(d, 'yyyy-MM-dd');
     try {
@@ -175,7 +173,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       return dayAlerts.some((a: any) => !a.dismissed);
     } catch { return false; }
   };
-
 
   const lateAlerts = (() => {
     try {
@@ -209,7 +206,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const modalVisit = modalVisitId ? dayVisits.find(v => v.id === modalVisitId) || null : null;
   const modalViolations = modalVisit ? getVisibleViolationsForVisit(modalVisit) : [];
 
-  // Drivers with visits today (excluding cancelled)
   const regularDrivers = useMemo(() => {
     const driverIds = new Set<string>();
     dayVisits.filter(v => !v.cancelled).forEach(v => {
@@ -226,7 +222,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     return cleaners.filter(c => driverIds.has(c.id));
   }, [dayVisits, cleaners, teams]);
 
-  // Check for saved relief route
   const reliefRouteInfo = useMemo(() => {
     try {
       const raw = localStorage.getItem('hhce_relief_routes');
@@ -235,12 +230,12 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       const saved = all[dateStr];
       if (!saved || saved.length === 0) return null;
       const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
-      return { name, stopCount: saved.length } as ReliefRouteInfo;
+      const stopCount = saved.filter((s: any) => s.type !== 'depart' && s.type !== 'home').length;
+      return { name, stopCount } as ReliefRouteInfo;
     } catch {
       return null;
     }
   }, [dateStr, routeRefreshKey]);
-
 
   return (
     <div className="space-y-4 animate-slide-up">
@@ -263,7 +258,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       )}
 
-      {/* Late Route Alerts */}
       {lateAlerts.length > 0 && (
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-xl shadow-amber-200">
           <div className="flex items-center gap-3 mb-2">
@@ -402,7 +396,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 const isSelected = isSameDay(day, selectedDate);
                 const isToday = isSameDay(day, new Date());
                 const count = getDayVisitCount(day);
-                const hasError = getDayHasError(day);                return (
+                const hasError = getDayHasError(day);
+                return (
                   <button
                     key={day.toISOString()}
                     onClick={() => { setSelectedDate(day); setViewMode('day'); }}
@@ -500,7 +495,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       </div>
 
-      {/* FIX Button */}
       {viewMode === 'day' && (
         <button
           onClick={() => setShowFixModal(true)}
@@ -510,7 +504,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </button>
       )}
 
-      {/* Driver Routes List — always visible in day view */}
       {viewMode === 'day' && (
         <div className="space-y-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
@@ -555,7 +548,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 </div>
               </button>
             )}
-            {/* Plan Relief Driver — always available */}
             <button
               onClick={() => setActiveRoutePlanner({ type: 'relief', date: dateStr })}
               className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 border-dashed hover:border-amber-400 hover:shadow-sm hover:bg-amber-100 transition-all active:scale-95 shrink-0 min-w-[140px]"
@@ -759,9 +751,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           onSave={(updated) => {
             const oldDate = modalVisit.date;
             const newDate = updated.date;
-            // Update visit
             setVisits(visits.map(v => v.id === updated.id ? updated : v));
-            // If date changed, clear stale extra violations for old date
             if (oldDate !== newDate) {
               try {
                 const raw = localStorage.getItem('hhce_extra_violations');
@@ -773,7 +763,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                     localStorage.setItem('hhce_extra_violations', JSON.stringify(all));
                   }
                 }
-                // Also clear late alerts for old date if this was the only visit
                 const rawLate = localStorage.getItem('hhce_late_alerts');
                 if (rawLate) {
                   const allLate = JSON.parse(rawLate);
@@ -785,7 +774,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 }
               } catch { /* ignore */ }
             }
-            // Refresh routes
             setRouteRefreshKey(k => k + 1);
             setModalVisitId(null);
           }}
