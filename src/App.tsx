@@ -5,9 +5,9 @@ import { CleanerManager } from './components/CleanerManager';
 import { ClientManager } from './components/ClientManager';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
-import { ReorganizeModal } from './components/ReorganizeModal';
+import { FixModal } from './components/FixModal';
 import { SearchBar } from './components/SearchBar';
-import { LayoutDashboard, Users, UserCheck, AlertTriangle, Sparkles, CalendarPlus } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, Wrench, Sparkles, CalendarPlus } from 'lucide-react';
 
 function App() {
   return (
@@ -20,8 +20,9 @@ function App() {
 }
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients'>('dashboard');
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [showFixModal, setShowFixModal] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24">
@@ -39,16 +40,11 @@ function AppContent() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveTab('nightmare')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs sm:text-sm transition-all active:scale-95 ${
-                activeTab === 'nightmare'
-                  ? 'bg-red-600 text-white shadow-lg shadow-red-900/40 ring-2 ring-red-400/30'
-                  : 'bg-red-950/60 text-red-400 hover:bg-red-900/60 border border-red-900'
-              }`}
+              onClick={() => setShowFixModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs sm:text-sm bg-red-600 text-white shadow-lg shadow-red-900/40 ring-2 ring-red-400/30 transition-all active:scale-95 hover:bg-red-700"
             >
-              <AlertTriangle size={16} />
-              <span className="hidden sm:inline">Nightmare</span>
-              <span className="sm:hidden">Fix</span>
+              <Wrench size={16} />
+              <span>FIX</span>
             </button>
           </div>
         </div>
@@ -57,14 +53,10 @@ function AppContent() {
       <SearchBar onNavigate={(tab, id) => { setActiveTab(tab); setFocusId(id || null); }} />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        {activeTab === 'dashboard' && <ScheduleBoard focusVisitId={focusId} onFocusClear={() => setFocusId(null)} />}
         {activeTab === 'builder' && <ScheduleBuilder />}
         {activeTab === 'cleaners' && <CleanerManager focusId={focusId} onFocusClear={() => setFocusId(null)} />}
         {activeTab === 'clients' && <ClientManager focusId={focusId} onFocusClear={() => setFocusId(null)} />}
-        {activeTab === 'nightmare' && (
-          <div className="max-w-3xl mx-auto">
-            <ReorganizeModal />
-          </div>
-        )}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 sm:px-6 py-2 flex justify-around items-center shadow-[0_-4px_24px_-6px_rgba(0,0,0,0.12)] z-30">
@@ -93,6 +85,10 @@ function AppContent() {
           label="Clients"
         />
       </nav>
+
+      {showFixModal && (
+        <FixModal onClose={() => setShowFixModal(false)} />
+      )}
     </div>
   );
 }
