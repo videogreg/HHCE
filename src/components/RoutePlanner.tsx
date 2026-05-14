@@ -62,6 +62,38 @@ interface ReliefStopInput {
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
 const EXTRA_VIOLATIONS_KEY = 'hhce_extra_violations';
 const EXTRA_STOPS_KEY = 'hhce_extra_stops';
+const LATE_ALERTS_KEY = 'hhce_late_alerts';
+
+const getLateAlerts = (date: string): any[] => {
+  try {
+    const raw = localStorage.getItem(LATE_ALERTS_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw);
+    return all[date] || [];
+  } catch { return []; }
+};
+
+const saveLateAlerts = (date: string, alerts: any[]) => {
+  try {
+    const raw = localStorage.getItem(LATE_ALERTS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[date] = alerts;
+    localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+};
+
+const dismissLateAlert = (date: string, alertId: string) => {
+  try {
+    const raw = localStorage.getItem(LATE_ALERTS_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    if (all[date]) {
+      all[date] = all[date].filter((a: any) => a.id !== alertId);
+      if (all[date].length === 0) delete all[date];
+      localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+    }
+  } catch { /* ignore */ }
+};
 
 const getSavedRelief = (date: string): RouteStop[] | null => {
   try {
@@ -560,6 +592,21 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         includedStops[i].departTime = format(runningTime, 'HH:mm');
       }
     }
+
+    // Save late alerts (>25 min = 15 min grace + 10 min buffer)
+    const lateAlerts = includedStops
+      .filter(s => s.isLate && (s.lateMin || 0) > 25)
+      .map(s => ({
+        id: `late_${dateStr}_${s.visitId || s.label}_${s.lateMin}`,
+        visitId: s.visitId || '',
+        label: s.label,
+        lateMin: s.lateMin,
+        arrivalTime: s.arrivalTime,
+        driverName: data.driver.name,
+        severity: (s.lateMin || 0) > 40 ? 'error' : 'warning'
+      }));
+    const existingAlerts = getLateAlerts(dateStr).filter((a: any) => a.driverName !== data.driver.name);
+    saveLateAlerts(dateStr, [...existingAlerts, ...lateAlerts]);
 
     // Calculate total wait time across included cleans only
     const totalWaitMin = includedStops
@@ -1197,6 +1244,21 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }
     }
 
+    // Save late alerts for relief driver (>25 min = 15 min grace + 10 min buffer)
+    const lateAlerts = included
+      .filter(s => s.isLate && (s.lateMin || 0) > 25)
+      .map(s => ({
+        id: `late_relief_${dateStr}_${s.label}_${s.lateMin}`,
+        visitId: s.visitId || '',
+        label: s.label,
+        lateMin: s.lateMin,
+        arrivalTime: s.arrivalTime,
+        driverName: reliefName,
+        severity: (s.lateMin || 0) > 40 ? 'error' : 'warning'
+      }));
+    const existingAlerts = getLateAlerts(dateStr).filter((a: any) => a.driverName !== reliefName);
+    saveLateAlerts(dateStr, [...existingAlerts, ...lateAlerts]);
+
     // Calculate stats
     const included = stops.filter(s => s.included !== false);
     const totalDriveMin = Math.round(actualDriveSeconds / 60);
@@ -1253,6 +1315,18 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const handleClearRelief = () => {
     if (confirm('Delete saved relief driver for this day?')) {
       clearRelief(dateStr);
+      // Clear late alerts for relief driver
+      try {
+        const raw = localStorage.getItem(LATE_ALERTS_KEY);
+        if (raw) {
+          const all = JSON.parse(raw);
+          if (all[dateStr]) {
+            all[dateStr] = all[dateStr].filter((a: any) => !a.id.startsWith('late_relief_'));
+            if (all[dateStr].length === 0) delete all[dateStr];
+            localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+          }
+        }
+      } catch { /* ignore */ }
       setRouteStops([]);
       setReliefStops([]);
       setReliefSaved(false);
@@ -1288,6 +1362,18 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         }
       } catch { /* ignore */ }
       setExtraSaved(false);
+      // Clear late alerts for this driver
+      try {
+        const raw = localStorage.getItem(LATE_ALERTS_KEY);
+        if (raw) {
+          const all = JSON.parse(raw);
+          if (all[dateStr]) {
+            all[dateStr] = all[dateStr].filter((a: any) => a.driverName !== selectedDriver?.name);
+            if (all[dateStr].length === 0) delete all[dateStr];
+            localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+          }
+        }
+      } catch { /* ignore */ }
       if (routeDataRef.current) {
         const originalStops = routeStops.filter(s => !s.isCustom);
         setLoading(true);

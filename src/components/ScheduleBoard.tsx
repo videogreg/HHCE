@@ -35,28 +35,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     setCurrentMonth(selectedDate);
   }, [selectedDate]);
 
-  // Auto-purge stale extra violations when visits change
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('hhce_extra_violations');
-      if (!raw) return;
-      const all = JSON.parse(raw);
-      let changed = false;
-      Object.keys(all).forEach(ds => {
-        const dayVisits = visits.filter(v => v.date === ds && !v.cancelled);
-        const before = all[ds].length;
-        all[ds] = all[ds].filter((v: any) => {
-          if (!v.visitId) return true; // Keep relief route violations
-          const visit = dayVisits.find(dv => dv.id === v.visitId);
-          return !!visit; // Remove if visit deleted/cancelled
-        });
-        if (all[ds].length !== before) changed = true;
-        if (all[ds].length === 0) delete all[ds];
-      });
-      if (changed) localStorage.setItem('hhce_extra_violations', JSON.stringify(all));
-    } catch { /* ignore */ }
-  }, [visits]);
-
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits
     .filter(v => v.date === dateStr)
@@ -138,6 +116,21 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     }
   };
 
+  const dismissLateAlert = (alertId: string) => {
+    try {
+      const raw = localStorage.getItem('hhce_late_alerts');
+      if (!raw) return;
+      const all = JSON.parse(raw);
+      if (all[dateStr]) {
+        all[dateStr] = all[dateStr].map((a: any) => a.id === alertId ? { ...a, dismissed: true } : a);
+        localStorage.setItem('hhce_late_alerts', JSON.stringify(all));
+        setRouteRefreshKey(k => k + 1);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const dayViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
   const weekViewDays = Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i));
 
@@ -151,23 +144,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const getDayVisitCount = (d: Date) => visits.filter(v => v.date === format(d, 'yyyy-MM-dd') && !v.cancelled && v.durationMinutes > 0 && v.clientId && v.clientName).length;
   const getDayHasError = (d: Date) => {
     const ds = format(d, 'yyyy-MM-dd');
-    const dVisits = visits.filter(v => v.date === ds && !v.cancelled);
+    const dVisits = visits.filter(v => v.date === ds);
     const vios = checkConstraints(dVisits, cleaners, clients, teams);
-    // Include extra stop violations (errors only) — filter out stale ones
+    // Include extra stop violations (errors only)
     let extraVios: ConstraintViolation[] = [];
     try {
       const raw = localStorage.getItem('hhce_extra_violations');
       if (raw) {
         const all = JSON.parse(raw);
-        const dayExtras = all[ds] || [];
-        extraVios = dayExtras.filter((v: any) => {
-          if (v.severity !== 'error') return false;
-          // If visitId is empty (relief route conflict), keep it unless dismissed
-          if (!v.visitId) return true;
-          // Only keep if the visit still exists and is not cancelled
-          const visit = dVisits.find(dv => dv.id === v.visitId);
-          return !!visit && !visit.dismissedViolations?.includes(v.id);
-        });
+        extraVios = (all[ds] || []).filter((v: any) => v.severity === 'error');
       }
     } catch { /* ignore */ }
     const allVios = [...vios, ...extraVios];
@@ -179,11 +164,21 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
 
 
 
+  const lateAlerts = (() => {
+    try {
+      const raw = localStorage.getItem('hhce_late_alerts');
+      if (!raw) return [];
+      const all = JSON.parse(raw);
+      return (all[dateStr] || []).filter((a: any) => !a.dismissed);
+    } catch { return []; }
+  })();
+
   const stats = {
     total: dayVisits.filter(v => v.durationMinutes > 0 && v.clientId && v.clientName).length,
     cancelled: dayVisits.filter(v => v.cancelled).length,
     errors: errorCount,
     warnings: warningCount,
+    late: lateAlerts.length,
   };
 
   const markCleanerSick = (cleanerId: string) => {
@@ -252,6 +247,38 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           <p className="text-xs text-red-100 mb-3 leading-relaxed">
             Tap any visit card below to see details, or use the quick actions to mark sick cleaners or cancel visits.
           </p>
+        </div>
+      )}
+
+      {/* Late Route Alerts */}
+      {lateAlerts.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-xl shadow-amber-200">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <Clock size={22} />
+            </div>
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-wider">Route Delay Alert</h2>
+              <p className="text-xs text-amber-100 font-medium">
+                {lateAlerts.length} route{lateAlerts.length !== 1 ? 's' : ''} running late today
+              </p>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {lateAlerts.map((alert) => (
+              <div key={alert.id} className="flex items-center justify-between bg-white/10 rounded-lg px-3 py-2">
+                <span className="text-xs font-bold">
+                  {alert.driverName}: {alert.label} — arriving {alert.lateMin} min late ({alert.arrivalTime})
+                </span>
+                <button
+                  onClick={() => dismissLateAlert(alert.id)}
+                  className="px-2 py-1 rounded-lg bg-white/20 text-white text-[10px] font-bold hover:bg-white/30 active:scale-95 transition-all"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -341,12 +368,12 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                     isSelected ? 'bg-white/30 text-white' : count > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
                   }`}>{count}</span>
                   {hasErr && !isSelected && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-100" />}
+                  {getDayHasLate(d) && !isSelected && !hasErr && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-slate-100" />}
                 </button>
               );
             })}
           </div>
         )}
-
         {viewMode === 'week' && (
           <div className="bg-slate-100 rounded-xl p-2">
             <div className="grid grid-cols-7 gap-1.5 mb-1">
@@ -384,6 +411,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       {count}
                     </span>
                     {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />}
+                    {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
+                    {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
                   </button>
                 );
               })}
@@ -428,6 +457,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       {count}
                     </span>
                     {hasError && !isSelected && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />}
+                    {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
+                    {getDayHasLate(day) && !isSelected && !hasError && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white" />}
                   </button>
                 );
               })}
@@ -452,6 +483,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
           <div className="text-lg font-black text-amber-500">{stats.warnings}</div>
           <div className="text-[9px] font-bold text-slate-400 uppercase">Warnings</div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+          <div className="text-lg font-black text-orange-600">{stats.late}</div>
+          <div className="text-[9px] font-bold text-slate-400 uppercase">Late</div>
         </div>
       </div>
 
