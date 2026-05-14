@@ -746,6 +746,39 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           teams={teams}
           violations={modalViolations}
           onClose={() => setModalVisitId(null)}
+          onSave={(updated) => {
+            const oldDate = modalVisit.date;
+            const newDate = updated.date;
+            // Update visit
+            setVisits(visits.map(v => v.id === updated.id ? updated : v));
+            // If date changed, clear stale extra violations for old date
+            if (oldDate !== newDate) {
+              try {
+                const raw = localStorage.getItem('hhce_extra_violations');
+                if (raw) {
+                  const all = JSON.parse(raw);
+                  if (all[oldDate]) {
+                    all[oldDate] = all[oldDate].filter((v: any) => v.visitId !== updated.id);
+                    if (all[oldDate].length === 0) delete all[oldDate];
+                    localStorage.setItem('hhce_extra_violations', JSON.stringify(all));
+                  }
+                }
+                // Also clear late alerts for old date if this was the only visit
+                const rawLate = localStorage.getItem('hhce_late_alerts');
+                if (rawLate) {
+                  const allLate = JSON.parse(rawLate);
+                  if (allLate[oldDate]) {
+                    const dayVisitsOld = visits.filter(v => v.date === oldDate && v.id !== updated.id && !v.cancelled);
+                    if (dayVisitsOld.length === 0) delete allLate[oldDate];
+                    localStorage.setItem('hhce_late_alerts', JSON.stringify(allLate));
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+            // Refresh routes
+            setRouteRefreshKey(k => k + 1);
+            setModalVisitId(null);
+          }}
         />
       )}
 
