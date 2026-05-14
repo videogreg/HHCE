@@ -50,7 +50,12 @@ function AppContent() {
         </div>
       </header>
 
-      <SearchBar onNavigate={(tab, id) => { setActiveTab(tab); setFocusId(id || null); }} />
+      <SearchBar onNavigate={(tab, id) => {
+        if (tab === 'dashboard' || tab === 'builder' || tab === 'cleaners' || tab === 'clients') {
+          setActiveTab(tab);
+          setFocusId(id || null);
+        }
+      }} />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {activeTab === 'dashboard' && <ScheduleBoard focusVisitId={focusId} onFocusClear={() => setFocusId(null)} />}
