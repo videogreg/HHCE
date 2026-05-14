@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, User, AlertCircle, AlertTriangle, Pencil, Save, RotateCcw, Car, Ban, Star, Check, Bus, Plus } from 'lucide-react';
+import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, User, AlertCircle, AlertTriangle, Pencil, Save, RotateCcw, Car, Ban, Star, Check, Bus } from 'lucide-react';
 import type { Visit, Cleaner, Client, ConstraintViolation } from '../types';
 import { checkConstraints } from '../utils/scheduler';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
@@ -34,7 +34,7 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
   onClose,
   onSave,
 }) => {
-  const { visits, setVisits } = useAppContext();
+  const { visits } = useAppContext();
   const [isEditing, setIsEditing] = useState(false);
   const [editDate, setEditDate] = useState(visit.date);
   const [editTime, setEditTime] = useState(visit.startTime);
