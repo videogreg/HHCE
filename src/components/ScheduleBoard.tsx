@@ -23,7 +23,7 @@ interface ReliefRouteInfo {
   stopCount: number;
 }
 
-export const ScheduleBoard: React.FC<<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
+export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFocusClear }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
