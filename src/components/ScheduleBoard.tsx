@@ -35,6 +35,28 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     setCurrentMonth(selectedDate);
   }, [selectedDate]);
 
+  // Auto-purge stale extra violations when visits change
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('hhce_extra_violations');
+      if (!raw) return;
+      const all = JSON.parse(raw);
+      let changed = false;
+      Object.keys(all).forEach(ds => {
+        const dayVisits = visits.filter(v => v.date === ds && !v.cancelled);
+        const before = all[ds].length;
+        all[ds] = all[ds].filter((v: any) => {
+          if (!v.visitId) return true; // Keep relief route violations
+          const visit = dayVisits.find(dv => dv.id === v.visitId);
+          return !!visit; // Remove if visit deleted/cancelled
+        });
+        if (all[ds].length !== before) changed = true;
+        if (all[ds].length === 0) delete all[ds];
+      });
+      if (changed) localStorage.setItem('hhce_extra_violations', JSON.stringify(all));
+    } catch { /* ignore */ }
+  }, [visits]);
+
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits
     .filter(v => v.date === dateStr)
@@ -129,15 +151,23 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const getDayVisitCount = (d: Date) => visits.filter(v => v.date === format(d, 'yyyy-MM-dd') && !v.cancelled && v.durationMinutes > 0 && v.clientId && v.clientName).length;
   const getDayHasError = (d: Date) => {
     const ds = format(d, 'yyyy-MM-dd');
-    const dVisits = visits.filter(v => v.date === ds);
+    const dVisits = visits.filter(v => v.date === ds && !v.cancelled);
     const vios = checkConstraints(dVisits, cleaners, clients, teams);
-    // Include extra stop violations (errors only)
+    // Include extra stop violations (errors only) — filter out stale ones
     let extraVios: ConstraintViolation[] = [];
     try {
       const raw = localStorage.getItem('hhce_extra_violations');
       if (raw) {
         const all = JSON.parse(raw);
-        extraVios = (all[ds] || []).filter((v: any) => v.severity === 'error');
+        const dayExtras = all[ds] || [];
+        extraVios = dayExtras.filter((v: any) => {
+          if (v.severity !== 'error') return false;
+          // If visitId is empty (relief route conflict), keep it unless dismissed
+          if (!v.visitId) return true;
+          // Only keep if the visit still exists and is not cancelled
+          const visit = dVisits.find(dv => dv.id === v.visitId);
+          return !!visit && !visit.dismissedViolations?.includes(v.id);
+        });
       }
     } catch { /* ignore */ }
     const allVios = [...vios, ...extraVios];
@@ -197,7 +227,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       const saved = all[dateStr];
       if (!saved || saved.length === 0) return null;
       const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
-      return { name, stopCount: saved.filter((s: any) => s.type !== 'depart' && s.type !== 'home').length } as ReliefRouteInfo;
+      return { name, stopCount: saved.length } as ReliefRouteInfo;
     } catch {
       return null;
     }
