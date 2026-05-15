@@ -17,7 +17,7 @@ interface Proposal {
   changes: string[];
   calls: { type: 'client' | 'cleaner'; name: string; phone?: string; message: string }[];
   visitUpdates: { visitId: string; updates: Partial<Visit> }[];
-  cleanerUpdates?: { cleanerId: string; updates: Partial<Cleaner> }[];
+  cleanerUpdates?: { cleanerId: string; updates: Partial<any> }[];
   reliefRoute?: { name: string; address: string; date: string; stops: any[] };
   score: number;
 }
@@ -38,7 +38,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
   const [uberNeeded, setUberNeeded] = useState(false);
   const [reliefName, setReliefName] = useState('');
   const [reliefAddress, setReliefAddress] = useState('');
-  const [conflictData, setConflictData] = useState<{ show: boolean; warnings: string[]; suggestion?: Cleaner }>({ show: false, warnings: [] });
+  const [conflictData, setConflictData] = useState<{ show: boolean; warnings: string[]; suggestion?: any }>({ show: false, warnings: [] });
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits.filter(v => v.date === dateStr && !v.cancelled);
@@ -79,9 +79,9 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
   };
 
   // ── CONFLICT DETECTION ──
-  const detectConflicts = (): { warnings: string[]; suggestion?: Cleaner } => {
+  const detectConflicts = (): { warnings: string[]; suggestion?: any } => {
     const warnings: string[] = [];
-    let suggestion: Cleaner | undefined;
+    let suggestion: any | undefined;
 
     affectedVisits.forEach(v => {
       const client = clients.find(c => c.id === v.clientId);
@@ -298,7 +298,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     const seed = proposalSet;
 
     // Helper: pick replacement candidate with variety based on seed
-    const pickReplacement = (candidates: Cleaner[], visit: Visit): Cleaner | undefined => {
+    const pickReplacement = (candidates: any[], visit: Visit): any | undefined => {
       if (candidates.length === 0) return undefined;
       const client = clients.find(c => c.id === visit.clientId);
       const preferred = candidates.filter(c => client?.preferredCleaners.includes(c.id));
