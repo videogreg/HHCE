@@ -75,6 +75,18 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     const props: Proposal[] = [];
     const seed = proposalSet;
 
+    // Helper: pick replacement candidate with variety based on seed
+    const pickReplacement = (candidates: Cleaner[], visit: Visit): Cleaner | undefined => {
+      if (candidates.length === 0) return undefined;
+      const client = clients.find(c => c.id === visit.clientId);
+      const preferred = candidates.filter(c => client?.preferredCleaners.includes(c.id));
+      const unscheduled = candidates.filter(c => !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
+      const busy = candidates.filter(c => dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
+      const ordered = [...preferred, ...unscheduled, ...busy];
+      const unique = ordered.filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i);
+      return unique[seed % unique.length] || unique[0];
+    };
+
     // CLIENT CANCEL
     if (issueType === 'client-cancel') {
       const cancelledVisits = affectedVisits;
@@ -169,7 +181,6 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
         }
 
         Object.entries(driverRoutes).forEach(([did, route]) => {
-          if (props.length >= 3) return;
           const otherDriver = activeCleaners.find(c => c.id === did);
           if (!otherDriver) return;
           for (let i = 0; i < route.length - 1; i++) {
@@ -191,7 +202,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 if (c.cannotWorkWith.includes(did) || otherDriver.cannotWorkWith.includes(c.id)) return false;
                 return true;
               });
-              const partner = candidates.find(c => client.preferredCleaners.includes(c.id) && paired.has(c.id)) || candidates.find(c => paired.has(c.id)) || candidates.find(c => client.preferredCleaners.includes(c.id)) || candidates[0];
+              const partner = pickReplacement(candidates, targetVisit);
               const newIds = partner ? [did, partner.id] : [did];
               const p2: Proposal = { id: `time_p2_${targetVisit.id}_${did}_${seed}`, title: `Switch to ${otherDriver.name}`, subtitle: `Move to ${slotStart} in ${otherDriver.name}'s route`, changes: [], calls: [], visitUpdates: [], score: 75 };
               p2.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${slotStart} with ${otherDriver.name}`);
@@ -205,28 +216,26 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           }
         });
 
-        if (props.length < 3) {
-          const freeDrivers = activeCleaners.filter(c => {
-            if (!c.isDriver) return false;
-            if (client.avoidCleaners.includes(c.id)) return false;
-            return !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id));
-          });
-          if (freeDrivers.length > 0) {
-            const bestDriver = freeDrivers.find(d => client.preferredCleaners.includes(d.id)) || freeDrivers[0];
-            const p3: Proposal = { id: `time_p3_${targetVisit.id}_${seed}`, title: 'New Driver Route', subtitle: `Assign unscheduled driver ${bestDriver.name}`, changes: [], calls: [], visitUpdates: [], score: 40 };
-            p3.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${newStartStr} with ${bestDriver.name}`);
-            p3.calls.push({ type: 'client', name: targetVisit.clientName, phone: client.phone, message: `A new team will handle your clean at ${newStartStr}.` });
-            p3.calls.push({ type: 'cleaner', name: bestDriver.name, message: `New assignment: ${targetVisit.clientName} at ${newStartStr}.` });
-            p3.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: newStartStr, assignedCleanerIds: [bestDriver.id], assignedTeamId: '' } });
-            props.push(p3);
-          } else {
-            const p3: Proposal = { id: `time_p3_relief_${targetVisit.id}_${seed}`, title: 'Relief Driver Route', subtitle: 'Create a relief route for the new time', changes: [], calls: [], visitUpdates: [], score: 25 };
-            p3.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${newStartStr} via relief driver`);
-            p3.calls.push({ type: 'client', name: targetVisit.clientName, phone: client.phone, message: `A relief driver will handle your clean at ${newStartStr}.` });
-            p3.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: newStartStr, assignedCleanerIds: [], assignedTeamId: '' } });
-            p3.reliefRoute = { name: 'Relief Driver', address: '', date: dateStr, stops: [] };
-            props.push(p3);
-          }
+        const freeDrivers = activeCleaners.filter(c => {
+          if (!c.isDriver) return false;
+          if (client.avoidCleaners.includes(c.id)) return false;
+          return !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id));
+        });
+        if (freeDrivers.length > 0) {
+          const bestDriver = freeDrivers[seed % freeDrivers.length] || freeDrivers[0];
+          const p3: Proposal = { id: `time_p3_${targetVisit.id}_${seed}`, title: 'New Driver Route', subtitle: `Assign unscheduled driver ${bestDriver.name}`, changes: [], calls: [], visitUpdates: [], score: 40 };
+          p3.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${newStartStr} with ${bestDriver.name}`);
+          p3.calls.push({ type: 'client', name: targetVisit.clientName, phone: client.phone, message: `A new team will handle your clean at ${newStartStr}.` });
+          p3.calls.push({ type: 'cleaner', name: bestDriver.name, message: `New assignment: ${targetVisit.clientName} at ${newStartStr}.` });
+          p3.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: newStartStr, assignedCleanerIds: [bestDriver.id], assignedTeamId: '' } });
+          props.push(p3);
+        } else {
+          const p3: Proposal = { id: `time_p3_relief_${targetVisit.id}_${seed}`, title: 'Relief Driver Route', subtitle: 'Create a relief route for the new time', changes: [], calls: [], visitUpdates: [], score: 25 };
+          p3.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${newStartStr} via relief driver`);
+          p3.calls.push({ type: 'client', name: targetVisit.clientName, phone: client.phone, message: `A relief driver will handle your clean at ${newStartStr}.` });
+          p3.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: newStartStr, assignedCleanerIds: [], assignedTeamId: '' } });
+          p3.reliefRoute = { name: 'Relief Driver', address: '', date: dateStr, stops: [] };
+          props.push(p3);
         }
       });
     }
@@ -257,7 +266,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
             if (needsDriver && !c.isDriver) return false;
             return true;
           });
-          const best = candidates.find(c => client.preferredCleaners.includes(c.id)) || candidates[0];
+          const best = pickReplacement(candidates, v);
           if (best) {
             const newIds = [...healthyIds, best.id];
             p1.changes.push(`${v.clientName}: replace ${sickCleaner.name} with ${best.name}`);
@@ -296,7 +305,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                   if (c.cannotWorkWith.includes(did) || driver.cannotWorkWith.includes(c.id)) return false;
                   return true;
                 });
-                const partner = candidates.find(c => client.preferredCleaners.includes(c.id) && paired.has(c.id)) || candidates.find(c => paired.has(c.id)) || candidates.find(c => client.preferredCleaners.includes(c.id)) || candidates[0];
+                const partner = pickReplacement(candidates, v);
                 const newIds = partner ? [did, partner.id] : [did];
                 p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
                 p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `Can we move your cleaning to ${slotStart} today?` });
@@ -490,7 +499,10 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     }
 
     props.sort((a, b) => b.score - a.score);
-    return props.slice(0, 3);
+    const pageSize = 3;
+    const totalPages = Math.max(1, Math.ceil(props.length / pageSize));
+    const page = seed % totalPages;
+    return props.slice(page * pageSize, (page + 1) * pageSize);
   }, [issueType, selectedIds, dayVisits, activeCleaners, clients, dateStr, proposalSet, issueTime, cleaners, driverRoutes]);
 
   const applyProposal = (p: Proposal) => {
