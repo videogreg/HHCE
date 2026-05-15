@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight, UserX, Clock, CalendarX, CalendarClock, ArrowLeft } from 'lucide-react';
+import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight, UserX, Clock, CalendarX, CalendarClock, ArrowLeft, Save, Car, AlertTriangle, Users, MapPin } from 'lucide-react';
 import type { Visit, Cleaner } from '../types';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 
@@ -16,20 +16,29 @@ interface Proposal {
   subtitle: string;
   changes: string[];
   calls: { type: 'client' | 'cleaner'; name: string; phone?: string; message: string }[];
-  visitUpdates: { visitId: string; updates: Partial<Visit> }[];
+  visitUpdates: { visitId: string; updates: Partial<<Visit> }[];
   cleanerUpdates?: { cleanerId: string; updates: Partial<Cleaner> }[];
   reliefRoute?: { name: string; address: string; date: string; stops: any[] };
   score: number;
 }
 
-export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
+export const FixModal: React.FC<<FixModalProps> = ({ onClose }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, selectedDate } = useAppContext();
-  const [step, setStep] = useState<'issue' | 'affected' | 'solutions'>('issue');
+  const [step, setStep] = useState<'issue' | 'affected' | 'solutions' | 'manual'>('issue');
   const [issueType, setIssueType] = useState<IssueType | null>(null);
   const [issueTime, setIssueTime] = useState<string>('09:00');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [proposalSet, setProposalSet] = useState(0);
   const [applied, setApplied] = useState(false);
+
+  // ── MANUAL EDIT STATE ──
+  const [manualStep, setManualStep] = useState<'cleaners' | 'transport' | 'review'>('cleaners');
+  const [manualCleaners, setManualCleaners] = useState<string[]>([]);
+  const [reliefNeeded, setReliefNeeded] = useState(false);
+  const [uberNeeded, setUberNeeded] = useState(false);
+  const [reliefName, setReliefName] = useState('');
+  const [reliefAddress, setReliefAddress] = useState('');
+  const [conflictData, setConflictData] = useState<{ show: boolean; warnings: string[]; suggestion?: Cleaner }>({ show: false, warnings: [] });
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits.filter(v => v.date === dateStr && !v.cancelled);
@@ -67,6 +76,219 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
   const durationOf = (visit: Visit) => {
     const c = clients.find(cl => cl.id === visit.clientId);
     return visit.durationMinutes || c?.durationMinutes || 120;
+  };
+
+  // ── CONFLICT DETECTION ──
+  const detectConflicts = (): { warnings: string[]; suggestion?: Cleaner } => {
+    const warnings: string[] = [];
+    let suggestion: Cleaner | undefined;
+
+    affectedVisits.forEach(v => {
+      const client = clients.find(c => c.id === v.clientId);
+      const dur = durationOf(v);
+      const vStart = parse(v.startTime, 'HH:mm', new Date());
+      const vEnd = addMinutes(vStart, dur);
+
+      manualCleaners.forEach(cid => {
+        const cleaner = cleaners.find(c => c.id === cid);
+        if (!cleaner) return;
+
+        if (client?.avoidCleaners.includes(cid)) {
+          warnings.push(`${cleaner.name} is avoided by ${client.name}`);
+        }
+
+        const cleanerVisitsToday = dayVisits.filter(dv => (dv.assignedCleanerIds || []).includes(cid) && dv.id !== v.id);
+        cleanerVisitsToday.forEach(cv => {
+          const cvStart = parse(cv.startTime, 'HH:mm', new Date());
+          const cvDur = durationOf(cv);
+          const cvEnd = addMinutes(cvStart, cvDur);
+          if (isBefore(vStart, cvEnd) && isBefore(cvStart, vEnd)) {
+            warnings.push(`${cleaner.name} has a time conflict with ${cv.clientName} at ${cv.startTime}`);
+          }
+        });
+
+        if (cleaner.mustBeOffBy) {
+          const offBy = parse(cleaner.mustBeOffBy, 'HH:mm', new Date());
+          if (isAfter(vEnd, offBy)) {
+            warnings.push(`${cleaner.name} must be off by ${cleaner.mustBeOffBy}, but ${client?.name || 'visit'} ends at ${format(vEnd, 'HH:mm')}`);
+          }
+        }
+      });
+
+      // Team conflicts
+      const currentIds = v.assignedCleanerIds || [];
+      const remainingIds = currentIds.filter(id => !selectedIds.includes(id));
+      const finalTeamIds = [...remainingIds, ...manualCleaners];
+      for (let i = 0; i < finalTeamIds.length; i++) {
+        for (let j = i + 1; j < finalTeamIds.length; j++) {
+          const c1 = cleaners.find(c => c.id === finalTeamIds[i]);
+          const c2 = cleaners.find(c => c.id === finalTeamIds[j]);
+          if (c1?.cannotWorkWith.includes(finalTeamIds[j]) || c2?.cannotWorkWith.includes(finalTeamIds[i])) {
+            warnings.push(`${c1?.name} cannot work with ${c2?.name}`);
+          }
+        }
+      }
+
+      // Driver check
+      const hasDriver = finalTeamIds.some(id => cleaners.find(c => c.id === id)?.isDriver);
+      if (!hasDriver) {
+        warnings.push(`No driver assigned for ${client?.name || 'visit'} at ${v.startTime}`);
+      }
+    });
+
+    // Find conflict-free suggestion
+    if (warnings.length > 0) {
+      for (const candidate of cleaners) {
+        if (!candidate.active) continue;
+        if (selectedIds.includes(candidate.id)) continue;
+        if (manualCleaners.includes(candidate.id)) continue;
+
+        let hasConflict = false;
+        for (const v of affectedVisits) {
+          const client = clients.find(c => c.id === v.clientId);
+          if (client?.avoidCleaners.includes(candidate.id)) { hasConflict = true; break; }
+
+          const dur = durationOf(v);
+          const vStart = parse(v.startTime, 'HH:mm', new Date());
+          const vEnd = addMinutes(vStart, dur);
+
+          const cvVisits = dayVisits.filter(dv => (dv.assignedCleanerIds || []).includes(candidate.id) && dv.id !== v.id);
+          for (const cv of cvVisits) {
+            const cvStart = parse(cv.startTime, 'HH:mm', new Date());
+            const cvDur = durationOf(cv);
+            const cvEnd = addMinutes(cvStart, cvDur);
+            if (isBefore(vStart, cvEnd) && isBefore(cvStart, vEnd)) { hasConflict = true; break; }
+          }
+          if (hasConflict) break;
+
+          if (candidate.mustBeOffBy && isAfter(vEnd, parse(candidate.mustBeOffBy, 'HH:mm', new Date()))) { hasConflict = true; break; }
+
+          const currentIds = v.assignedCleanerIds || [];
+          const remainingIds = currentIds.filter(id => !selectedIds.includes(id));
+          const finalTeam = [...remainingIds, candidate.id];
+          for (const tid of finalTeam) {
+            if (tid === candidate.id) continue;
+            const teammate = cleaners.find(c => c.id === tid);
+            if (teammate?.cannotWorkWith.includes(candidate.id) || candidate.cannotWorkWith.includes(tid)) { hasConflict = true; break; }
+          }
+          if (hasConflict) break;
+
+          const hasDriver = finalTeam.some(id => cleaners.find(c => c.id === id)?.isDriver);
+          if (!hasDriver && !candidate.isDriver) { hasConflict = true; break; }
+        }
+        if (!hasConflict) {
+          suggestion = candidate;
+          break;
+        }
+      }
+    }
+
+    return { warnings, suggestion };
+  };
+
+  // ── MANUAL SAVE ──
+  const executeManualSave = () => {
+    // 1. Update visits
+    let newVisits = [...visits];
+    affectedVisits.forEach(v => {
+      const currentIds = v.assignedCleanerIds || [];
+      const healthyIds = currentIds.filter(id => !selectedIds.includes(id));
+      const newIds = [...healthyIds, ...manualCleaners];
+      newVisits = newVisits.map(nv => nv.id === v.id ? { ...nv, assignedCleanerIds: newIds, assignedTeamId: '' } as Visit : nv);
+    });
+    setVisits(newVisits);
+
+    // 2. Deactivate sick cleaners
+    if (issueType === 'cleaner-sick') {
+      selectedIds.forEach(sickId => {
+        setCleaners(prev => prev.map(c => c.id === sickId ? { ...c, active: false } : c));
+      });
+    }
+
+    // 3. Build relief route
+    if (reliefNeeded && reliefName) {
+      const reliefStops = [
+        { type: 'depart', label: `Leave Home — ${reliefName}`, address: reliefAddress || 'TBD', arrivalTime: '', durationMin: 0, latLng: null, included: true },
+        ...manualCleaners.map(cid => {
+          const c = cleaners.find(x => x.id === cid);
+          return { type: 'pickup' as any, label: `Pickup ${c?.name || 'Cleaner'}`, address: (c as any)?.address || 'TBD', arrivalTime: '', durationMin: 0, latLng: null, included: true };
+        }),
+        ...affectedVisits.map(v => ({
+          type: 'clean',
+          label: `Clean — ${v.clientName}`,
+          address: v.clientAddress || 'TBD',
+          arrivalTime: '',
+          durationMin: durationOf(v),
+          targetTime: v.startTime,
+          latLng: null,
+          included: true
+        })),
+        ...manualCleaners.map(cid => {
+          const c = cleaners.find(x => x.id === cid);
+          return { type: 'home' as any, label: `Drop off ${c?.name || 'Cleaner'}`, address: (c as any)?.address || 'TBD', arrivalTime: '', durationMin: 0, latLng: null, included: true };
+        }),
+        { type: 'home', label: `Arrive Home — ${reliefName}`, address: reliefAddress || 'TBD', arrivalTime: '', durationMin: 0, latLng: null, included: true }
+      ];
+      const raw = localStorage.getItem('hhce_relief_routes');
+      const all = raw ? JSON.parse(raw) : {};
+      all[dateStr] = reliefStops;
+      localStorage.setItem('hhce_relief_routes', JSON.stringify(all));
+    }
+
+    // 4. Create notifications
+    const notif = {
+      id: `manual_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      date: dateStr,
+      issueType,
+      affectedIds: selectedIds,
+      replacementIds: manualCleaners,
+      reliefDriver: reliefNeeded ? { name: reliefName, address: reliefAddress } : null,
+      uber: uberNeeded,
+      actions: [
+        `Manual fix: Replace ${selectedIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')} with ${manualCleaners.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}`,
+        ...affectedVisits.map(v => `Update ${v.clientName} at ${v.startTime}`),
+        ...(reliefNeeded ? [`Relief driver ${reliefName} route created for ${dateStr}`] : []),
+        ...(uberNeeded ? ['Arrange UBER transport for replacement cleaners'] : [])
+      ],
+      visitUpdates: affectedVisits.map(v => ({
+        visitId: v.id,
+        updates: {
+          assignedCleanerIds: [...(v.assignedCleanerIds || []).filter((id: string) => !selectedIds.includes(id)), ...manualCleaners],
+          assignedTeamId: ''
+        }
+      }))
+    };
+    const notifRaw = localStorage.getItem('hhce_fix_notifications');
+    const notifAll = notifRaw ? JSON.parse(notifRaw) : [];
+    notifAll.push(notif);
+    localStorage.setItem('hhce_fix_notifications', JSON.stringify(notifAll));
+
+    // 5. Trigger route recalculation
+    localStorage.setItem('hhce_route_recalculate_trigger', JSON.stringify({ date: dateStr, timestamp: Date.now() }));
+
+    // 6. Success
+    setApplied(true);
+    setTimeout(() => {
+      setApplied(false);
+      setManualStep('cleaners');
+      setManualCleaners([]);
+      setReliefNeeded(false);
+      setUberNeeded(false);
+      setReliefName('');
+      setReliefAddress('');
+      setConflictData({ show: false, warnings: [] });
+      onClose();
+    }, 1500);
+  };
+
+  const handleManualSave = () => {
+    const { warnings, suggestion } = detectConflicts();
+    if (warnings.length > 0) {
+      setConflictData({ show: true, warnings, suggestion });
+    } else {
+      executeManualSave();
+    }
   };
 
   // ── PROPOSAL ENGINE ──
@@ -498,11 +720,58 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
       });
     }
 
+    // ── FIX: Always return exactly 3 proposals ──
     props.sort((a, b) => b.score - a.score);
-    const pageSize = 3;
-    const totalPages = Math.max(1, Math.ceil(props.length / pageSize));
-    const page = seed % totalPages;
-    return props.slice(page * pageSize, (page + 1) * pageSize);
+
+    if (props.length > 0 && props.length < 3) {
+      const generic: Proposal[] = [];
+      generic.push({
+        id: `fallback_manual_${seed}`,
+        title: 'Manual Reassignment',
+        subtitle: 'Use manual edit to choose your own team & transport',
+        changes: affectedVisits.map(v => `${v.clientName}: manually assign replacements`),
+        calls: [],
+        visitUpdates: [],
+        score: 5
+      });
+      generic.push({
+        id: `fallback_relief_${seed}`,
+        title: 'Relief Driver Cover',
+        subtitle: 'Relief driver handles all affected visits',
+        changes: affectedVisits.map(v => `${v.clientName}: relief driver assigned`),
+        calls: affectedVisits.map(v => ({
+          type: 'client' as const,
+          name: v.clientName,
+          phone: clients.find(c => c.id === v.clientId)?.phone,
+          message: `A relief driver will handle your cleaning today.`
+        })),
+        visitUpdates: affectedVisits.map(v => ({
+          visitId: v.id,
+          updates: { assignedCleanerIds: [], assignedTeamId: '' }
+        })),
+        reliefRoute: { name: 'Relief Driver', address: '', date: dateStr, stops: [] },
+        score: 3
+      });
+      generic.push({
+        id: `fallback_resched_${seed}`,
+        title: 'Call to Reschedule',
+        subtitle: 'Contact clients to move to another day',
+        changes: affectedVisits.map(v => `${v.clientName}: call to reschedule`),
+        calls: affectedVisits.map(v => ({
+          type: 'client' as const,
+          name: v.clientName,
+          phone: clients.find(c => c.id === v.clientId)?.phone,
+          message: `Can we reschedule your cleaning to another day?`
+        })),
+        visitUpdates: [],
+        score: 1
+      });
+      while (props.length < 3 && generic.length > 0) {
+        props.push(generic.shift()!);
+      }
+    }
+
+    return props.slice(0, 3);
   }, [issueType, selectedIds, dayVisits, activeCleaners, clients, dateStr, proposalSet, issueTime, cleaners, driverRoutes]);
 
   const applyProposal = (p: Proposal) => {
@@ -551,8 +820,9 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     }, 1500);
   };
 
-  return (    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full max-w-lg max-h-[90vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="relative bg-white w-full max-w-lg max-h-[90vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
         <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Wrench size={20} />
@@ -738,10 +1008,220 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 <button onClick={() => setProposalSet(s => s + 1)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors active:scale-95 flex items-center justify-center gap-2">
                   <RotateCcw size={14} /> Get 3 More Options
                 </button>
-                <button onClick={() => onClose()} className="flex-1 py-2.5 bg-blue-50 text-blue-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-blue-100 transition-colors active:scale-95 flex items-center justify-center gap-2">
+                <button onClick={() => {
+                  setStep('manual');
+                  setManualStep('cleaners');
+                  setManualCleaners([]);
+                  setReliefNeeded(false);
+                  setUberNeeded(false);
+                  setReliefName('');
+                  setReliefAddress('');
+                }} className="flex-1 py-2.5 bg-blue-50 text-blue-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-blue-100 transition-colors active:scale-95 flex items-center justify-center gap-2">
                   <Wrench size={14} /> Edit Manually
                 </button>
               </div>
+            </>
+          )}
+
+          {step === 'manual' && (
+            <>
+              {issueType?.startsWith('cleaner') ? (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    <button onClick={() => setStep('solutions')} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                      <ArrowLeft size={16} />
+                    </button>
+                    <p className="text-sm font-bold text-slate-700">Manual Edit: {issueType === 'cleaner-sick' ? 'Sick Cleaner' : issueType === 'cleaner-late-start' ? 'Late Start' : 'Early Leave'}</p>
+                  </div>
+
+                  {manualStep === 'cleaners' && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select Replacement Cleaners</p>
+                      <div className="space-y-2">
+                        {cleaners.map(c => {
+                          const visitCount = dayVisits.filter(v => (v.assignedCleanerIds || []).includes(c.id)).length;
+                          const isSelected = manualCleaners.includes(c.id);
+                          return (
+                            <label key={c.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-blue-50 border-blue-300' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                              <input type="checkbox" checked={isSelected} onChange={() => {
+                                setManualCleaners(prev => prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]);
+                              }} className="w-5 h-5 rounded border-slate-300 text-blue-600" />
+                              <div className="flex-1">
+                                <p className="text-sm font-bold text-slate-800">{c.name} {c.isDriver ? '(Driver)' : ''} {!c.active ? '· Inactive' : ''}</p>
+                                <p className="text-xs text-slate-500">{visitCount} visits today</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <button
+                        onClick={() => setManualStep('transport')}
+                        disabled={manualCleaners.length === 0}
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-40 transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
+                      >
+                        <ChevronRight size={16} /> Next: Transport
+                      </button>
+                    </div>
+                  )}
+
+                  {manualStep === 'transport' && (
+                    <div className="space-y-4">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Transport Options</p>
+
+                      <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${reliefNeeded ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'}`}>
+                        <input type="checkbox" checked={reliefNeeded} onChange={e => setReliefNeeded(e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-indigo-600" />
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-slate-800 flex items-center gap-2"><Car size={16} className="text-indigo-500" /> Relief Driver Needed</p>
+                          <p className="text-xs text-slate-500">Driver picks up cleaners, delivers to job, returns them home</p>
+                        </div>
+                      </label>
+
+                      {reliefNeeded && (
+                        <div className="space-y-3 bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Driver Name</label>
+                            <input type="text" value={reliefName} onChange={e => setReliefName(e.target.value)} placeholder="e.g. Mike Relief" className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-bold" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Driver Home Address</label>
+                            <input type="text" value={reliefAddress} onChange={e => setReliefAddress(e.target.value)} placeholder="123 Main St" className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-bold" />
+                          </div>
+                        </div>
+                      )}
+
+                      <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${uberNeeded ? 'bg-purple-50 border-purple-300' : 'bg-white border-slate-200'}`}>
+                        <input type="checkbox" checked={uberNeeded} onChange={e => setUberNeeded(e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-purple-600" />
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-slate-800 flex items-center gap-2"><Car size={16} className="text-purple-500" /> UBER / Rideshare</p>
+                          <p className="text-xs text-slate-500">Arrange paid transport for cleaners</p>
+                        </div>
+                      </label>
+
+                      <div className="flex gap-2">
+                        <button onClick={() => setManualStep('cleaners')} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors active:scale-[0.98] flex items-center justify-center gap-2">
+                          <ArrowLeft size={16} /> Back
+                        </button>
+                        <button onClick={() => setManualStep('review')} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors active:scale-[0.98] flex items-center justify-center gap-2">
+                          <ChevronRight size={16} /> Review
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {manualStep === 'review' && (
+                    <div className="space-y-4">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Review Changes</p>
+
+                      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Replacing</p>
+                          <p className="text-sm font-bold text-slate-800">
+                            {selectedIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">With</p>
+                          <p className="text-sm font-bold text-slate-800">
+                            {manualCleaners.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ') || 'No one selected'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Affected Visits</p>
+                          <div className="space-y-1">
+                            {affectedVisits.map(v => (
+                              <p key={v.id} className="text-xs text-slate-600">{v.clientName} at {v.startTime}</p>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Transport</p>
+                          <p className="text-xs text-slate-600">
+                            {reliefNeeded ? `Relief driver: ${reliefName || 'TBD'} (${reliefAddress || 'No address'})` : uberNeeded ? 'UBER / Rideshare' : 'None (cleaners make own way)'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button onClick={() => setManualStep('transport')} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors active:scale-[0.98] flex items-center justify-center gap-2">
+                          <ArrowLeft size={16} /> Back
+                        </button>
+                        <button onClick={handleManualSave} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition-colors active:scale-[0.98] flex items-center justify-center gap-2">
+                          <Save size={16} /> SAVE & Recalculate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conflict Warning Overlay */}
+                  {conflictData.show && (
+                    <div className="absolute inset-0 bg-white/95 z-50 flex flex-col p-4">
+                      <div className="flex-1 overflow-y-auto space-y-4">
+                        <div className="flex items-center gap-2 text-red-600">
+                          <AlertTriangle size={24} />
+                          <p className="text-lg font-black">Conflicts Detected</p>
+                        </div>
+                        <div className="space-y-2">
+                          {conflictData.warnings.map((w, i) => (
+                            <div key={i} className="flex items-start gap-2 p-3 bg-red-50 rounded-lg text-xs text-red-800">
+                              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                              <span>{w}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {conflictData.suggestion && (
+                          <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                            <p className="text-sm font-bold text-green-800 mb-1">Suggested Conflict-Free Cleaner</p>
+                            <p className="text-xs text-green-700">{conflictData.suggestion.name} {conflictData.suggestion.isDriver ? '(Driver)' : ''}</p>
+                            <button
+                              onClick={() => {
+                                setManualCleaners([conflictData.suggestion!.id]);
+                                setConflictData({ show: false, warnings: [] });
+                              }}
+                              className="mt-2 w-full py-2 bg-green-600 text-white rounded-lg font-bold text-xs hover:bg-green-700 transition-colors"
+                            >
+                              Use {conflictData.suggestion.name} Instead
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0 space-y-2 pt-4 border-t">
+                        <button
+                          onClick={() => {
+                            setConflictData({ show: false, warnings: [] });
+                            executeManualSave();
+                          }}
+                          className="w-full py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-colors active:scale-[0.98]"
+                        >
+                          Save Anyway & Dismiss
+                        </button>
+                        <button
+                          onClick={() => setConflictData({ show: false, warnings: [] })}
+                          className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors active:scale-[0.98]"
+                        >
+                          Cancel & Keep Editing
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <button onClick={() => setStep('solutions')} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                      <ArrowLeft size={16} />
+                    </button>
+                    <p className="text-sm font-bold text-slate-700">Manual Edit</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                    <AlertTriangle size={20} className="text-amber-500 mb-2" />
+                    <p className="text-sm font-bold text-amber-800">Manual editing for client issues is simplified.</p>
+                    <p className="text-xs text-amber-700 mt-1">Use the automatic suggestions above for full control over client cancellations and time changes.</p>
+                  </div>
+                  <button onClick={() => setStep('solutions')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors active:scale-[0.98]">
+                    Back to Suggestions
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
