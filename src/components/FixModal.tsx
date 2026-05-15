@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight, UserX, Clock, CalendarX, CalendarClock, ArrowLeft, Save, Car, AlertTriangle, Users, MapPin } from 'lucide-react';
-import type { Visit, Cleaner } from '../types';
+import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight, UserX, Clock, CalendarX, CalendarClock, ArrowLeft, Save, Car, AlertTriangle } from 'lucide-react';
+import type { Visit } from '../types';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 
 interface FixModalProps {
