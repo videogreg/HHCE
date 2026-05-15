@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight, UserX, Clock, CalendarX, CalendarClock, ArrowLeft } from 'lucide-react';
-import type { Visit, Cleaner, Client } from '../types';
-import { checkConstraints } from '../utils/scheduler';
+import type { Visit, Cleaner } from '../types';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 
 interface FixModalProps {
@@ -24,7 +23,7 @@ interface Proposal {
 }
 
 export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
-  const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate } = useAppContext();
+  const { visits, setVisits, cleaners, setCleaners, clients, selectedDate } = useAppContext();
   const [step, setStep] = useState<'issue' | 'affected' | 'solutions'>('issue');
   const [issueType, setIssueType] = useState<IssueType | null>(null);
   const [issueTime, setIssueTime] = useState<string>('09:00');
@@ -134,7 +133,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
       const direction = issueType === 'client-earlier' ? 'earlier' : 'later';
       const timeShift = issueType === 'client-earlier' ? -60 : 60;
 
-      targetVisits.forEach(targetVisit => {
+      affectedVisits.forEach((targetVisit: Visit) => {
         const client = clients.find(c => c.id === targetVisit.clientId);
         if (!client) return;
         const dur = durationOf(targetVisit);
@@ -492,7 +491,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
 
     props.sort((a, b) => b.score - a.score);
     return props.slice(0, 3);
-  }, [issueType, selectedIds, dayVisits, activeCleaners, clients, teams, dateStr, proposalSet, issueTime, cleaners, driverRoutes]);
+  }, [issueType, selectedIds, dayVisits, activeCleaners, clients, dateStr, proposalSet, issueTime, cleaners, driverRoutes]);
 
   const applyProposal = (p: Proposal) => {
     let newVisits = [...visits];
@@ -538,8 +537,9 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
       setApplied(false);
       onClose();
     }, 1500);
-  };  return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+  };
+
+  return (    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white w-full max-w-lg max-h-[90vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
         <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
