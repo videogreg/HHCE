@@ -17,13 +17,13 @@ interface Proposal {
   subtitle: string;
   changes: string[];
   calls: { type: 'client' | 'cleaner'; name: string; phone?: string; message: string }[];
-  visitUpdates: { visitId: string; updates: Partial<<Visit> }[];
+  visitUpdates: { visitId: string; updates: Partial<Visit> }[];
   cleanerUpdates?: { cleanerId: string; updates: Partial<Cleaner> }[];
   reliefRoute?: { name: string; address: string; date: string; stops: any[] };
   score: number;
 }
 
-export const FixModal: React.FC<<FixModalProps> = ({ onClose }) => {
+export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
   const { visits, setVisits, cleaners, setCleaners, clients, teams, selectedDate } = useAppContext();
   const [step, setStep] = useState<'issue' | 'affected' | 'solutions'>('issue');
   const [issueType, setIssueType] = useState<IssueType | null>(null);
