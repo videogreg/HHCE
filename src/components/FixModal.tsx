@@ -198,11 +198,17 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     });
     setVisits(newVisits);
 
-    // 2. Deactivate sick cleaners
+    // 2. Mark sick cleaners as unavailable for TODAY only (not permanently inactive)
     if (issueType === 'cleaner-sick') {
+      const raw = localStorage.getItem('hhce_sick_days');
+      const sickDays: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+      if (!sickDays[dateStr]) sickDays[dateStr] = [];
       selectedIds.forEach(sickId => {
-        setCleaners(prev => prev.map(c => c.id === sickId ? { ...c, active: false } : c));
+        if (!sickDays[dateStr].includes(sickId)) {
+          sickDays[dateStr].push(sickId);
+        }
       });
+      localStorage.setItem('hhce_sick_days', JSON.stringify(sickDays));
     }
 
     // 3. Build relief route
@@ -470,7 +476,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
         const sickVisits = dayVisits.filter(v => (v.assignedCleanerIds || []).includes(sickId));
         if (sickVisits.length === 0) return;
 
-        const p1: Proposal = { id: `sick_p1_${sickId}_${seed}`, title: `Replace ${sickCleaner.name}`, subtitle: 'Swap with compatible available cleaners, keep all times', changes: [], calls: [], visitUpdates: [], cleanerUpdates: [{ cleanerId: sickId, updates: { active: false } }], score: 90 };
+        const p1: Proposal = { id: `sick_p1_${sickId}_${seed}`, title: `Replace ${sickCleaner.name}`, subtitle: 'Swap with compatible available cleaners, keep all times', changes: [], calls: [], visitUpdates: [], score: 90 };
         p1.calls.push({ type: 'cleaner', name: sickCleaner.name, phone: sickCleaner.phone, message: `Confirmed: you're off today. Feel better!` });
         sickVisits.forEach(v => {
           const client = clients.find(c => c.id === v.clientId);
@@ -498,7 +504,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
         });
         if (p1.visitUpdates.length > 0) props.push(p1);
 
-        const p2: Proposal = { id: `sick_p2_${sickId}_${seed}`, title: 'Redistribute Visits', subtitle: 'Move visits to open slots in other driver routes', changes: [], calls: [], visitUpdates: [], cleanerUpdates: [{ cleanerId: sickId, updates: { active: false } }], score: 70 };
+        const p2: Proposal = { id: `sick_p2_${sickId}_${seed}`, title: 'Redistribute Visits', subtitle: 'Move visits to open slots in other driver routes', changes: [], calls: [], visitUpdates: [], score: 70 };
         p2.calls.push({ type: 'cleaner', name: sickCleaner.name, message: `Confirmed: you're off today.` });
         sickVisits.forEach(v => {
           const client = clients.find(c => c.id === v.clientId);
@@ -545,7 +551,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
 
         const reliefVisits = sickVisits.filter(v => !props.some(p => p.visitUpdates.some(u => u.visitId === v.id)));
         if (reliefVisits.length > 0 || props.length === 0) {
-          const p3: Proposal = { id: `sick_p3_${sickId}_${seed}`, title: 'Relief Driver Route', subtitle: 'Create a new route for unassigned visits', changes: [], calls: [], visitUpdates: [], cleanerUpdates: [{ cleanerId: sickId, updates: { active: false } }], score: 30 };
+          const p3: Proposal = { id: `sick_p3_${sickId}_${seed}`, title: 'Relief Driver Route', subtitle: 'Create a new route for unassigned visits', changes: [], calls: [], visitUpdates: [], score: 30 };
           p3.calls.push({ type: 'cleaner', name: sickCleaner.name, message: `Confirmed: you're off today.` });
           reliefVisits.forEach(v => {
             p3.changes.push(`${v.clientName}: relief driver at ${v.startTime}`);
