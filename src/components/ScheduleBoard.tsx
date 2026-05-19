@@ -580,7 +580,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               const hasDriverAssigned = assignedCleaners.some(c => c?.isDriver);
 
               const cleanerCount = assignedCleaners.length;
-              const totalHours = formatTotalHours(visit.durationMinutes);
+              const totalHours = formatTotalHours(visit.durationMinutes, cleanerCount);
               const onSiteHours = formatOnSiteHours(visit.durationMinutes, cleanerCount);
 
               return (
