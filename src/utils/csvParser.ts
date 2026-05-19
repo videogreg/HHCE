@@ -245,45 +245,64 @@ const parseStartTime = (raw: string): string => {
 };
 
 export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
-  const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
-  const rows = data as Record<string, string>[];
+  try {
+    const parseResult = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
 
-  return rows.map(row => {
-    // Jobber exports use "Display Name" column which contains: "Carol Barrett(O)(4H)"
-    // The duration is embedded in brackets like (4H), (2h), (3.5h)
-    const displayName = getColumn(row, ['display name', 'displayname', 'name', 'client name', 'customer name']);
-    let name = '';
-    let durationMinutes = 120;
-
-    if (displayName) {
-      const extracted = extractDurationFromName(displayName);
-      name = extracted.cleanName;
-      durationMinutes = extracted.durationMinutes;
+    if (parseResult.errors && parseResult.errors.length > 0) {
+      console.error('CSV parse errors:', parseResult.errors);
     }
 
-    // Fallback to other name fields if display name is empty
-    if (!name) {
-      name = buildName(row);
-    }
+    const rows = parseResult.data as Record<string, string>[];
+    const headers = Object.keys(rows[0] || {});
+    console.log(`[csvParser] Parsed ${rows.length} rows. Headers found:`, headers);
+    console.log(`[csvParser] Looking for 'display name' in normalized headers:`, headers.map(normalizeHeader));
 
-    const address = buildAddress(row);
-    const phone = buildPhone(row);
-    const notes = buildNotes(row);
-    const zone = buildZone(row);
+    return rows.map((row, idx) => {
+      // Jobber exports use "Display Name" column which contains: "Carol Barrett(O)(4H)"
+      // The duration is embedded in brackets like (4H), (2h), (3.5h)
+      const rawDisplayName = getColumn(row, ['display name', 'displayname', 'name', 'client name', 'customer name']);
+      let name = '';
+      let durationMinutes = 120;
 
-    return {
-      id: uuidv4(),
-      name,
-      address,
-      phone,
-      preferredDays: [],
-      preferredCleaners: [],
-      avoidCleaners: [],
-      durationMinutes,
-      zone,
-      notes,
-    };
-  }).filter(c => c.name && c.name !== 'Unknown Client');
+      console.log(`[csvParser] Row ${idx}: raw displayName="${rawDisplayName}"`);
+
+      if (rawDisplayName) {
+        const extracted = extractDurationFromName(rawDisplayName);
+        name = extracted.cleanName;
+        durationMinutes = extracted.durationMinutes;
+        console.log(`[csvParser] Row ${idx}: EXTRACTED name="${name}", duration=${durationMinutes}min`);
+      } else {
+        console.warn(`[csvParser] Row ${idx}: No display name found`);
+      }
+
+      // Fallback to other name fields if display name is empty
+      if (!name) {
+        name = buildName(row);
+        console.log(`[csvParser] Row ${idx}: Fallback name="${name}"`);
+      }
+
+      const address = buildAddress(row);
+      const phone = buildPhone(row);
+      const notes = buildNotes(row);
+      const zone = buildZone(row);
+
+      return {
+        id: uuidv4(),
+        name,
+        address,
+        phone,
+        preferredDays: [],
+        preferredCleaners: [],
+        avoidCleaners: [],
+        durationMinutes,
+        zone,
+        notes,
+      };
+    }).filter(c => c.name && c.name !== 'Unknown Client');
+  } catch (err) {
+    console.error('[csvParser] Fatal CSV parse error:', err);
+    return [];
+  }
 };
 
 /**
