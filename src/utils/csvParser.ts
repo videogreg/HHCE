@@ -46,9 +46,15 @@ const getColumn = (row: Record<string, string>, candidates: string[]): string =>
  * Priority: Display Name > Company Name > First + Last Name > Service Property Name
  */
 const buildName = (row: Record<string, string>): string => {
-  const displayName = getColumn(row, ['display name']);
+  const displayName = getColumn(row, ['display name', 'displayname']);
   if (displayName) {
     const { cleanName } = extractDurationFromName(displayName);
+    return cleanName;
+  }
+
+  const name = getColumn(row, ['name', 'full name', 'client name', 'customer name']);
+  if (name) {
+    const { cleanName } = extractDurationFromName(name);
     return cleanName;
   }
 
@@ -149,17 +155,21 @@ const buildZone = (row: Record<string, string>): string => {
  * Returns extracted minutes and the clean name without the duration bracket.
  */
 const extractDurationFromName = (name: string): { cleanName: string; durationMinutes: number } => {
-  // Match patterns like (2h), (2.5h), (1.5H), (2 h), (2.5 h)
-  const match = name.match(/\(\s*(\d+(?:\.\d+)?)\s*h\s*\)/i);
-  if (match) {
-    const hours = parseFloat(match[1]);
+  if (!name) return { cleanName: '', durationMinutes: 120 };
+
+  // Match duration patterns: (2h), (2.5h), (1.5H), (2H), (4H), (3.5H), (6h), (0.5h)
+  // Case insensitive /i flag handles both h and H
+  // Handles optional spaces: ( 2.5 h ), (2.5H), (4 h)
+  const durationMatch = name.match(/\(\s*(\d+(?:\.\d+)?)\s*h\s*\)/i);
+  if (durationMatch) {
+    const hours = parseFloat(durationMatch[1]);
     if (!isNaN(hours) && hours > 0) {
       // Remove the duration bracket from the name
-      const cleanName = name.replace(match[0], '').trim().replace(/\s+/g, ' ');
+      let cleanName = name.replace(durationMatch[0], '').trim().replace(/\s+/g, ' ');
       return { cleanName, durationMinutes: Math.round(hours * 60) };
     }
   }
-  return { cleanName: name, durationMinutes: 120 };
+  return { cleanName: name.trim(), durationMinutes: 120 };
 };
 
 
@@ -239,9 +249,23 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
   const rows = data as Record<string, string>[];
 
   return rows.map(row => {
-    const displayName = getColumn(row, ['display name']);
-    const { cleanName, durationMinutes } = extractDurationFromName(displayName || '');
-    const name = cleanName || buildName(row);
+    // Jobber exports use "Display Name" column which contains: "Carol Barrett(O)(4H)"
+    // The duration is embedded in brackets like (4H), (2h), (3.5h)
+    const displayName = getColumn(row, ['display name', 'displayname', 'name', 'client name', 'customer name']);
+    let name = '';
+    let durationMinutes = 120;
+
+    if (displayName) {
+      const extracted = extractDurationFromName(displayName);
+      name = extracted.cleanName;
+      durationMinutes = extracted.durationMinutes;
+    }
+
+    // Fallback to other name fields if display name is empty
+    if (!name) {
+      name = buildName(row);
+    }
+
     const address = buildAddress(row);
     const phone = buildPhone(row);
     const notes = buildNotes(row);
