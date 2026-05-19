@@ -47,7 +47,10 @@ const getColumn = (row: Record<string, string>, candidates: string[]): string =>
  */
 const buildName = (row: Record<string, string>): string => {
   const displayName = getColumn(row, ['display name']);
-  if (displayName) return displayName;
+  if (displayName) {
+    const { cleanName } = extractDurationFromName(displayName);
+    return cleanName;
+  }
 
   const companyName = getColumn(row, ['company name']);
   if (companyName) return companyName;
@@ -142,6 +145,26 @@ const buildZone = (row: Record<string, string>): string => {
 };
 
 /**
+ * Extract duration in minutes from a name string containing (2h), (1.5h), etc.
+ * Returns extracted minutes and the clean name without the duration bracket.
+ */
+const extractDurationFromName = (name: string): { cleanName: string; durationMinutes: number } => {
+  // Match patterns like (2h), (2.5h), (1.5H), (2 h), (2.5 h)
+  const match = name.match(/\(\s*(\d+(?:\.\d+)?)\s*h\s*\)/i);
+  if (match) {
+    const hours = parseFloat(match[1]);
+    if (!isNaN(hours) && hours > 0) {
+      // Remove the duration bracket from the name
+      const cleanName = name.replace(match[0], '').trim().replace(/\s+/g, ' ');
+      return { cleanName, durationMinutes: Math.round(hours * 60) };
+    }
+  }
+  return { cleanName: name, durationMinutes: 120 };
+};
+
+
+
+/**
  * Parse a flexible date string into yyyy-MM-dd.
  * Handles ISO, North American slashes/dashes, and written formats like "May 8, 2026".
  */
@@ -216,7 +239,9 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
   const rows = data as Record<string, string>[];
 
   return rows.map(row => {
-    const name = buildName(row);
+    const displayName = getColumn(row, ['display name']);
+    const { cleanName, durationMinutes } = extractDurationFromName(displayName || '');
+    const name = cleanName || buildName(row);
     const address = buildAddress(row);
     const phone = buildPhone(row);
     const notes = buildNotes(row);
@@ -230,7 +255,7 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
       preferredDays: [],
       preferredCleaners: [],
       avoidCleaners: [],
-      durationMinutes: 120,
+      durationMinutes,
       zone,
       notes,
     };
