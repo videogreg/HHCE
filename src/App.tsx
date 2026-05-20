@@ -7,6 +7,7 @@ import { ScheduleBoard } from './components/ScheduleBoard';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 import { FixModal } from './components/FixModal';
 import { SearchBar } from './components/SearchBar';
+import ToastContainer from './components/ToastContainer';
 import { LayoutDashboard, Users, UserCheck, Wrench, Sparkles, CalendarPlus } from 'lucide-react';
 
 function App() {
@@ -94,6 +95,8 @@ function AppContent() {
       {showFixModal && (
         <FixModal onClose={() => setShowFixModal(false)} />
       )}
+
+      <ToastContainer />
     </div>
   );
 }

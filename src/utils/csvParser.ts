@@ -2,10 +2,17 @@ import Papa from 'papaparse';
 import type { Client, Visit, Team, Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Normalize a header string for fuzzy matching.
- * Lowercase, remove brackets, hashes, special chars, extra spaces.
- */
+export interface ParseClientsResult {
+  clients: Partial<<Client>[];
+  stats: {
+    totalRows: number;
+    imported: number;
+    skipped: number;
+    skippedRows: { row: number; reason: string }[];
+    errors: string[];
+  };
+}
+
 const normalizeHeader = (h: string): string => {
   return h
     .toLowerCase()
@@ -14,23 +21,17 @@ const normalizeHeader = (h: string): string => {
     .trim();
 };
 
-/**
- * Find the best matching column value from a row.
- * Tries each candidate header name in order of priority.
- */
 const getColumn = (row: Record<string, string>, candidates: string[]): string => {
   const keys = Object.keys(row);
   const normalizedKeys = keys.map(normalizeHeader);
   
   for (const candidate of candidates) {
     const normCandidate = normalizeHeader(candidate);
-    // Exact normalized match
     const idx = normalizedKeys.indexOf(normCandidate);
     if (idx !== -1) {
       const val = row[keys[idx]];
       if (val && val.trim()) return val.trim();
     }
-    // Contains match (for partial matches like "phone" matching "main phone s")
     for (let i = 0; i < normalizedKeys.length; i++) {
       if (normalizedKeys[i].includes(normCandidate) || normCandidate.includes(normalizedKeys[i])) {
         const val = row[keys[i]];
@@ -41,10 +42,6 @@ const getColumn = (row: Record<string, string>, candidates: string[]): string =>
   return '';
 };
 
-/**
- * Build a full name from available parts.
- * Priority: Display Name > Company Name > First + Last Name > Service Property Name
- */
 const buildName = (row: Record<string, string>): string => {
   const displayName = getColumn(row, ['display name', 'displayname']);
   if (displayName) {
@@ -73,10 +70,6 @@ const buildName = (row: Record<string, string>): string => {
   return 'Unknown Client';
 };
 
-/**
- * Build a full address from available parts.
- * Priority: Service address > Billing address > CFT[Address]
- */
 const buildAddress = (row: Record<string, string>): string => {
   const serviceStreet1 = getColumn(row, ['service street 1']);
   const serviceStreet2 = getColumn(row, ['service street 2']);
@@ -102,9 +95,6 @@ const buildAddress = (row: Record<string, string>): string => {
   return '';
 };
 
-/**
- * Build a phone number from available parts.
- */
 const buildPhone = (row: Record<string, string>): string => {
   const mainPhone = getColumn(row, ['main phone s', 'main phone', 'mainphone']);
   if (mainPhone) return mainPhone;
@@ -121,9 +111,6 @@ const buildPhone = (row: Record<string, string>): string => {
   return '';
 };
 
-/**
- * Build notes from available parts.
- */
 const buildNotes = (row: Record<string, string>): string => {
   const cftNotes1 = getColumn(row, ['cft notes']);
   const cftNotes2 = getColumn(row, ['cftnotes']);
@@ -137,9 +124,6 @@ const buildNotes = (row: Record<string, string>): string => {
   return '';
 };
 
-/**
- * Get zone (city/area) from available parts.
- */
 const buildZone = (row: Record<string, string>): string => {
   const serviceCity = getColumn(row, ['service city']);
   if (serviceCity) return serviceCity;
@@ -150,34 +134,20 @@ const buildZone = (row: Record<string, string>): string => {
   return '';
 };
 
-/**
- * Extract duration in minutes from a name string containing (2h), (1.5h), etc.
- * Returns extracted minutes and the clean name without the duration bracket.
- */
 const extractDurationFromName = (name: string): { cleanName: string; durationMinutes: number } => {
   if (!name) return { cleanName: '', durationMinutes: 120 };
 
   let cleanName = name.trim();
   let durationMinutes = 120;
 
-
-  // Try multiple patterns in order of specificity
   const patterns = [
-    // (2.5h+T) or (2.5h) or (2.5H) or (2.5 H) — +T can be attached to h or separate
     { regex: /\(\s*(\d+(?:\.\d+)?)\s*[hH]\s*\+?T?\s*\)/, clean: true },
-    // (3hr) or (3HR) or (3Hr) — 'hr' suffix
     { regex: /\(\s*(\d+(?:\.\d+)?)\s*hr\s*\)/i, clean: true },
-    // (5) — plain number in brackets, assume hours (common in your data)
     { regex: /\(\s*(\d+(?:\.\d+)?)\s*\)/, clean: true },
-    // 3/4H or 3/4h — fraction format like Susan McLean(3/4H)
     { regex: /\(\s*(\d+)\s*\/\s*(\d+)\s*[hH]\s*\)/, isFraction: true, clean: true },
-    // (2.5+T) — number with +T marker but no h/H (like Nicole Stanton)
     { regex: /\(\s*(\d+(?:\.\d+)?)\s*\+T\s*\)/, clean: true },
-    // Unbracketed duration like W1.5H or 2H in text (no brackets, letter prefix)
     { regex: /[a-zA-Z]\s*(\d+(?:\.\d+)?)\s*[hH]\b/, clean: false },
-    // Unbracketed duration at word boundary like 4H in "4H4W" or start of string
     { regex: /\b(\d+(?:\.\d+)?)\s*[hH]\b/, clean: false },
-    // Complex format like (4H4W/2H4W) — first number+H after opening bracket
     { regex: /\(\s*(\d+(?:\.\d+)?)\s*[hH]/, clean: false },
   ];
 
@@ -194,44 +164,33 @@ const extractDurationFromName = (name: string): { cleanName: string; durationMin
       if (!isNaN(hours) && hours > 0 && hours <= 24) {
         durationMinutes = Math.round(hours * 60);
 
-
         if (pattern.clean) {
           cleanName = cleanName.replace(match[0], '').trim().replace(/\s+/g, ' ');
         }
-        break; // Use first match
+        break;
       }
     }
   }
 
-  // Also clean up remaining non-duration markers: (O), (N), (4w), (2W), (C), (#2), etc.
-  // These are frequency/type markers, not durations
   cleanName = cleanName
-    .replace(/\(\s*[oOnN]\s*\)/gi, '') // (O), (N), (o), (n)
-    .replace(/\(\s*#\d+\s*\)/g, '') // (#2), (#7)
-    .replace(/\(\s*\d+[wW]\s*\)/g, '') // (4w), (2W)
-    .replace(/\(\s*\d+[xX]\s*\w+\s*\)/gi, '') // (2X week)
-    .replace(/\(\s*[cC]\s*\)/g, '') // (C)
-    .replace(/\(\s*\w+\s*\)/g, '') // catch remaining (Word) markers
+    .replace(/\(\s*[oOnN]\s*\)/gi, '')
+    .replace(/\(\s*#\d+\s*\)/g, '')
+    .replace(/\(\s*\d+[wW]\s*\)/g, '')
+    .replace(/\(\s*\d+[xX]\s*\w+\s*\)/gi, '')
+    .replace(/\(\s*[cC]\s*\)/g, '')
+    .replace(/\(\s*\w+\s*\)/g, '')
     .trim()
     .replace(/\s+/g, ' ');
 
   return { cleanName, durationMinutes };
 };
 
-
-
-/**
- * Parse a flexible date string into yyyy-MM-dd.
- * Handles ISO, North American slashes/dashes, and written formats like "May 8, 2026".
- */
 const parseFlexibleDate = (raw: string): string => {
   if (!raw) return '';
   raw = raw.trim();
 
-  // Already ISO yyyy-MM-dd
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
-  // Try native Date parse (handles MM/DD/YYYY, DD-MM-YYYY, etc.)
   const d = new Date(raw);
   if (!isNaN(d.getTime())) {
     const yyyy = d.getFullYear();
@@ -240,7 +199,6 @@ const parseFlexibleDate = (raw: string): string => {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Manual parse for written dates: "May 8, 2026" or "8 May 2026"
   const monthMap: Record<string, number> = {
     jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
     may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8,
@@ -268,15 +226,10 @@ const parseFlexibleDate = (raw: string): string => {
   return '';
 };
 
-/**
- * Extract start time (HH:MM) from a time or time-range string.
- * Handles "9:00 AM - 11:00 AM", "09:00 - 11:00", "9:00am", etc.
- */
 const parseStartTime = (raw: string): string => {
   if (!raw) return '09:00';
   raw = raw.trim();
 
-  // Grab the first time-looking token in the string
   const match = raw.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
   if (match) {
     let hours = parseInt(match[1]);
@@ -290,22 +243,33 @@ const parseStartTime = (raw: string): string => {
   return '09:00';
 };
 
-export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
+export const parseClientsCSV = (csvContent: string): ParseClientsResult => {
+  const stats: ParseClientsResult['stats'] = {
+    totalRows: 0,
+    imported: 0,
+    skipped: 0,
+    skippedRows: [],
+    errors: [],
+  };
+
   try {
     const parseResult = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
 
     if (parseResult.errors && parseResult.errors.length > 0) {
       console.error('CSV parse errors:', parseResult.errors);
+      stats.errors.push(...parseResult.errors.map((e: any) => e.message || String(e)));
     }
 
     const rows = parseResult.data as Record<string, string>[];
+    stats.totalRows = rows.length;
+    
     const headers = Object.keys(rows[0] || {});
     console.log(`[csvParser] Parsed ${rows.length} rows. Headers found:`, headers);
     console.log(`[csvParser] Looking for 'display name' in normalized headers:`, headers.map(normalizeHeader));
 
-    return rows.map((row, idx) => {
-      // Jobber exports use "Display Name" column which contains: "Carol Barrett(O)(4H)"
-      // The duration is embedded in brackets like (4H), (2h), (3.5h)
+    const clients: Partial<<Client>[] = [];
+
+    rows.forEach((row, idx) => {
       const rawDisplayName = getColumn(row, ['display name', 'displayname', 'name', 'client name', 'customer name']);
       let name = '';
       let durationMinutes = 120;
@@ -321,10 +285,15 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
         console.warn(`[csvParser] Row ${idx}: No display name found`);
       }
 
-      // Fallback to other name fields if display name is empty
       if (!name) {
         name = buildName(row);
         console.log(`[csvParser] Row ${idx}: Fallback name="${name}"`);
+      }
+
+      if (!name || name === 'Unknown Client') {
+        stats.skipped++;
+        stats.skippedRows.push({ row: idx, reason: !name ? 'No name found' : 'Unknown Client' });
+        return;
       }
 
       const address = buildAddress(row);
@@ -332,7 +301,7 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
       const notes = buildNotes(row);
       const zone = buildZone(row);
 
-      return {
+      clients.push({
         id: uuidv4(),
         name,
         address,
@@ -343,55 +312,51 @@ export const parseClientsCSV = (csvContent: string): Partial<Client>[] => {
         durationMinutes,
         zone,
         notes,
-      };
-    }).filter(c => c.name && c.name !== 'Unknown Client');
+      });
+
+      stats.imported++;
+    });
+
+    console.log(`[csvParser] IMPORT COMPLETE: ${stats.imported} clients imported, ${stats.skipped} rows skipped (out of ${stats.totalRows} total)`);
+    if (stats.skippedRows.length > 0) {
+      console.log(`[csvParser] Skipped rows:`, stats.skippedRows);
+    }
+
+    return { clients, stats };
   } catch (err) {
     console.error('[csvParser] Fatal CSV parse error:', err);
-    return [];
+    stats.errors.push(err instanceof Error ? err.message : String(err));
+    return { clients: [], stats };
   }
 };
 
-/**
- * Parse a Jobber Visits report CSV.
- * Headers recognized in any order: Date, Times, Client name, Client phone,
- * Service street, Service city, Visit completed date, Assigned to,
- * One-off job ($), Schedule duration, Job type, House Notes
- */
-export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Team[], cleaners: Cleaner[]): Partial<Visit>[] => {
+export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Team[], cleaners: Cleaner[]): Partial<<Visit>[] => {
   const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
   const rows = data as Record<string, string>[];
 
   return rows.map(row => {
-    // --- DATE (Jobber: "Date") ---
     const dateRaw = getColumn(row, ['date', 'visit date', 'scheduled date', 'service date']);
     const date = parseFlexibleDate(dateRaw);
 
-    // --- TIME (Jobber: "Times" e.g. "9:00 AM - 11:00 AM") ---
     const timesRaw = getColumn(row, ['times', 'time', 'scheduled time', 'start time', 'time range']);
     const startTime = parseStartTime(timesRaw);
 
-    // --- CLIENT ---
     const clientName = getColumn(row, ['client name', 'customer name', 'name', 'client']);
     const client = clients.find(c => c.name.toLowerCase().trim() === clientName.toLowerCase().trim());
 
-    // --- ADDRESS (Jobber: "Service street" + "Service city") ---
     const serviceStreet = getColumn(row, ['service street', 'street', 'address', 'service address']);
     const serviceCity = getColumn(row, ['service city', 'city']);
     const address = [serviceStreet, serviceCity].filter(Boolean).join(', ');
 
-    // --- ZONE ---
     const zone = serviceCity || client?.zone || '';
 
-    // --- DURATION (Jobber: "Schedule duration", usually decimal hours like "2.00") ---
     const durationRaw = getColumn(row, ['schedule duration', 'duration', 'estimated duration', 'hours', 'job duration']);
     let durationMinutes = 120;
     if (durationRaw) {
-      // If it explicitly says minutes, treat as minutes
       if (/min/i.test(durationRaw)) {
         const num = parseFloat(durationRaw.replace(/[^0-9.]/g, ''));
         if (!isNaN(num)) durationMinutes = Math.round(num);
       } else {
-        // Otherwise assume hours (Jobber default export is decimal hours)
         const num = parseFloat(durationRaw.replace(/[^0-9.]/g, ''));
         if (!isNaN(num)) {
           durationMinutes = num < 24 ? Math.round(num * 60) : Math.round(num);
@@ -399,20 +364,16 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
       }
     }
 
-    // --- ASSIGNED TO / CLEANERS ---
     const assignedToRaw = getColumn(row, ['assigned to', 'assigned', 'cleaner', 'team', 'team name', 'staff']);
 
-    // Match individual cleaners from the assignment text
     let assignedCleanerIds: string[] = [];
     if (assignedToRaw && cleaners.length > 0) {
-      // Split by common separators and strip parentheticals / brackets
       const fragments = assignedToRaw
         .split(/,|&|\band\b|\+|\/|\|/i)
         .map(f => f.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim())
         .filter(Boolean);
 
       const matchedIds = new Set<string>();
-      // Sort by name length descending so longer names match first
       const sortedCleaners = [...cleaners].sort((a, b) => b.name.length - a.name.length);
 
       for (const fragment of fragments) {
@@ -423,8 +384,6 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
           const cNameLower = cleaner.name.toLowerCase();
           const cParts = cNameLower.split(/\s+/).filter(p => p.length > 1);
 
-          // Match if: exact, contained in full name, full name contained in fragment,
-          // or fragment matches a significant name part
           const isMatch =
             cNameLower === fragLower ||
             cNameLower.includes(fragLower) ||
@@ -434,7 +393,7 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
 
           if (isMatch) {
             matchedIds.add(cleaner.id);
-            break; // matched this fragment, move to next
+            break;
           }
         }
       }
@@ -442,7 +401,6 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
       assignedCleanerIds = Array.from(matchedIds);
     }
 
-    // Try to find a team that contains all assigned cleaners
     let team = teams.find(t => t.name.toLowerCase().trim() === assignedToRaw.toLowerCase().trim());
     if (!team && assignedCleanerIds.length > 0) {
       team = teams.find(t => assignedCleanerIds.every(id => t.cleanerIds.includes(id)));
@@ -465,11 +423,6 @@ export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Tea
   }).filter(v => v.date && v.clientName);
 };
 
-/**
- * Parse a Cleaners CSV.
- * Headers recognized in any order: First Name, Last Name, Equipment #,
- * Driver, Telephone, Email, Address, Unit #, City, Province, Notes, Start Date, Birthday
- */
 export const parseCleanersCSV = (csvContent: string): Partial<Cleaner>[] => {
   const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
   const rows = data as Record<string, string>[];

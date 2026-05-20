@@ -4,6 +4,7 @@ import type { Client, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save, X } from 'lucide-react';
 import { parseClientsCSV } from '../utils/csvParser';
+import { showToast } from '../utils/toast';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -12,17 +13,17 @@ interface ClientManagerProps {
   onFocusClear?: () => void;
 }
 
-export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusClear }) => {
+export const ClientManager: React.FC<<ClientManagerProps> = ({ focusId, onFocusClear }) => {
   const { cleaners, clients, setClients } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<Client>>({});
-  const [newClient, setNewClient] = useState<Partial<Client>>({
+  const [editForm, setEditForm] = useState<<Partial<<Client>>({});
+  const [newClient, setNewClient] = useState<<Partial<<Client>>({
     name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00',
     preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''
   });
   const [showAdd, setShowAdd] = useState(false);
-  const [csvPreview, setCsvPreview] = useState<Partial<Client>[] | null>(null);
+  const [csvPreview, setCsvPreview] = useState<<Partial<<Client>[] | null>(null);
 
   useEffect(() => {
     if (focusId && clients.some(c => c.id === focusId)) {
@@ -100,14 +101,14 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const parsed = parseClientsCSV(text);
-      setCsvPreview(parsed);
+      const result = parseClientsCSV(text);
+      setCsvPreview(result.clients);
     };
     reader.readAsText(file);
   };
@@ -121,7 +122,6 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
       const importedName = p.name?.trim();
       if (!importedName) return;
 
-      // Clean existing names for matching (strip brackets like (O), (4h), etc.)
       const cleanForMatch = (name: string) => name.replace(/\([^)]*\)/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
       const existingIndex = updatedClients.findIndex(c => cleanForMatch(c.name) === cleanForMatch(importedName));
 
@@ -134,7 +134,6 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           phone: p.phone || existing.phone,
           zone: p.zone || existing.zone,
           notes: p.notes || existing.notes,
-          // ALWAYS update duration from CSV if extracted (> 0 and not default 120 fallback from parser)
           durationMinutes: (p.durationMinutes && p.durationMinutes !== 120) ? p.durationMinutes : (existing.durationMinutes || 120),
           notBefore: p.notBefore || existing.notBefore,
           notAfter: p.notAfter || existing.notAfter,
@@ -158,6 +157,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     });
 
     setClients(updatedClients);
+    showToast(`✅ Imported ${csvPreview.length} clients successfully!`, 'success');
     setCsvPreview(null);
   };
 
