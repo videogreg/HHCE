@@ -13,11 +13,11 @@ interface ClientManagerProps {
   onFocusClear?: () => void;
 }
 
-export const ClientManager: React.FC<<ClientManagerProps> = ({ focusId, onFocusClear }) => {
+export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusClear }) => {
   const { cleaners, clients, setClients } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<<Partial<<Client>>({});
+  const [editForm, setEditForm] = useState<Partial<<Client>>({});
   const [newClient, setNewClient] = useState<<Partial<<Client>>({
     name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00',
     preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''

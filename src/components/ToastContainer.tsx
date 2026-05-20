@@ -8,7 +8,7 @@ interface Toast {
 }
 
 export default function ToastContainer() {
-  const [toasts, setToasts] = useState<<Toast[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
     return subscribeToToasts(setToasts);
