@@ -157,19 +157,65 @@ const buildZone = (row: Record<string, string>): string => {
 const extractDurationFromName = (name: string): { cleanName: string; durationMinutes: number } => {
   if (!name) return { cleanName: '', durationMinutes: 120 };
 
-  // Match duration patterns: (2h), (2.5h), (1.5H), (2H), (4H), (3.5H), (6h), (0.5h)
-  // Case insensitive /i flag handles both h and H
-  // Handles optional spaces: ( 2.5 h ), (2.5H), (4 h)
-  const durationMatch = name.match(/\(\s*(\d+(?:\.\d+)?)\s*h\s*\)/i);
-  if (durationMatch) {
-    const hours = parseFloat(durationMatch[1]);
-    if (!isNaN(hours) && hours > 0) {
-      // Remove the duration bracket from the name
-      let cleanName = name.replace(durationMatch[0], '').trim().replace(/\s+/g, ' ');
-      return { cleanName, durationMinutes: Math.round(hours * 60) };
+  let cleanName = name.trim();
+  let durationMinutes = 120;
+  let foundDuration = false;
+
+  // Try multiple patterns in order of specificity
+  const patterns = [
+    // (2.5h+T) or (2.5h) or (2.5H) or (2.5 H) — +T can be attached to h or separate
+    { regex: /\(\s*(\d+(?:\.\d+)?)\s*[hH]\s*\+?T?\s*\)/, clean: true },
+    // (3hr) or (3HR) or (3Hr) — 'hr' suffix
+    { regex: /\(\s*(\d+(?:\.\d+)?)\s*hr\s*\)/i, clean: true },
+    // (5) — plain number in brackets, assume hours (common in your data)
+    { regex: /\(\s*(\d+(?:\.\d+)?)\s*\)/, clean: true },
+    // 3/4H or 3/4h — fraction format like Susan McLean(3/4H)
+    { regex: /\(\s*(\d+)\s*\/\s*(\d+)\s*[hH]\s*\)/, isFraction: true, clean: true },
+    // (2.5+T) — number with +T marker but no h/H (like Nicole Stanton)
+    { regex: /\(\s*(\d+(?:\.\d+)?)\s*\+T\s*\)/, clean: true },
+    // Unbracketed duration like W1.5H or 2H in text (no brackets, letter prefix)
+    { regex: /[a-zA-Z]\s*(\d+(?:\.\d+)?)\s*[hH]\b/, clean: false },
+    // Unbracketed duration at word boundary like 4H in "4H4W" or start of string
+    { regex: /\b(\d+(?:\.\d+)?)\s*[hH]\b/, clean: false },
+    // Complex format like (4H4W/2H4W) — first number+H after opening bracket
+    { regex: /\(\s*(\d+(?:\.\d+)?)\s*[hH]/, clean: false },
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleanName.match(pattern.regex);
+    if (match) {
+      let hours: number;
+      if (pattern.isFraction) {
+        hours = parseFloat(match[1]) / parseFloat(match[2]);
+      } else {
+        hours = parseFloat(match[1]);
+      }
+
+      if (!isNaN(hours) && hours > 0 && hours <= 24) {
+        durationMinutes = Math.round(hours * 60);
+        foundDuration = true;
+
+        if (pattern.clean) {
+          cleanName = cleanName.replace(match[0], '').trim().replace(/\s+/g, ' ');
+        }
+        break; // Use first match
+      }
     }
   }
-  return { cleanName: name.trim(), durationMinutes: 120 };
+
+  // Also clean up remaining non-duration markers: (O), (N), (4w), (2W), (C), (#2), etc.
+  // These are frequency/type markers, not durations
+  cleanName = cleanName
+    .replace(/\(\s*[oOnN]\s*\)/gi, '') // (O), (N), (o), (n)
+    .replace(/\(\s*#\d+\s*\)/g, '') // (#2), (#7)
+    .replace(/\(\s*\d+[wW]\s*\)/g, '') // (4w), (2W)
+    .replace(/\(\s*\d+[xX]\s*\w+\s*\)/gi, '') // (2X week)
+    .replace(/\(\s*[cC]\s*\)/g, '') // (C)
+    .replace(/\(\s*\w+\s*\)/g, '') // catch remaining (Word) markers
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  return { cleanName, durationMinutes };
 };
 
 
