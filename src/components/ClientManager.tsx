@@ -121,7 +121,6 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
       const importedName = p.name?.trim();
       if (!importedName) return;
 
-      const importedNameLower = importedName.toLowerCase();
       // Clean existing names for matching (strip brackets like (O), (4h), etc.)
       const cleanForMatch = (name: string) => name.replace(/\([^)]*\)/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
       const existingIndex = updatedClients.findIndex(c => cleanForMatch(c.name) === cleanForMatch(importedName));
