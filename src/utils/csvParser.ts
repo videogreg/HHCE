@@ -159,7 +159,7 @@ const extractDurationFromName = (name: string): { cleanName: string; durationMin
 
   let cleanName = name.trim();
   let durationMinutes = 120;
-  let foundDuration = false;
+
 
   // Try multiple patterns in order of specificity
   const patterns = [
@@ -193,7 +193,7 @@ const extractDurationFromName = (name: string): { cleanName: string; durationMin
 
       if (!isNaN(hours) && hours > 0 && hours <= 24) {
         durationMinutes = Math.round(hours * 60);
-        foundDuration = true;
+
 
         if (pattern.clean) {
           cleanName = cleanName.replace(match[0], '').trim().replace(/\s+/g, ' ');
