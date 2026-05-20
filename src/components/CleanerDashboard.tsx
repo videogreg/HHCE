@@ -5,7 +5,7 @@ import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
 import {
   LogOut, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
-  ChevronLeft, ChevronRight, Home, Navigation, AlertTriangle
+  ChevronLeft, ChevronRight, Navigation, AlertTriangle
 } from 'lucide-react';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -159,7 +159,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
   const buildSoloRoute = () => {
     // Non-driver with no driver — just their own visits
-    const stops: RouteStop[] = myVisits.map((v, idx) => {
+    const stops: RouteStop[] = myVisits.map((v) => {
       const client = clients.find(c => c.id === v.clientId);
       return {
         type: 'clean',
@@ -625,7 +625,6 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     setSelectedDate(formatLocalDate(d));
   };
 
-  const clientForVisit = (visit: Visit) => clients.find(c => c.id === visit.clientId);
 
   // Find this cleaner's relevant stats from the full route
   const myPickupStop = hasDriverPickup
@@ -950,7 +949,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
               <h3 className="font-bold text-lg text-slate-800">{detailVisit.clientName}</h3>
               <button onClick={() => setDetailVisit(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">✕</button>
             </div>
-            <DetailContent visit={detailVisit} clients={clients} cleaners={cleaners} teams={teams} />
+            <DetailContent visit={detailVisit} clients={clients} cleaners={cleaners} teams={teams} onClose={() => setDetailVisit(null)} />
           </div>
         </div>
       )}
@@ -958,11 +957,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   );
 };
 
-function DetailContent({ visit, clients, cleaners, teams }: {
+function DetailContent({ visit, clients, cleaners, teams, onClose }: {
   visit: Visit;
   clients: import('../types').Client[];
   cleaners: import('../types').Cleaner[];
   teams: import('../types').Team[];
+  onClose: () => void;
 }) {
   const client = clients.find(c => c.id === visit.clientId);
   const endTime = format(addMinutesDateFns(parse(visit.startTime, 'HH:mm', new Date()), visit.durationMinutes), 'HH:mm');
@@ -1012,7 +1012,7 @@ function DetailContent({ visit, clients, cleaners, teams }: {
           </p>
         </div>
       )}
-      <button onClick={() => setDetailVisit(null)} className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 active:scale-[0.98]">
+      <button onClick={onClose} className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 active:scale-[0.98]">
         Close
       </button>
     </div>
