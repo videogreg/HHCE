@@ -116,10 +116,16 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     if (!csvPreview || csvPreview.length === 0) return;
 
     const updatedClients = [...clients];
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
 
     csvPreview.forEach((p) => {
       const importedName = p.name?.trim();
-      if (!importedName) return;
+      if (!importedName || importedName === 'Unknown Client') {
+        skippedCount++;
+        return;
+      }
 
       const importedNameLower = importedName.toLowerCase();
       const existingIndex = updatedClients.findIndex(c => c.name.trim().toLowerCase() === importedNameLower);
@@ -140,6 +146,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           preferredCleaners: p.preferredCleaners || existing.preferredCleaners,
           avoidCleaners: p.avoidCleaners || existing.avoidCleaners,
         };
+        updatedCount++;
       } else {
         const newClient: Client = {
           ...p,
@@ -152,11 +159,13 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           notAfter: p.notAfter || '17:00',
         } as Client;
         updatedClients.push(newClient);
+        addedCount++;
       }
     });
 
     setClients(updatedClients);
     setCsvPreview(null);
+    alert(`Import complete! ${addedCount} new clients added, ${updatedCount} updated, ${skippedCount} skipped.`);
   };
 
   return (
