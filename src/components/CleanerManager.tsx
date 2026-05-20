@@ -25,7 +25,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Cleaner>>({});
   const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
-    name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: ''
+    name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: '', password: ''
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
@@ -57,10 +57,11 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
       email: newCleaner.email || '',
       address: newCleaner.address || '',
       notes: newCleaner.notes || '',
-      color: COLORS[idx].dot
+      color: COLORS[idx].dot,
+      password: newCleaner.password || undefined,
     };
     setCleaners([...cleaners, cleaner]);
-    setNewCleaner({ name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: '' });
+    setNewCleaner({ name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: '', password: '' });
     setShowAdd(false);
   };
 
@@ -260,10 +261,18 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
               </label>
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
-            <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={newCleaner.notes} onChange={e => setNewCleaner({ ...newCleaner, notes: e.target.value })} placeholder="e.g. Picks up kids at 2:30pm" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Portal Password</label>
+              <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.password} onChange={e => setNewCleaner({ ...newCleaner, password: e.target.value })} placeholder="Leave blank for default: hhce2026" />
+              <p className="text-[10px] text-slate-400 mt-1">Blank = cleaners use default password</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
+              <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={newCleaner.notes} onChange={e => setNewCleaner({ ...newCleaner, notes: e.target.value })} placeholder="e.g. Picks up kids at 2:30pm" />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Unavailable Days</label>
@@ -390,6 +399,11 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                     </div>
                   )}
 
+                  <div className="bg-white/60 rounded-lg p-2 flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Portal Password:</span>
+                    <span className="text-xs font-bold text-slate-700 font-mono">{cleaner.password || 'hhce2026 (default)'}</span>
+                  </div>
+
                   <button onClick={() => startEdit(cleaner)}
                     className="w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-50 transition-colors active:scale-95 flex items-center justify-center gap-2">
                     <Pencil size={14} /> Edit Cleaner
@@ -446,10 +460,17 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                         <span className="text-xs font-medium text-slate-700">Active</span>
                       </label>
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
-                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Portal Password</label>
+                        <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.password || ''} onChange={e => setEditForm({ ...editForm, password: e.target.value })} placeholder="hhce2026" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
+                        <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Unavailable Days</label>

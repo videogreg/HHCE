@@ -855,10 +855,25 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                              {stop.arrivalTime || '----'} 
-                              {stop.departTime && stop.departTime !== stop.arrivalTime ? ` – ${stop.departTime}` : ''}
-                            </p>
+                            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                              <span className={`text-xs font-black px-2 py-0.5 rounded-lg flex items-center gap-1 ${
+                                stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
+                              }`}>
+                                <Clock size={10} />
+                                {stop.arrivalTime || '----'}
+                                {stop.departTime && stop.departTime !== stop.arrivalTime ? ` – ${stop.departTime}` : ''}
+                              </span>
+                              {stop.waitMin && stop.waitMin > 0 && (
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                  WAIT {stop.waitMin}m
+                                </span>
+                              )}
+                              {stop.isLate && (
+                                <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
+                                  LATE {stop.lateMin}m
+                                </span>
+                              )}
+                            </div>
                             <h3 className={`font-bold text-sm mt-0.5 truncate ${cleaner.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
                               {stop.label}
                             </h3>
@@ -871,24 +886,13 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                           </span>
                         </div>
 
-                        {stop.waitMin && stop.waitMin > 0 && (
-                          <p className="text-[10px] text-amber-700 mt-2 bg-amber-50 rounded-lg px-2 py-1 font-bold border border-amber-100">
-                            ⏳ Wait {stop.waitMin} min
-                          </p>
-                        )}
-                        {stop.isLate && (
-                          <p className="text-[10px] text-red-700 mt-2 bg-red-50 rounded-lg px-2 py-1 font-bold border border-red-100">
-                            ⚠️ Late {stop.lateMin} min
-                          </p>
-                        )}
+
                         {idx > 0 && stop.legDistanceKm !== undefined && (
                           <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
                             <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km • {Math.round(stop.legDurationMin || 0)} min drive
                           </p>
                         )}
-                        {!cleaner.isDriver && isMyStop && (
-                          <p className="text-[10px] text-purple-600 mt-1 font-bold">Your clean</p>
-                        )}
+
                       </div>
                     </div>
                   );
