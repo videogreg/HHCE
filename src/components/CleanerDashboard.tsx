@@ -84,6 +84,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<any[]>([]);
   const routeDataRef = useRef<RouteData | null>(null);
+  const directionsResultRef = useRef<any>(null);
 
   // Determine role and driver for the day
   const dayVisits = useMemo(() =>
@@ -120,7 +121,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
   const hasDriverPickup = !!myDriver && !cleaner.isDriver;
 
-  // Build route whenever date or cleaner changes
+  // Build route whenever date, cleaner, or visits change
   useEffect(() => {
     if (!API_KEY) { setApiError('Google Maps API key not configured'); return; }
     if (myVisits.length === 0) {
@@ -145,7 +146,14 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const driver = cleaner.isDriver ? cleaner : myDriver!;
     buildFullRoute(driver);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, cleaner.id]);
+  }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
+
+  // Render map AFTER routeStops state update causes re-render (so mapRef is mounted)
+  useEffect(() => {
+    if (directionsResultRef.current && mapRef.current && routeStops.length > 0 && window.google) {
+      renderMap(routeStops, directionsResultRef.current);
+    }
+  }, [routeStops]);
 
   const clearMap = () => {
     markersRef.current.forEach(m => m.setMap(null));
@@ -518,9 +526,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     setTeamHours(memberHours);
     setRouteStops(stops);
     setLoading(false);
-
-    // Render map
-    renderMap(stops, routeResult);
+    directionsResultRef.current = routeResult;
   }, [cleaners, teams]);
 
   const renderMap = (stops: RouteStop[], routeResult: any) => {
@@ -827,14 +833,15 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                   const isLast = idx === routeStops.length - 1;
 
                   return (
-                    <div key={idx} className={`relative ${!isRelevant ? 'opacity-40' : ''}`}>
+                    <div key={idx} className={`relative ${!cleaner.isDriver && !isRelevant ? 'opacity-40' : ''}`}>
                       <div className={`absolute -left-[25px] top-2 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-black shadow-sm
                         ${isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
                           isLast ? 'bg-slate-500 border-slate-500 text-white' :
-                          isMyPickup || isMyDropoff ? 'bg-green-600 border-green-600 text-white' :
-                          isMyStop ? 'bg-purple-600 border-purple-600 text-white' :
+                          stop.type === 'pickup' ? 'bg-green-600 border-green-600 text-white' :
+                          stop.type === 'dropoff' ? 'bg-amber-600 border-amber-600 text-white' :
+                          stop.type === 'clean' ? 'bg-purple-600 border-purple-600 text-white' :
                           'bg-white border-slate-300 text-slate-500'}`}>
-                        {isFirst ? 'S' : isLast ? 'E' : isMyPickup ? 'P' : isMyDropoff ? 'D' : stop.type === 'clean' ? (idx) : ''}
+                        {isFirst ? 'S' : isLast ? 'E' : stop.type === 'pickup' ? 'P' : stop.type === 'dropoff' ? 'D' : stop.type === 'clean' ? 'C' : ''}
                       </div>
 
                       <div 
@@ -852,7 +859,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                               {stop.arrivalTime || '----'} 
                               {stop.departTime && stop.departTime !== stop.arrivalTime ? ` – ${stop.departTime}` : ''}
                             </p>
-                            <h3 className={`font-bold text-sm mt-0.5 truncate ${isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
+                            <h3 className={`font-bold text-sm mt-0.5 truncate ${cleaner.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
                               {stop.label}
                             </h3>
                             <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
