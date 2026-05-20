@@ -17,13 +17,13 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
   const { cleaners, clients, setClients } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<<Client>>({});
-  const [newClient, setNewClient] = useState<<Partial<<Client>>({
+  const [editForm, setEditForm] = useState<Partial<Client>>({});
+  const [newClient, setNewClient] = useState<Partial<Client>>({
     name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00',
     preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''
   });
   const [showAdd, setShowAdd] = useState(false);
-  const [csvPreview, setCsvPreview] = useState<<Partial<<Client>[] | null>(null);
+  const [csvPreview, setCsvPreview] = useState<Partial<Client>[] | null>(null);
 
   useEffect(() => {
     if (focusId && clients.some(c => c.id === focusId)) {
@@ -101,7 +101,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -157,7 +157,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     });
 
     setClients(updatedClients);
-    showToast(`✅ Imported ${csvPreview.length} clients successfully!`, 'success');
+    showToast(`Imported ${csvPreview.length} clients successfully!`, 'success');
     setCsvPreview(null);
   };
 
