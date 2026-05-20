@@ -48,7 +48,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     return visits
       .filter(v => {
         if (v.date !== selectedDate) return false;
-        if (v.assignedCleanerIds.includes(cleaner.id)) return true;
+        if (v.assignedCleanerIds?.includes(cleaner.id)) return true;
         const team = teams.find(t => t.id === v.assignedTeamId);
         return team?.cleanerIds.includes(cleaner.id) ?? false;
       })
@@ -234,7 +234,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
                 {dayVisits.map((visit, idx) => {
                   const client = clientForVisit(visit);
-                  const endTime = addMinutes(visit.startTime, detailVisit.durationMinutes);
+                  const endTime = addMinutes(visit.startTime, visit.durationMinutes);
                   const isFirst = idx === 0;
                   const isLast = idx === dayVisits.length - 1;
 
@@ -259,11 +259,11 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                             <h3 className="font-bold text-sm text-slate-800 mt-0.5 truncate">{visit.clientName}</h3>
                             <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
                               <MapPin size={10} className="shrink-0" /> 
-                              {detailVisit.clientAddress || client?.address || 'No address'}
+                              {visit.clientAddress || client?.address || 'No address'}
                             </p>
                           </div>
                           <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold shrink-0">
-                            {detailVisit.durationMinutes}m
+                            {visit.durationMinutes}m
                           </span>
                         </div>
 
@@ -308,73 +308,89 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
               </button>
             </div>
 
-            {(() => {
-              const client = clientForVisit(detailVisit);
-              const endTime = addMinutes(detailVisit.startTime, detailVisit.durationMinutes);
-              return (
-                <div className="space-y-3 text-sm">
-                  <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-3">
-                    <Clock size={18} className="text-blue-500 shrink-0" />
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Scheduled Time</p>
-                      <p className="font-black text-slate-800">{detailVisit.startTime} – {endTime} <span className="text-slate-400 font-normal">({detailVisit.durationMinutes} min)</span></p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3 text-slate-600">
-                    <MapPin size={18} className="text-green-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Address</p>
-                      <p>{detailVisit.clientAddress || client?.address || 'No address on file'}</p>
-                    </div>
-                  </div>
-
-                  {client?.phone && (
-                    <div className="flex items-center gap-3 text-slate-600">
-                      <Phone size={18} className="text-green-500 shrink-0" />
-                      <div>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Phone</p>
-                        <p className="font-medium">{client.phone}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {client?.zone && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Zone: {client.zone}</span>
-                    </div>
-                  )}
-
-                  {client?.notes && (
-                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800 space-y-1">
-                      <p className="font-bold flex items-center gap-1"><FileText size={12} /> House Notes</p>
-                      <p>{client.notes}</p>
-                    </div>
-                  )}
-
-                  {detailVisit.teamName && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-800 space-y-1">
-                      <p className="font-bold flex items-center gap-1"><Users size={12} /> Team: {detailVisit.teamName}</p>
-                      <p className="text-slate-600">
-                        Assigned with: {detailVisit.assignedCleanerIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="pt-2">
-                    <button 
-                      onClick={() => setDetailVisit(null)}
-                      className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors active:scale-[0.98]"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
+            <DetailModalContent 
+              detailVisit={detailVisit} 
+              clientForVisit={clientForVisit} 
+              cleaners={cleaners} 
+              addMinutes={addMinutes}
+            />
           </div>
         </div>
       )}
     </div>
   );
 };
+
+// Extracted to separate component so TypeScript narrows the non-null visit properly
+interface DetailModalContentProps {
+  detailVisit: Visit;
+  clientForVisit: (visit: Visit) => import('../types').Client | undefined;
+  cleaners: import('../types').Cleaner[];
+  addMinutes: (time: string, mins: number) => string;
+}
+
+function DetailModalContent({ detailVisit, clientForVisit, cleaners, addMinutes }: DetailModalContentProps) {
+  const client = clientForVisit(detailVisit);
+  const endTime = addMinutes(detailVisit.startTime, detailVisit.durationMinutes);
+
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-3">
+        <Clock size={18} className="text-blue-500 shrink-0" />
+        <div>
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Scheduled Time</p>
+          <p className="font-black text-slate-800">{detailVisit.startTime} – {endTime} <span className="text-slate-400 font-normal">({detailVisit.durationMinutes} min)</span></p>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-3 text-slate-600">
+        <MapPin size={18} className="text-green-500 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Address</p>
+          <p>{detailVisit.clientAddress || client?.address || 'No address on file'}</p>
+        </div>
+      </div>
+
+      {client?.phone && (
+        <div className="flex items-center gap-3 text-slate-600">
+          <Phone size={18} className="text-green-500 shrink-0" />
+          <div>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Phone</p>
+            <p className="font-medium">{client.phone}</p>
+          </div>
+        </div>
+      )}
+
+      {client?.zone && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Zone: {client.zone}</span>
+        </div>
+      )}
+
+      {client?.notes && (
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800 space-y-1">
+          <p className="font-bold flex items-center gap-1"><FileText size={12} /> House Notes</p>
+          <p>{client.notes}</p>
+        </div>
+      )}
+
+      {detailVisit.teamName && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-800 space-y-1">
+          <p className="font-bold flex items-center gap-1"><Users size={12} /> Team: {detailVisit.teamName}</p>
+          <p className="text-slate-600">
+            Assigned with: {(detailVisit.assignedCleanerIds ?? []).map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
+          </p>
+        </div>
+      )}
+
+      <div className="pt-2">
+        <button 
+          onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))}
+          className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors active:scale-[0.98]"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
