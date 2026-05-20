@@ -116,19 +116,15 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     if (!csvPreview || csvPreview.length === 0) return;
 
     const updatedClients = [...clients];
-    let addedCount = 0;
-    let updatedCount = 0;
-    let skippedCount = 0;
 
     csvPreview.forEach((p) => {
       const importedName = p.name?.trim();
-      if (!importedName || importedName === 'Unknown Client') {
-        skippedCount++;
-        return;
-      }
+      if (!importedName) return;
 
       const importedNameLower = importedName.toLowerCase();
-      const existingIndex = updatedClients.findIndex(c => c.name.trim().toLowerCase() === importedNameLower);
+      // Clean existing names for matching (strip brackets like (O), (4h), etc.)
+      const cleanForMatch = (name: string) => name.replace(/\([^)]*\)/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const existingIndex = updatedClients.findIndex(c => cleanForMatch(c.name) === cleanForMatch(importedName));
 
       if (existingIndex >= 0) {
         const existing = updatedClients[existingIndex];
@@ -139,14 +135,14 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           phone: p.phone || existing.phone,
           zone: p.zone || existing.zone,
           notes: p.notes || existing.notes,
-          durationMinutes: p.durationMinutes || existing.durationMinutes,
+          // ALWAYS update duration from CSV if extracted (> 0 and not default 120 fallback from parser)
+          durationMinutes: (p.durationMinutes && p.durationMinutes !== 120) ? p.durationMinutes : (existing.durationMinutes || 120),
           notBefore: p.notBefore || existing.notBefore,
           notAfter: p.notAfter || existing.notAfter,
           preferredDays: p.preferredDays || existing.preferredDays,
           preferredCleaners: p.preferredCleaners || existing.preferredCleaners,
           avoidCleaners: p.avoidCleaners || existing.avoidCleaners,
         };
-        updatedCount++;
       } else {
         const newClient: Client = {
           ...p,
@@ -154,18 +150,16 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           preferredDays: p.preferredDays || [],
           preferredCleaners: p.preferredCleaners || [],
           avoidCleaners: p.avoidCleaners || [],
-          durationMinutes: p.durationMinutes || 120,
+          durationMinutes: (p.durationMinutes && p.durationMinutes !== 120) ? p.durationMinutes : 120,
           notBefore: p.notBefore || '09:00',
           notAfter: p.notAfter || '17:00',
         } as Client;
         updatedClients.push(newClient);
-        addedCount++;
       }
     });
 
     setClients(updatedClients);
     setCsvPreview(null);
-    alert(`Import complete! ${addedCount} new clients added, ${updatedCount} updated, ${skippedCount} skipped.`);
   };
 
   return (
