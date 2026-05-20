@@ -8,16 +8,97 @@ import { ScheduleBuilder } from './components/ScheduleBuilder';
 import { FixModal } from './components/FixModal';
 import { SearchBar } from './components/SearchBar';
 import ToastContainer from './components/ToastContainer';
-import { LayoutDashboard, Users, UserCheck, Wrench, Sparkles, CalendarPlus } from 'lucide-react';
+import { CleanerLogin } from './components/CleanerLogin';
+import { CleanerDashboard } from './components/CleanerDashboard';
+import type { Cleaner } from './types';
+import { LayoutDashboard, Users, UserCheck, Wrench, Sparkles, CalendarPlus, Shield, User } from 'lucide-react';
 
 function App() {
   return (
     <AppProvider>
+      <AppRouter />
+    </AppProvider>
+  );
+}
+
+function AppRouter() {
+  const [mode, setMode] = useState<'landing' | 'admin' | 'cleaner-login' | 'cleaner-dashboard'>('landing');
+  const [loggedInCleaner, setLoggedInCleaner] = useState<Cleaner | null>(null);
+
+  if (mode === 'landing') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-sm w-full space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-900/50">
+              <Sparkles size={32} />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">HHCE</h1>
+            <p className="text-sm text-slate-500 font-medium">Happy House Cleaning Experts</p>
+          </div>
+
+          <div className="space-y-3">
+            <button 
+              onClick={() => setMode('admin')}
+              className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
+            >
+              <Shield size={18} /> Administration
+            </button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-white px-2 text-slate-400 font-bold uppercase tracking-wider">or</span>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setMode('cleaner-login')}
+              className="w-full py-3.5 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition-colors active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-green-900/20"
+            >
+              <User size={18} /> Cleaner Portal
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'admin') {
+    return (
       <PasswordGate>
         <AppContent />
       </PasswordGate>
-    </AppProvider>
-  );
+    );
+  }
+
+  if (mode === 'cleaner-login') {
+    return (
+      <CleanerLogin 
+        onLogin={(cleaner) => {
+          setLoggedInCleaner(cleaner);
+          setMode('cleaner-dashboard');
+        }} 
+        onBack={() => setMode('landing')}
+      />
+    );
+  }
+
+  if (mode === 'cleaner-dashboard' && loggedInCleaner) {
+    return (
+      <CleanerDashboard 
+        cleaner={loggedInCleaner} 
+        onLogout={() => {
+          setLoggedInCleaner(null);
+          setMode('landing');
+        }} 
+      />
+    );
+  }
+
+  return null;
 }
 
 function AppContent() {

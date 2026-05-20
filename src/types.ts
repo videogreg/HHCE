@@ -14,6 +14,7 @@ export interface Cleaner {
   address?: string;
   notes?: string;
   color?: string; // hex color for UI
+  password?: string; // ← ADD THIS LINE
 }
 
 export interface Client {
