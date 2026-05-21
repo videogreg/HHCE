@@ -186,13 +186,13 @@ const fetchRouteStatesFromSupabase = async (date: string, driverId: string): Pro
       .select('states')
       .eq('date', date)
       .eq('driver_id', driverId)
-      .limit(1);
+      .maybeSingle();
     if (error) {
       console.error('Supabase fetch error:', error);
       return null;
     }
-    if (!data || data.length === 0) return null;
-    return (data[0].states || []).map((s: any) => ({ visitId: s.visitId, included: s.included }));
+    if (!data) return null;
+    return (data.states || []).map((s: any) => ({ visitId: s.visitId, included: s.included }));
   } catch (err) {
     console.error('Supabase fetch exception:', err);
     return null;
@@ -254,7 +254,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
   const dayVisits = useMemo(() =>
-    visits.filter(v => v.date === dateStr && !v.cancelled).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime)),
   [visits, dateStr]);
 
   const drivers = useMemo(() => {
@@ -275,6 +275,18 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   useEffect(() => {
     if (API_KEY) loadGoogleMaps(API_KEY).catch(() => setApiError('Failed to load Google Maps'));
+  }, []);
+
+  // Cleanup Google Maps instance when component unmounts
+  useEffect(() => {
+    return () => {
+      clearMarkers();
+      if (directionsRenderer.current) {
+        directionsRenderer.current.setMap(null);
+        directionsRenderer.current = null;
+      }
+      mapInstance.current = null;
+    };
   }, []);
 
   // Auto-fill cleaner address when typing a known cleaner name for pickup/dropoff
@@ -911,6 +923,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   const buildRoute = async (driver: Cleaner) => {
     if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
+    // Reset map state for fresh build on new day/driver
+    clearMarkers();
+    if (directionsRenderer.current) {
+      directionsRenderer.current.setMap(null);
+      directionsRenderer.current = null;
+    }
+    mapInstance.current = null;
     setLoading(true);
     setSelectedDriver(driver);
     setReliefMode(false);
@@ -1073,6 +1092,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         }
       });
     }
+
+    // Also apply any visit.cancelled flags from the global visits array (cross-device sync)
+    stops.forEach(stop => {
+      if (stop.visitId) {
+        const visit = visits.find(v => v.id === stop.visitId);
+        if (visit && visit.cancelled) {
+          stop.included = false;
+        }
+      }
+    });
 
     await processRoute(routeDataRef.current, stops);
 
@@ -1459,17 +1488,27 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (!selectedDriver) return;
     setSaveStatus('saving');
     try {
+      // Build states from current route stops
       const states = routeStops
         .filter(s => s.type === 'clean' && s.visitId)
         .map(s => ({ visitId: s.visitId!, included: s.included !== false }));
 
-      console.log('Saving route states:', { date: dateStr, driver: selectedDriver.id, states });
+      // ── PRIMARY SYNC: update the global visits array so all devices see cancellations ──
+      const updatedVisits = visits.map(v => {
+        if (v.date !== dateStr) return v;
+        const state = states.find(s => s.visitId === v.id);
+        if (state) {
+          return { ...v, cancelled: !state.included };
+        }
+        return v;
+      });
+      setVisits(updatedVisits);
 
       // Save to localStorage as offline backup
       saveRouteStates(dateStr, selectedDriver.id, states);
 
-      // Push to Supabase route_states table for global sync
-      const { data, error } = await supabase
+      // Push to Supabase route_states table as secondary backup
+      const { error } = await supabase
         .from('route_states')
         .upsert(
           {
@@ -1481,15 +1520,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           { onConflict: 'date,driver_id' }
         );
 
-      if (error) {
-        console.error('Supabase upsert error:', error);
-        throw error;
-      }
-      console.log('Supabase save success:', data);
+      if (error) console.error('Supabase backup error:', error);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err: any) {
-      console.error('Failed to sync route changes:', err);
+      console.error('Failed to save route changes:', err);
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 4000);
     }
