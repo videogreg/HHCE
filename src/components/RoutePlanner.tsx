@@ -62,6 +62,7 @@ interface ReliefStopInput {
 const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
 const EXTRA_VIOLATIONS_KEY = 'hhce_extra_violations';
 const EXTRA_STOPS_KEY = 'hhce_extra_stops';
+const ROUTE_STATES_KEY = 'hhce_route_states';
 const LATE_ALERTS_KEY = 'hhce_late_alerts';
 
 const getLateAlerts = (date: string): any[] => {
@@ -155,6 +156,28 @@ const saveExtraViolations = (date: string, violations: ConstraintViolation[]) =>
   }
 };
 
+const getSavedRouteStates = (date: string, driverId: string): { visitId: string; included: boolean }[] | null => {
+  try {
+    const raw = localStorage.getItem(ROUTE_STATES_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[`${date}_${driverId}`] || null;
+  } catch {
+    return null;
+  }
+};
+
+const saveRouteStates = (date: string, driverId: string, states: { visitId: string; included: boolean }[]) => {
+  try {
+    const raw = localStorage.getItem(ROUTE_STATES_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[`${date}_${driverId}`] = states;
+    localStorage.setItem(ROUTE_STATES_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
 
 
 interface RoutePlannerProps {
@@ -191,6 +214,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   // Extra stop add-on state (for regular driver routes)
   const [showAddExtra, setShowAddExtra] = useState(false);
   const [extraSaved, setExtraSaved] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [extraType, setExtraType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
   const [extraLabel, setExtraLabel] = useState('');
   const [extraAddress, setExtraAddress] = useState('');
@@ -758,6 +782,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       i === index ? { ...s, included: s.included === false ? true : false } : s
     );
     setRouteStops(newStops);
+    setSaveStatus('idle');
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -989,6 +1014,17 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       clientLocs,
       teamLocs,
     };
+
+    // Apply saved route states (checked/unchecked stops) before calculating
+    const savedStates = getSavedRouteStates(dateStr, driver.id);
+    if (savedStates) {
+      savedStates.forEach(state => {
+        const stopIdx = stops.findIndex(s => s.visitId === state.visitId);
+        if (stopIdx >= 0) {
+          stops[stopIdx].included = state.included;
+        }
+      });
+    }
 
     await processRoute(routeDataRef.current, stops);
 
@@ -1371,6 +1407,20 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   };
 
+  const saveRouteChanges = () => {
+    if (!selectedDriver) return;
+    setSaveStatus('saving');
+    try {
+      const states = routeStops
+        .filter(s => s.type === 'clean' && s.visitId)
+        .map(s => ({ visitId: s.visitId!, included: s.included !== false }));
+      saveRouteStates(dateStr, selectedDriver.id, states);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+    }
+  };
 
   const addExtraStop = async () => {
     if (!routeDataRef.current) return;
@@ -1764,6 +1814,48 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                   </a>
                 )}
               </div>
+
+              {/* Save Route Changes — persists stop states to localStorage */}
+              {!reliefMode && selectedDriver && routeStops.length > 0 && (
+                <div className="mb-4">
+                  <button
+                    onClick={saveRouteChanges}
+                    disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${
+                      saveStatus === 'saved'
+                        ? 'bg-green-600 text-white'
+                        : saveStatus === 'error'
+                        ? 'bg-red-600 text-white hover:bg-red-700'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                  >
+                    {saveStatus === 'saving' && (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Saving...
+                      </>
+                    )}
+                    {saveStatus === 'saved' && (
+                      <>
+                        <Check size={16} /> Saved
+                      </>
+                    )}
+                    {saveStatus === 'error' && (
+                      <>
+                        <AlertTriangle size={16} /> Retry Save
+                      </>
+                    )}
+                    {saveStatus === 'idle' && (
+                      <>
+                        <Save size={16} /> Save Changes
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-slate-400 text-center mt-1 font-medium">
+                    Saves stop inclusions for this device
+                  </p>
+                </div>
+              )}
 
               {/* Relief save/clear buttons */}
               {reliefMode && (
