@@ -208,7 +208,7 @@ interface RoutePlannerProps {
 }
 
 export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate }) => {
-  const { visits, cleaners, clients, teams, selectedDate } = useAppContext();
+  const { visits, setVisits, cleaners, clients, teams, selectedDate } = useAppContext();
   const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(initialDriver || null);
   const [reliefMode, setReliefMode] = useState(!!initialReliefDate);
   const [reliefName, setReliefName] = useState('Relief Driver');
