@@ -371,9 +371,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       },
       (result: any, status: any) => {
         if (status === window.google.maps.DirectionsStatus.OK) {
-          directionsRenderer.current.setDirections(result);
-          mapInstance.current.fitBounds(result.routes[0].bounds);
-          addMarkers(mapInstance.current, included);
+          setTimeout(() => {
+            if (directionsRenderer.current) {
+              directionsRenderer.current.setDirections(result);
+            }
+            if (mapInstance.current) {
+              mapInstance.current.fitBounds(result.routes[0].bounds);
+              addMarkers(mapInstance.current, included);
+            }
+          }, 0);
         }
       }
     );
