@@ -233,7 +233,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
   const dayVisits = useMemo(() =>
-    visits.filter(v => v.date === dateStr && !v.cancelled).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime)),
   [visits, dateStr]);
 
   const drivers = useMemo(() => {
@@ -332,6 +332,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const destination = latLngs[latLngs.length - 1];
     const waypoints = latLngs.slice(1, -1);
 
+    if (!isMapAlive()) {
+      mapInstance.current = null;
+      directionsRenderer.current = null;
+    }
     if (!mapInstance.current) {
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
         zoom: 12,
@@ -372,6 +376,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     markersRef.current = [];
     infoWindowsRef.current.forEach((iw: any) => iw.close());
     infoWindowsRef.current = [];
+  };
+
+  const isMapAlive = (): boolean => {
+    if (!mapInstance.current) return false;
+    try {
+      const div = mapInstance.current.getDiv();
+      return !!div && document.body.contains(div);
+    } catch {
+      return false;
+    }
   };
 
   const addMarkers = (map: any, stops: RouteStop[]) => {
@@ -754,6 +768,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setRouteStops(stops); // Update with new times on included stops
 
     if (mapRef.current) {
+      if (!isMapAlive()) {
+        mapInstance.current = null;
+        directionsRenderer.current = null;
+      }
       if (!mapInstance.current) {
         mapInstance.current = new window.google.maps.Map(mapRef.current, {
           zoom: 12,
