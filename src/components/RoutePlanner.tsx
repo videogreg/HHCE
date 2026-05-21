@@ -182,12 +182,13 @@ const saveRouteStates = (date: string, driverId: string, states: { visitId: stri
 const fetchRouteStatesFromSupabase = async (date: string, driverId: string): Promise<{ visitId: string; included: boolean }[] | null> => {
   try {
     const { data, error } = await supabase
-      .from('visits')
-      .select('id, route_included')
+      .from('route_states')
+      .select('states')
       .eq('date', date)
-      .eq('route_driver_id', driverId);
+      .eq('driver_id', driverId)
+      .single();
     if (error || !data) return null;
-    return data.map((row: any) => ({ visitId: row.id, included: row.route_included !== false }));
+    return (data.states || []).map((s: any) => ({ visitId: s.visitId, included: s.included }));
   } catch {
     return null;
   }
@@ -1436,18 +1437,18 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       // Save to localStorage as offline backup
       saveRouteStates(dateStr, selectedDriver.id, states);
 
-      // Push to Supabase for global sync
-      const rows = states.map(s => ({
-        id: s.visitId,
-        date: dateStr,
-        route_included: s.included,
-        route_driver_id: selectedDriver.id,
-        updated_at: new Date().toISOString(),
-      }));
-
+      // Push to Supabase route_states table for global sync
       const { error } = await supabase
-        .from('visits')
-        .upsert(rows, { onConflict: 'id,date' });
+        .from('route_states')
+        .upsert(
+          {
+            date: dateStr,
+            driver_id: selectedDriver.id,
+            states: states,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'date,driver_id' }
+        );
 
       if (error) throw error;
       setSaveStatus('saved');
