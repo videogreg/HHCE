@@ -186,10 +186,15 @@ const fetchRouteStatesFromSupabase = async (date: string, driverId: string): Pro
       .select('states')
       .eq('date', date)
       .eq('driver_id', driverId)
-      .single();
-    if (error || !data) return null;
-    return (data.states || []).map((s: any) => ({ visitId: s.visitId, included: s.included }));
-  } catch {
+      .limit(1);
+    if (error) {
+      console.error('Supabase fetch error:', error);
+      return null;
+    }
+    if (!data || data.length === 0) return null;
+    return (data[0].states || []).map((s: any) => ({ visitId: s.visitId, included: s.included }));
+  } catch (err) {
+    console.error('Supabase fetch exception:', err);
     return null;
   }
 };
@@ -297,7 +302,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return () => clearTimeout(timer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialDriver]);
+  }, [initialDriver, dateStr]);
 
   // Auto-load relief driver if opened from ScheduleBoard with initialReliefDate
   useEffect(() => {
@@ -315,6 +320,14 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReliefDate]);
+
+  // Rebuild route when date changes and a regular driver is already selected
+  useEffect(() => {
+    if (selectedDriver && !reliefMode && !loading) {
+      buildRoute(selectedDriver);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateStr]);
 
   const recalcStatsFromStops = (stops: RouteStop[]) => {
     const included = stops.filter(s => s.included !== false);
@@ -917,7 +930,23 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return ids.includes(driver.id);
     });
 
-    if (driverVisits.length === 0) { setLoading(false); return; }
+    if (driverVisits.length === 0) {
+      setRouteStops([]);
+      setTotalKm(0);
+      setDriverHours(0);
+      setCleanHours(0);
+      setActualDriveMinutes(0);
+      setTeamHours([]);
+      setRouteUrl('');
+      clearMarkers();
+      if (directionsRenderer.current) {
+        directionsRenderer.current.setMap(null);
+        directionsRenderer.current = null;
+      }
+      mapInstance.current = null;
+      setLoading(false);
+      return;
+    }
 
     const teamMemberIds = new Set<string>();
     driverVisits.forEach(v => {
@@ -1434,11 +1463,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         .filter(s => s.type === 'clean' && s.visitId)
         .map(s => ({ visitId: s.visitId!, included: s.included !== false }));
 
+      console.log('Saving route states:', { date: dateStr, driver: selectedDriver.id, states });
+
       // Save to localStorage as offline backup
       saveRouteStates(dateStr, selectedDriver.id, states);
 
       // Push to Supabase route_states table for global sync
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('route_states')
         .upsert(
           {
@@ -1450,14 +1481,17 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           { onConflict: 'date,driver_id' }
         );
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase upsert error:', error);
+        throw error;
+      }
+      console.log('Supabase save success:', data);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err: any) {
       console.error('Failed to sync route changes:', err);
-      // Still mark saved since localStorage worked
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 3000);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 4000);
     }
   };
 
