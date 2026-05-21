@@ -226,6 +226,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [extraNotes, setExtraNotes] = useState('');
   const [extraTeamMembers, setExtraTeamMembers] = useState<string[]>([]);
   const mapRef = useRef<HTMLDivElement>(null);
+  const mapDomRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -267,7 +268,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         directionsRenderer.current.setMap(null);
         directionsRenderer.current = null;
       }
-      mapInstance.current = null;
+      if (mapInstance.current) {
+        mapInstance.current = null;
+      }
+      mapDomRef.current = null;
     };
   }, []);
 
@@ -292,7 +296,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       setReliefMode(false);
       const timer = setTimeout(() => {
         buildRoute(initialDriver);
-      }, 500);
+      }, 100);
       return () => clearTimeout(timer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -349,6 +353,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const destination = latLngs[latLngs.length - 1];
     const waypoints = latLngs.slice(1, -1);
 
+    if (!isMapValid()) {
+      mapInstance.current = null;
+      directionsRenderer.current = null;
+    }
     if (!mapInstance.current) {
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
         zoom: 12,
@@ -357,6 +365,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         mapTypeControl: false,
         fullscreenControl: false,
       });
+      mapDomRef.current = mapRef.current;
     }
     if (!directionsRenderer.current) {
       directionsRenderer.current = new window.google.maps.DirectionsRenderer({
@@ -389,6 +398,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     markersRef.current = [];
     infoWindowsRef.current.forEach((iw: any) => iw.close());
     infoWindowsRef.current = [];
+  };
+
+  const isMapValid = (): boolean => {
+    if (!mapInstance.current) return false;
+    try {
+      const div = mapInstance.current.getDiv();
+      return div && document.body.contains(div);
+    } catch {
+      return false;
+    }
   };
 
   const addMarkers = (map: any, stops: RouteStop[]) => {
@@ -771,6 +790,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setRouteStops(stops); // Update with new times on included stops
 
     if (mapRef.current) {
+      if (!isMapValid()) {
+        mapInstance.current = null;
+        directionsRenderer.current = null;
+      }
       if (!mapInstance.current) {
         mapInstance.current = new window.google.maps.Map(mapRef.current, {
           zoom: 12,
@@ -779,6 +802,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           mapTypeControl: false,
           fullscreenControl: false,
         });
+        mapDomRef.current = mapRef.current;
       }
       if (!directionsRenderer.current) {
         directionsRenderer.current = new window.google.maps.DirectionsRenderer({
@@ -934,6 +958,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         directionsRenderer.current = null;
       }
       mapInstance.current = null;
+      mapDomRef.current = null;
       setLoading(false);
       return;
     }
