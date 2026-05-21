@@ -7,7 +7,6 @@ declare global {
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
-
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
 import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, Save, RotateCcw, Trash2 } from 'lucide-react';
 import type { Cleaner, Visit, ConstraintViolation } from '../types';
@@ -181,8 +180,6 @@ const saveRouteStates = (date: string, driverId: string, states: { visitId: stri
 
 
 
-
-
 interface RoutePlannerProps {
   onClose: () => void;
   initialDriver?: Cleaner;
@@ -226,7 +223,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [extraNotes, setExtraNotes] = useState('');
   const [extraTeamMembers, setExtraTeamMembers] = useState<string[]>([]);
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapDomRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -237,7 +233,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
   const dayVisits = useMemo(() =>
-    visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    visits.filter(v => v.date === dateStr && !v.cancelled).sort((a, b) => a.startTime.localeCompare(b.startTime)),
   [visits, dateStr]);
 
   const drivers = useMemo(() => {
@@ -258,21 +254,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   useEffect(() => {
     if (API_KEY) loadGoogleMaps(API_KEY).catch(() => setApiError('Failed to load Google Maps'));
-  }, []);
-
-  // Cleanup Google Maps instance when component unmounts
-  useEffect(() => {
-    return () => {
-      clearMarkers();
-      if (directionsRenderer.current) {
-        directionsRenderer.current.setMap(null);
-        directionsRenderer.current = null;
-      }
-      if (mapInstance.current) {
-        mapInstance.current = null;
-      }
-      mapDomRef.current = null;
-    };
   }, []);
 
   // Auto-fill cleaner address when typing a known cleaner name for pickup/dropoff
@@ -296,7 +277,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       setReliefMode(false);
       const timer = setTimeout(() => {
         buildRoute(initialDriver);
-      }, 100);
+      }, 500);
       return () => clearTimeout(timer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -318,8 +299,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReliefDate]);
-
-
 
   const recalcStatsFromStops = (stops: RouteStop[]) => {
     const included = stops.filter(s => s.included !== false);
@@ -353,10 +332,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const destination = latLngs[latLngs.length - 1];
     const waypoints = latLngs.slice(1, -1);
 
-    if (!isMapValid()) {
-      mapInstance.current = null;
-      directionsRenderer.current = null;
-    }
     if (!mapInstance.current) {
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
         zoom: 12,
@@ -365,7 +340,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         mapTypeControl: false,
         fullscreenControl: false,
       });
-      mapDomRef.current = mapRef.current;
     }
     if (!directionsRenderer.current) {
       directionsRenderer.current = new window.google.maps.DirectionsRenderer({
@@ -398,16 +372,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     markersRef.current = [];
     infoWindowsRef.current.forEach((iw: any) => iw.close());
     infoWindowsRef.current = [];
-  };
-
-  const isMapValid = (): boolean => {
-    if (!mapInstance.current) return false;
-    try {
-      const div = mapInstance.current.getDiv();
-      return div && document.body.contains(div);
-    } catch {
-      return false;
-    }
   };
 
   const addMarkers = (map: any, stops: RouteStop[]) => {
@@ -790,10 +754,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setRouteStops(stops); // Update with new times on included stops
 
     if (mapRef.current) {
-      if (!isMapValid()) {
-        mapInstance.current = null;
-        directionsRenderer.current = null;
-      }
       if (!mapInstance.current) {
         mapInstance.current = new window.google.maps.Map(mapRef.current, {
           zoom: 12,
@@ -802,7 +762,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           mapTypeControl: false,
           fullscreenControl: false,
         });
-        mapDomRef.current = mapRef.current;
       }
       if (!directionsRenderer.current) {
         directionsRenderer.current = new window.google.maps.DirectionsRenderer({
@@ -923,8 +882,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   const buildRoute = async (driver: Cleaner) => {
     if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
-    // Clear old markers but keep map instance alive (much faster)
-    clearMarkers();
     setLoading(true);
     setSelectedDriver(driver);
     setReliefMode(false);
@@ -944,24 +901,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return ids.includes(driver.id);
     });
 
-    if (driverVisits.length === 0) {
-      setRouteStops([]);
-      setTotalKm(0);
-      setDriverHours(0);
-      setCleanHours(0);
-      setActualDriveMinutes(0);
-      setTeamHours([]);
-      setRouteUrl('');
-      clearMarkers();
-      if (directionsRenderer.current) {
-        directionsRenderer.current.setMap(null);
-        directionsRenderer.current = null;
-      }
-      mapInstance.current = null;
-      mapDomRef.current = null;
-      setLoading(false);
-      return;
-    }
+    if (driverVisits.length === 0) { setLoading(false); return; }
 
     const teamMemberIds = new Set<string>();
     driverVisits.forEach(v => {
@@ -1085,16 +1025,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         }
       });
     }
-
-    // Also apply any visit.cancelled flags from the global visits array (cross-device sync)
-    stops.forEach(stop => {
-      if (stop.visitId) {
-        const visit = visits.find(v => v.id === stop.visitId);
-        if (visit && visit.cancelled) {
-          stop.included = false;
-        }
-      }
-    });
 
     await processRoute(routeDataRef.current, stops);
 
@@ -1481,12 +1411,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (!selectedDriver) return;
     setSaveStatus('saving');
     try {
-      // Build states from current route stops
       const states = routeStops
         .filter(s => s.type === 'clean' && s.visitId)
         .map(s => ({ visitId: s.visitId!, included: s.included !== false }));
 
-      // ── GLOBAL SYNC: update the global visits array so all devices see cancellations ──
+      // Update global visits array for cross-device sync
       const updatedVisits = visits.map(v => {
         if (v.date !== dateStr) return v;
         const state = states.find(s => s.visitId === v.id);
@@ -1497,7 +1426,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       });
       setVisits(updatedVisits);
 
-      // Save to localStorage as device-specific backup
+      // Save to localStorage as device backup
       saveRouteStates(dateStr, selectedDriver.id, states);
 
       setSaveStatus('saved');
@@ -1902,7 +1831,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 )}
               </div>
 
-              {/* Save Route Changes — persists stop states to localStorage */}
+              {/* Save Route Changes */}
               {!reliefMode && selectedDriver && routeStops.length > 0 && (
                 <div className="mb-4">
                   <button
