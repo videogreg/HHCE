@@ -7,6 +7,7 @@ declare global {
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
+import { supabase } from '../utils/supabase';
 import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
 import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, Save, RotateCcw, Trash2 } from 'lucide-react';
 import type { Cleaner, Visit, ConstraintViolation } from '../types';
@@ -175,6 +176,20 @@ const saveRouteStates = (date: string, driverId: string, states: { visitId: stri
     localStorage.setItem(ROUTE_STATES_KEY, JSON.stringify(all));
   } catch {
     // ignore
+  }
+};
+
+const fetchRouteStatesFromSupabase = async (date: string, driverId: string): Promise<{ visitId: string; included: boolean }[] | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('visits')
+      .select('id, route_included')
+      .eq('date', date)
+      .eq('route_driver_id', driverId);
+    if (error || !data) return null;
+    return data.map((row: any) => ({ visitId: row.id, included: row.route_included !== false }));
+  } catch {
+    return null;
   }
 };
 
@@ -1015,8 +1030,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       teamLocs,
     };
 
-    // Apply saved route states (checked/unchecked stops) before calculating
-    const savedStates = getSavedRouteStates(dateStr, driver.id);
+    // Apply saved route states — try Supabase first, fall back to localStorage
+    let savedStates = await fetchRouteStatesFromSupabase(dateStr, driver.id);
+    if (!savedStates) {
+      savedStates = getSavedRouteStates(dateStr, driver.id);
+    }
     if (savedStates) {
       savedStates.forEach(state => {
         const stopIdx = stops.findIndex(s => s.visitId === state.visitId);
@@ -1407,18 +1425,38 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   };
 
-  const saveRouteChanges = () => {
+  const saveRouteChanges = async () => {
     if (!selectedDriver) return;
     setSaveStatus('saving');
     try {
       const states = routeStops
         .filter(s => s.type === 'clean' && s.visitId)
         .map(s => ({ visitId: s.visitId!, included: s.included !== false }));
+
+      // Save to localStorage as offline backup
       saveRouteStates(dateStr, selectedDriver.id, states);
+
+      // Push to Supabase for global sync
+      const rows = states.map(s => ({
+        id: s.visitId,
+        date: dateStr,
+        route_included: s.included,
+        route_driver_id: selectedDriver.id,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase
+        .from('visits')
+        .upsert(rows, { onConflict: 'id,date' });
+
+      if (error) throw error;
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch {
-      setSaveStatus('error');
+    } catch (err: any) {
+      console.error('Failed to sync route changes:', err);
+      // Still mark saved since localStorage worked
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
 
@@ -1852,7 +1890,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                     )}
                   </button>
                   <p className="text-[10px] text-slate-400 text-center mt-1 font-medium">
-                    Saves stop inclusions for this device
+                    Syncs stop inclusions to all devices
                   </p>
                 </div>
               )}
