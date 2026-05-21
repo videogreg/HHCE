@@ -300,6 +300,14 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReliefDate]);
 
+  // Rebuild route when selected date changes and a driver is already active
+  useEffect(() => {
+    if (selectedDriver && !reliefMode && !loading) {
+      buildRoute(selectedDriver);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateStr]);
+
   const recalcStatsFromStops = (stops: RouteStop[]) => {
     const included = stops.filter(s => s.included !== false);
     const totalDist = included.reduce((sum, s) => sum + (s.legDistanceKm || 0), 0);
