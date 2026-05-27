@@ -53,6 +53,11 @@ interface RouteData {
   teamLocs: Record<string, any>;
 }
 
+const areSameLatLng = (a: any, b: any): boolean => {
+  if (!a || !b) return false;
+  return Math.abs(a.lat() - b.lat()) < 0.0001 && Math.abs(a.lng() - b.lng()) < 0.0001;
+};
+
 interface ReliefStopInput {
   id: string;
   type: 'pickup' | 'clean' | 'dropoff' | 'other';
@@ -521,13 +526,36 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return;
     }
 
-    const legs = routeResult.routes[0].legs;
+    let legs = routeResult.routes[0].legs;
     const expectedLegs = includedStops.length - 1;
+
+    // Pad missing legs for consecutive stops at the same location (Google Maps collapses them)
     if (legs.length < expectedLegs) {
-      setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address, or a location is unreachable.`);
-      setRouteStops(stops);
-      setLoading(false);
-      return;
+      const paddedLegs: any[] = [];
+      let legIdx = 0;
+      for (let i = 1; i < includedStops.length; i++) {
+        const prev = includedStops[i - 1];
+        const curr = includedStops[i];
+        if (prev.latLng && curr.latLng && areSameLatLng(prev.latLng, curr.latLng)) {
+          paddedLegs.push({
+            distance: { value: 0, text: '0 m' },
+            duration: { value: 0, text: '0 min' },
+            steps: [],
+            start_location: prev.latLng,
+            end_location: curr.latLng,
+          });
+        } else {
+          paddedLegs.push(legs[legIdx] || {
+            distance: { value: 0, text: '0 m' },
+            duration: { value: 0, text: '0 min' },
+            steps: [],
+            start_location: prev.latLng,
+            end_location: curr.latLng,
+          });
+          legIdx++;
+        }
+      }
+      legs = paddedLegs;
     }
     let totalDist = 0;
     let actualDriveSeconds = 0;
