@@ -33,6 +33,9 @@ interface TeamMemberHours {
   minutes: number;
   hours: number;
   isDriver: boolean;
+  cleanMinutes?: number;
+  travelMinutes?: number;
+  waitMinutes?: number;
 }
 
 interface RouteData {
@@ -486,17 +489,44 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         }
       }
 
-      if (!tm.isDriver) {
+      const isMainDriver = tm.id === data.driver.id;
+
+      if (!isMainDriver) {
+        // Passenger: from arrival at first clean to departure from last clean
         if (relevantCleans.length === 0) {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
+
         const firstClean = relevantCleans[0];
         const lastClean = relevantCleans[relevantCleans.length - 1];
-        const cleanStart = parse(firstClean.actualStartTime || firstClean.arrivalTime, 'HH:mm', new Date());
+
+        const firstCleanIdx = stops.indexOf(firstClean);
+        const lastCleanIdx = stops.indexOf(lastClean);
+
+        let travelMinutes = 0;
+        for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
+          travelMinutes += stops[i].legDurationMin || 0;
+        }
+
+        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+
+        const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
         const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
-        const minutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
-        return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
+        const totalMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
+
+        const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
+
+        return {
+          name: tm.name,
+          minutes: totalMinutes,
+          hours: Math.round((totalMinutes / 60) * 10) / 10,
+          isDriver: false,
+          cleanMinutes,
+          travelMinutes,
+          waitMinutes
+        };
       } else {
+        // Main driver: door-to-door
         let startTime: Date;
         let endTime: Date;
         if (pickupIdx >= 0) {
@@ -504,18 +534,30 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         } else if (relevantCleans.length > 0) {
           startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
         } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
         if (dropoffIdx >= 0) {
           endTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
         } else if (relevantCleans.length > 0) {
           endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
         } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
         const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
         const minutes = rawMinutes - totalWaitMin;
-        return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: true };
+
+        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+        const travelMinutes = Math.max(0, minutes - cleanMinutes);
+
+        return {
+          name: tm.name,
+          minutes,
+          hours: Math.round((minutes / 60) * 10) / 10,
+          isDriver: true,
+          cleanMinutes,
+          travelMinutes,
+          waitMinutes: 0
+        };
       }
     }).filter(Boolean) as TeamMemberHours[];
 
@@ -923,6 +965,19 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                         <span className="text-lg font-black text-slate-800">{tm.hours.toFixed(1)}</span>
                         <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
                         <p className="text-[10px] text-slate-400">{tm.minutes} min</p>
+                        {!tm.isDriver && tm.cleanMinutes !== undefined && (
+                          <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                            <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
+                            <span className="mx-1">·</span>
+                            <span className="text-amber-600 font-bold">{Math.round((tm.travelMinutes / 60) * 10) / 10}h</span> travel
+                            {tm.waitMinutes > 0 && (
+                              <>
+                                <span className="mx-1">·</span>
+                                <span className="text-blue-500 font-bold">{Math.round((tm.waitMinutes / 60) * 10) / 10}h</span> wait
+                              </>
+                            )}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}

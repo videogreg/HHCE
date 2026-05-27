@@ -39,6 +39,9 @@ interface TeamMemberHours {
   minutes: number;
   hours: number;
   isDriver: boolean;
+  cleanMinutes?: number;
+  travelMinutes?: number;
+  waitMinutes?: number;
 }
 
 interface RouteData {
@@ -716,8 +719,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       // For each clean, check if this cleaner is assigned to it
       for (const clean of candidateCleans) {
         if (!clean.visitId) {
-          // Add-on clean without visitId — check if this cleaner is in extraTeamMembers
-          // or if the clean label mentions them
+          // Add-on clean without visitId — include it
           relevantCleans.push(clean);
           continue;
         }
@@ -734,21 +736,50 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         }
       }
 
-      if (!tm.isDriver) {
-        // Non-driver: ONLY paid for cleans they actually work
-        // If no cleans between pickup and dropoff → 0 hours (they just got a ride)
+      const isMainDriver = tm.id === data.driver.id;
+
+      if (!isMainDriver) {
+        // Passenger: from arrival at first clean to departure from last clean
+        // NO pickup travel, NO dropoff travel included
         if (relevantCleans.length === 0) {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: false };
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
-        // Hours = from start of first clean they worked to end of last clean they worked
+
         const firstClean = relevantCleans[0];
         const lastClean = relevantCleans[relevantCleans.length - 1];
-        const cleanStart = parse(firstClean.actualStartTime || firstClean.arrivalTime, 'HH:mm', new Date());
+
+        // Find indices in includedStops for leg calculation
+        const firstCleanIdx = includedStops.indexOf(firstClean);
+        const lastCleanIdx = includedStops.indexOf(lastClean);
+
+        // Travel minutes: sum of legDurationMin from the stop after firstClean up to lastClean
+        let travelMinutes = 0;
+        for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
+          travelMinutes += includedStops[i].legDurationMin || 0;
+        }
+
+        // Clean minutes: sum of all clean durations they work
+        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+
+        // Total: from arrival at first clean to departure from last clean
+        const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
         const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
-        const minutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
-        return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: false };
+        const totalMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
+
+        // Wait time is whatever is left after clean + travel
+        const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
+
+        return {
+          name: tm.name,
+          minutes: totalMinutes,
+          hours: Math.round((totalMinutes / 60) * 10) / 10,
+          isDriver: false,
+          cleanMinutes,
+          travelMinutes,
+          waitMinutes
+        };
       } else {
-        // Driver team member: door-to-door (pickup to dropoff, or clean-to-clean)
+        // Main driver: door-to-door (existing logic)
         let startTime: Date;
         let endTime: Date;
 
@@ -757,7 +788,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         } else if (relevantCleans.length > 0) {
           startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
         } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
 
         if (dropoffIdx >= 0) {
@@ -765,12 +796,24 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         } else if (relevantCleans.length > 0) {
           endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
         } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true };
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
 
         const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
         const minutes = rawMinutes - totalWaitMin;
-        return { name: tm.name, minutes, hours: Math.round((minutes / 60) * 10) / 10, isDriver: true };
+
+        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+        const travelMinutes = Math.max(0, minutes - cleanMinutes);
+
+        return {
+          name: tm.name,
+          minutes,
+          hours: Math.round((minutes / 60) * 10) / 10,
+          isDriver: true,
+          cleanMinutes,
+          travelMinutes,
+          waitMinutes: 0
+        };
       }
     }).filter(Boolean) as TeamMemberHours[];
 
@@ -2049,7 +2092,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                           <div>
                             <span className="text-sm font-bold text-slate-700">{tm.name}</span>
                             <span className="text-[10px] text-slate-400 ml-1.5 font-medium">
-                              {tm.isDriver ? '(Driver — door to door)' : '(Cleaner — clean to clean)'}
+                              {tm.isDriver ? '(Driver — door to door)' : '(Cleaner — first to last clean)'}
                             </span>
                           </div>
                         </div>
@@ -2057,6 +2100,19 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                           <span className="text-lg font-black text-slate-800">{tm.hours.toFixed(1)}</span>
                           <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
                           <p className="text-[10px] text-slate-400">{tm.minutes} min total</p>
+                          {!tm.isDriver && tm.cleanMinutes !== undefined && (
+                            <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                              <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
+                              <span className="mx-1">·</span>
+                              <span className="text-amber-600 font-bold">{Math.round((tm.travelMinutes / 60) * 10) / 10}h</span> travel
+                              {tm.waitMinutes > 0 && (
+                                <>
+                                  <span className="mx-1">·</span>
+                                  <span className="text-blue-500 font-bold">{Math.round((tm.waitMinutes / 60) * 10) / 10}h</span> wait
+                                </>
+                              )}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))}
