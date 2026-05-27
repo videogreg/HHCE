@@ -969,11 +969,11 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                           <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
                             <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
                             <span className="mx-1">·</span>
-                            <span className="text-amber-600 font-bold">{Math.round((tm.travelMinutes / 60) * 10) / 10}h</span> travel
-                            {tm.waitMinutes > 0 && (
+                            <span className="text-amber-600 font-bold">{Math.round(((tm.travelMinutes ?? 0) / 60) * 10) / 10}h</span> travel
+                            {(tm.waitMinutes ?? 0) > 0 && (
                               <>
                                 <span className="mx-1">·</span>
-                                <span className="text-blue-500 font-bold">{Math.round((tm.waitMinutes / 60) * 10) / 10}h</span> wait
+                                <span className="text-blue-500 font-bold">{Math.round(((tm.waitMinutes ?? 0) / 60) * 10) / 10}h</span> wait
                               </>
                             )}
                           </p>
