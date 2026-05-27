@@ -303,13 +303,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReliefDate]);
 
-  // Rebuild route when selected date changes and a driver is already active
+  // Rebuild route when selected date or visits change and a driver is already active
   useEffect(() => {
     if (selectedDriver && !reliefMode && !loading) {
       buildRoute(selectedDriver);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateStr]);
+  }, [dateStr, dayVisits]);
 
   const recalcStatsFromStops = (stops: RouteStop[]) => {
     const included = stops.filter(s => s.included !== false);
@@ -1055,7 +1055,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         durationMin: v.durationMinutes,
         visitId: v.id,
         latLng: clientLocs[v.id],
-        included: true,
+        included: !v.cancelled,
       });
     }
 
@@ -1097,7 +1097,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       savedStates.forEach(state => {
         const stopIdx = stops.findIndex(s => s.visitId === state.visitId);
         if (stopIdx >= 0) {
-          stops[stopIdx].included = state.included;
+          const visit = driverVisits.find(v => v.id === state.visitId);
+          // Only override inclusion if the visit is still active (not cancelled)
+          if (visit && !visit.cancelled) {
+            stops[stopIdx].included = state.included;
+          }
         }
       });
     }
