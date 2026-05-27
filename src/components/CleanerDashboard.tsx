@@ -166,7 +166,23 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     if (directionsRenderer.current) {
       directionsRenderer.current.setDirections({ routes: [] });
     }
+    if (!isMapAlive()) {
+      mapInstance.current = null;
+      directionsRenderer.current = null;
+    }
   };
+
+  const isMapAlive = (): boolean => {
+    if (!mapInstance.current) return false;
+    try {
+      const div = mapInstance.current.getDiv();
+      return !!div && document.body.contains(div);
+    } catch {
+      return false;
+    }
+  };
+
+
 
   const buildSoloRoute = () => {
     // Non-driver with no driver — just their own visits
@@ -578,6 +594,11 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     if (latLngs.length < 2 || !mapRef.current || !window.google) return;
 
     const origin = latLngs[0];
+
+    if (!isMapAlive()) {
+      mapInstance.current = null;
+      directionsRenderer.current = null;
+    }
 
     if (!mapInstance.current) {
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
