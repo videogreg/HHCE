@@ -850,8 +850,22 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       addMarkers(mapInstance.current, includedStops);
     }
 
+    // Clear stale extra violations that reference now-cancelled or missing visits
+    try {
+      const allVios = getExtraViolations(dateStr);
+      const freshVios = allVios.filter(vio => {
+        if (!vio.visitId) return true;
+        const visit = visits.find(v => v.id === vio.visitId);
+        // Keep violation only if the referenced visit still exists, is active, and is on this date
+        return visit && !visit.cancelled && visit.date === dateStr;
+      });
+      if (freshVios.length !== allVios.length) {
+        saveExtraViolations(dateStr, freshVios);
+      }
+    } catch { /* ignore */ }
+
     setLoading(false);
-  }, [dateStr, cleaners, teams]);
+  }, [dateStr, cleaners, teams, visits]);
 
   const toggleStop = (index: number) => {
     const newStops = routeStops.map((s, i) =>
@@ -1104,6 +1118,39 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           }
         }
       });
+    }
+
+    // Smart pickup/dropoff: exclude team members who have no active cleans today
+    const activeTeamMemberIds = new Set<string>();
+    driverVisits.forEach(v => {
+      if (v.cancelled) return;
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const team = teams.find(t => t.id === v.assignedTeamId);
+        if (team) ids = team.cleanerIds;
+      }
+      ids.forEach(id => { if (id !== driver.id) activeTeamMemberIds.add(id); });
+    });
+    stops.forEach(s => {
+      if ((s.type === 'pickup' || s.type === 'dropoff') && s.teamMemberId) {
+        if (!activeTeamMemberIds.has(s.teamMemberId)) {
+          s.included = false;
+        }
+      }
+    });
+
+    // If no work stops remain, show empty route without calling Google Maps
+    const hasWorkStops = stops.some(s => s.included !== false && (s.type === 'clean' || s.type === 'pickup' || s.type === 'dropoff'));
+    if (!hasWorkStops) {
+      setRouteStops(stops);
+      setTotalKm(0);
+      setDriverHours(0);
+      setCleanHours(0);
+      setActualDriveMinutes(0);
+      setTeamHours([]);
+      setRouteUrl('');
+      setLoading(false);
+      return;
     }
 
     await processRoute(routeDataRef.current, stops);
