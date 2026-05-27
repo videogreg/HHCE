@@ -361,12 +361,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         fullscreenControl: false,
       });
     }
-    if (!directionsRenderer.current) {
-      directionsRenderer.current = new window.google.maps.DirectionsRenderer({
-        map: mapInstance.current,
-        suppressMarkers: true,
-      });
-    }
 
     const directionsService = new window.google.maps.DirectionsService();
     directionsService.route(
@@ -378,7 +372,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         optimizeWaypoints: false,
       },
       (result: any, status: any) => {
-        if (status === window.google.maps.DirectionsStatus.OK) {
+        if (status === window.google.maps.DirectionsStatus.OK && result?.routes?.[0]) {
+          if (!directionsRenderer.current) {
+            directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+              map: mapInstance.current,
+              suppressMarkers: true,
+            });
+          }
           setTimeout(() => {
             if (directionsRenderer.current) {
               directionsRenderer.current.setDirections(result);
@@ -388,6 +388,17 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
               addMarkers(mapInstance.current, included);
             }
           }, 0);
+        } else {
+          // Fallback: show markers only, no route line
+          if (directionsRenderer.current) {
+            directionsRenderer.current.setDirections({ routes: [] });
+          }
+          const bounds = new window.google.maps.LatLngBounds();
+          latLngs.forEach((ll: any) => bounds.extend(ll));
+          if (!bounds.isEmpty()) {
+            mapInstance.current!.fitBounds(bounds);
+          }
+          addMarkers(mapInstance.current!, included);
         }
       }
     );
@@ -518,44 +529,52 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       return;
     }
 
-    const routeResult = await calculateRoute(origin, destination, waypoints);
-    if (!routeResult) {
-      setApiError('Could not calculate route. Check addresses.');
-      setRouteStops(stops);
-      setLoading(false);
-      return;
-    }
-
-    let legs = routeResult.routes[0].legs;
+    let routeResult = await calculateRoute(origin, destination, waypoints);
+    let legs: any[] = [];
     const expectedLegs = includedStops.length - 1;
 
-    // Pad missing legs for consecutive stops at the same location (Google Maps collapses them)
-    if (legs.length < expectedLegs) {
-      const paddedLegs: any[] = [];
-      let legIdx = 0;
-      for (let i = 1; i < includedStops.length; i++) {
-        const prev = includedStops[i - 1];
-        const curr = includedStops[i];
-        if (prev.latLng && curr.latLng && areSameLatLng(prev.latLng, curr.latLng)) {
-          paddedLegs.push({
-            distance: { value: 0, text: '0 m' },
-            duration: { value: 0, text: '0 min' },
-            steps: [],
-            start_location: prev.latLng,
-            end_location: curr.latLng,
-          });
-        } else {
-          paddedLegs.push(legs[legIdx] || {
-            distance: { value: 0, text: '0 m' },
-            duration: { value: 0, text: '0 min' },
-            steps: [],
-            start_location: prev.latLng,
-            end_location: curr.latLng,
-          });
-          legIdx++;
+    if (routeResult && routeResult.routes?.[0]?.legs) {
+      legs = routeResult.routes[0].legs;
+      // Pad missing legs for consecutive stops at the same location (Google Maps collapses them)
+      if (legs.length < expectedLegs) {
+        const paddedLegs: any[] = [];
+        let legIdx = 0;
+        for (let i = 1; i < includedStops.length; i++) {
+          const prev = includedStops[i - 1];
+          const curr = includedStops[i];
+          if (prev.latLng && curr.latLng && areSameLatLng(prev.latLng, curr.latLng)) {
+            paddedLegs.push({
+              distance: { value: 0, text: '0 m' },
+              duration: { value: 0, text: '0 min' },
+              steps: [],
+              start_location: prev.latLng,
+              end_location: curr.latLng,
+            });
+          } else {
+            paddedLegs.push(legs[legIdx] || {
+              distance: { value: 0, text: '0 m' },
+              duration: { value: 0, text: '0 min' },
+              steps: [],
+              start_location: prev.latLng,
+              end_location: curr.latLng,
+            });
+            legIdx++;
+          }
         }
+        legs = paddedLegs;
       }
-      legs = paddedLegs;
+    } else {
+      // Google Maps returned ZERO_RESULTS or failed — build synthetic zero-distance legs
+      setApiError(null); // Clear any previous error; we will render markers-only map
+      for (let i = 1; i < includedStops.length; i++) {
+        legs.push({
+          distance: { value: 0, text: '0 m' },
+          duration: { value: 0, text: '0 min' },
+          steps: [],
+          start_location: includedStops[i - 1].latLng,
+          end_location: includedStops[i].latLng,
+        });
+      }
     }
     let totalDist = 0;
     let actualDriveSeconds = 0;
@@ -853,7 +872,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setTeamHours(memberHours);
     setRouteStops(stops); // Update with new times on included stops
 
-    if (mapRef.current) {
+    if (mapRef.current && window.google) {
       if (!isMapAlive()) {
         mapInstance.current = null;
         directionsRenderer.current = null;
@@ -867,14 +886,26 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           fullscreenControl: false,
         });
       }
-      if (!directionsRenderer.current) {
-        directionsRenderer.current = new window.google.maps.DirectionsRenderer({
-          map: mapInstance.current,
-          suppressMarkers: true,
-        });
+      if (routeResult && routeResult.routes?.[0]) {
+        if (!directionsRenderer.current) {
+          directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+            map: mapInstance.current,
+            suppressMarkers: true,
+          });
+        }
+        directionsRenderer.current.setDirections(routeResult);
+        mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+      } else {
+        // No valid route result — clear any old route line and fit to markers
+        if (directionsRenderer.current) {
+          directionsRenderer.current.setDirections({ routes: [] });
+        }
+        const bounds = new window.google.maps.LatLngBounds();
+        includedStops.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
+        if (!bounds.isEmpty()) {
+          mapInstance.current.fitBounds(bounds);
+        }
       }
-      directionsRenderer.current.setDirections(routeResult);
-      mapInstance.current.fitBounds(routeResult.routes[0].bounds);
       addMarkers(mapInstance.current, includedStops);
     }
 
@@ -1463,7 +1494,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setRouteStops(stops);
 
     // Render map
-    if (mapRef.current) {
+    if (mapRef.current && window.google) {
+      if (!isMapAlive()) {
+        mapInstance.current = null;
+        directionsRenderer.current = null;
+      }
       if (!mapInstance.current) {
         mapInstance.current = new window.google.maps.Map(mapRef.current, {
           zoom: 12,
@@ -1473,14 +1508,25 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           fullscreenControl: false,
         });
       }
-      if (!directionsRenderer.current) {
-        directionsRenderer.current = new window.google.maps.DirectionsRenderer({
-          map: mapInstance.current,
-          suppressMarkers: true,
-        });
+      if (routeResult && routeResult.routes?.[0]) {
+        if (!directionsRenderer.current) {
+          directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+            map: mapInstance.current,
+            suppressMarkers: true,
+          });
+        }
+        directionsRenderer.current.setDirections(routeResult);
+        mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+      } else {
+        if (directionsRenderer.current) {
+          directionsRenderer.current.setDirections({ routes: [] });
+        }
+        const bounds = new window.google.maps.LatLngBounds();
+        included.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
+        if (!bounds.isEmpty()) {
+          mapInstance.current.fitBounds(bounds);
+        }
       }
-      directionsRenderer.current.setDirections(routeResult);
-      mapInstance.current.fitBounds(routeResult.routes[0].bounds);
       addMarkers(mapInstance.current, included);
     }
 
