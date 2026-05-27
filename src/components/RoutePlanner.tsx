@@ -768,11 +768,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
         // Wait time is whatever is left after clean + travel
         const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
+        const paidMinutes = cleanMinutes + travelMinutes;
 
         return {
           name: tm.name,
-          minutes: totalMinutes,
-          hours: Math.round((totalMinutes / 60) * 10) / 10,
+          minutes: paidMinutes,
+          hours: Math.round((paidMinutes / 60) * 10) / 10,
           isDriver: false,
           cleanMinutes,
           travelMinutes,
@@ -2105,12 +2106,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                               <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
                               <span className="mx-1">·</span>
                               <span className="text-amber-600 font-bold">{Math.round(((tm.travelMinutes ?? 0) / 60) * 10) / 10}h</span> travel
-                              {(tm.waitMinutes ?? 0) > 0 && (
-                                <>
-                                  <span className="mx-1">·</span>
-                                  <span className="text-blue-500 font-bold">{Math.round(((tm.waitMinutes ?? 0) / 60) * 10) / 10}h</span> wait
-                                </>
-                              )}
                             </p>
                           )}
                         </div>
