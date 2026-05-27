@@ -869,7 +869,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     setDriverHours(driverTotalHours);
     setCleanHours(cleanTotalHours);
     setActualDriveMinutes(actualDriveMin);
-    setTeamHours(memberHours);
+    setTeamHours(memberHours.filter(m => m.minutes > 0));
     setRouteStops(stops); // Update with new times on included stops
 
     if (mapRef.current && window.google) {

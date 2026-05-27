@@ -1,17 +1,20 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
-import type { Cleaner, Visit } from '../types';
 import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
-import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
-import {
-  LogOut, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
-  ChevronLeft, ChevronRight, Navigation, AlertTriangle
-} from 'lucide-react';
+import { format, parse, addMinutes, isAfter, isBefore } from 'date-fns';
+import { Car, MapPin, Clock, Home, Users, X, AlertTriangle, Navigation, Copy, Check, ExternalLink, Plus, Bus, Save, RotateCcw, Trash2 } from 'lucide-react';
+import type { Cleaner, Visit, ConstraintViolation } from '../types';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 interface RouteStop {
-  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home';
+  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'other';
   label: string;
   address: string;
   arrivalTime: string;
@@ -26,6 +29,9 @@ interface RouteStop {
   visitId?: string;
   teamMemberId?: string;
   latLng?: any;
+  included?: boolean;
+  isCustom?: boolean;
+  targetTime?: string;
 }
 
 interface TeamMemberHours {
@@ -47,29 +53,154 @@ interface RouteData {
   teamLocs: Record<string, any>;
 }
 
-interface CleanerDashboardProps {
-  cleaner: Cleaner;
-  onLogout: () => void;
+const areSameLatLng = (a: any, b: any): boolean => {
+  if (!a || !b) return false;
+  return Math.abs(a.lat() - b.lat()) < 0.0001 && Math.abs(a.lng() - b.lng()) < 0.0001;
+};
+
+interface ReliefStopInput {
+  id: string;
+  type: 'pickup' | 'clean' | 'dropoff' | 'other';
+  label: string;
+  address: string;
+  startTime: string; // HH:mm — target start time for this stop
+  durationMin: number;
 }
 
-const formatLocalDate = (d: Date): string => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+const RELIEF_STORAGE_KEY = 'hhce_relief_routes';
+const EXTRA_VIOLATIONS_KEY = 'hhce_extra_violations';
+const EXTRA_STOPS_KEY = 'hhce_extra_stops';
+const ROUTE_STATES_KEY = 'hhce_route_states';
+const LATE_ALERTS_KEY = 'hhce_late_alerts';
+
+const getLateAlerts = (date: string): any[] => {
+  try {
+    const raw = localStorage.getItem(LATE_ALERTS_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw);
+    return all[date] || [];
+  } catch { return []; }
 };
 
-const dayName = (dateStr: string): string => {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+const saveLateAlerts = (date: string, alerts: any[]) => {
+  try {
+    const raw = localStorage.getItem(LATE_ALERTS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[date] = alerts;
+    localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
 };
 
-export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
-  const { visits, clients, teams, cleaners } = useAppContext();
-  const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate(new Date()));
-  const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 
-  // Route state (mirrors RoutePlanner)
+
+const getSavedRelief = (date: string): RouteStop[] | null => {
+  try {
+    const raw = localStorage.getItem(RELIEF_STORAGE_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[date] || null;
+  } catch {
+    return null;
+  }
+};
+
+const saveRelief = (date: string, stops: RouteStop[]) => {
+  try {
+    const raw = localStorage.getItem(RELIEF_STORAGE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[date] = stops;
+    localStorage.setItem(RELIEF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const saveExtraStops = (date: string, driverId: string, stops: RouteStop[]) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[`${date}_${driverId}`] = stops.filter(s => s.isCustom);
+    localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const clearRelief = (date: string) => {
+  try {
+    const raw = localStorage.getItem(RELIEF_STORAGE_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    delete all[date];
+    localStorage.setItem(RELIEF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const getExtraViolations = (date: string): ConstraintViolation[] => {
+  try {
+    const raw = localStorage.getItem(EXTRA_VIOLATIONS_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw);
+    return all[date] || [];
+  } catch {
+    return [];
+  }
+};
+
+
+
+
+
+const saveExtraViolations = (date: string, violations: ConstraintViolation[]) => {
+  try {
+    const raw = localStorage.getItem(EXTRA_VIOLATIONS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[date] = violations;
+    localStorage.setItem(EXTRA_VIOLATIONS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+const getSavedRouteStates = (date: string, driverId: string): { visitId: string; included: boolean }[] | null => {
+  try {
+    const raw = localStorage.getItem(ROUTE_STATES_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[`${date}_${driverId}`] || null;
+  } catch {
+    return null;
+  }
+};
+
+const saveRouteStates = (date: string, driverId: string, states: { visitId: string; included: boolean }[]) => {
+  try {
+    const raw = localStorage.getItem(ROUTE_STATES_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[`${date}_${driverId}`] = states;
+    localStorage.setItem(ROUTE_STATES_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+};
+
+
+
+interface RoutePlannerProps {
+  onClose: () => void;
+  initialDriver?: Cleaner;
+  initialReliefDate?: string;
+}
+
+export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate }) => {
+  const { visits, setVisits, cleaners, clients, teams, selectedDate } = useAppContext();
+  const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(initialDriver || null);
+  const [reliefMode, setReliefMode] = useState(!!initialReliefDate);
+  const [reliefName, setReliefName] = useState('Relief Driver');
+  const [reliefHomeAddress, setReliefHomeAddress] = useState('');
+  const [reliefStops, setReliefStops] = useState<ReliefStopInput[]>([]);
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
@@ -78,98 +209,206 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [routeUrl, setRouteUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [routeUrl, setRouteUrl] = useState<string>('');
+  const [showAddStop, setShowAddStop] = useState(false);
+  const [newStopType, setNewStopType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
+  const [newStopLabel, setNewStopLabel] = useState('');
+  const [newStopAddress, setNewStopAddress] = useState('');
+  const [newStopStartTime, setNewStopStartTime] = useState('09:00');
+  const [newStopDuration, setNewStopDuration] = useState(60);
+  const [reliefSaved, setReliefSaved] = useState(false);
 
-  // Map refs
+  // Extra stop add-on state (for regular driver routes)
+  const [showAddExtra, setShowAddExtra] = useState(false);
+  const [extraSaved, setExtraSaved] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [extraType, setExtraType] = useState<'pickup' | 'clean' | 'dropoff' | 'other'>('clean');
+  const [extraLabel, setExtraLabel] = useState('');
+  const [extraAddress, setExtraAddress] = useState('');
+  const [extraStartTime, setExtraStartTime] = useState('09:00');
+  const [extraDuration, setExtraDuration] = useState(60);
+  const [extraNotes, setExtraNotes] = useState('');
+  const [extraTeamMembers, setExtraTeamMembers] = useState<string[]>([]);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<any[]>([]);
   const routeDataRef = useRef<RouteData | null>(null);
-  const directionsResultRef = useRef<any>(null);
+  const debounceRef = useRef<any>(null);
 
-  // Determine role and driver for the day
+  const dateStr = format(selectedDate, 'yyyy-MM-dd');
+
   const dayVisits = useMemo(() =>
-    visits.filter(v => v.date === selectedDate && !v.cancelled).sort((a, b) => a.startTime.localeCompare(b.startTime)),
-  [visits, selectedDate]);
+    visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+  [visits, dateStr]);
 
-  const myVisits = useMemo(() => {
-    return dayVisits.filter(v => {
+  const drivers = useMemo(() => {
+    const driverIds = new Set<string>();
+    dayVisits.forEach(v => {
       let ids = v.assignedCleanerIds || [];
       if (ids.length === 0) {
         const team = teams.find(t => t.id === v.assignedTeamId);
         if (team) ids = team.cleanerIds;
       }
-      return ids.includes(cleaner.id);
+      ids.forEach(id => {
+        const c = cleaners.find(x => x.id === id);
+        if (c?.isDriver && c.active) driverIds.add(id);
+      });
     });
-  }, [dayVisits, cleaner.id, teams]);
+    return cleaners.filter(c => driverIds.has(c.id));
+  }, [dayVisits, cleaners, teams]);
 
-  // Find the driver for this cleaner's team today
-  const myDriver = useMemo(() => {
-    if (cleaner.isDriver) return cleaner;
-    for (const v of myVisits) {
-      let ids = v.assignedCleanerIds || [];
-      if (ids.length === 0) {
-        const team = teams.find(t => t.id === v.assignedTeamId);
-        if (team) ids = team.cleanerIds;
-      }
-      for (const cid of ids) {
-        const c = cleaners.find(x => x.id === cid);
-        if (c?.isDriver) return c;
-      }
-    }
-    return null;
-  }, [myVisits, cleaner, cleaners, teams]);
-
-  const hasDriverPickup = !!myDriver && !cleaner.isDriver;
-
-  // Build route whenever date, cleaner, or visits change
   useEffect(() => {
-    if (!API_KEY) { setApiError('Google Maps API key not configured'); return; }
-    if (myVisits.length === 0) {
-      setRouteStops([]);
-      setTotalKm(0);
-      setDriverHours(0);
-      setCleanHours(0);
-      setActualDriveMinutes(0);
-      setTeamHours([]);
-      setRouteUrl('');
-      clearMap();
-      return;
-    }
+    if (API_KEY) loadGoogleMaps(API_KEY).catch(() => setApiError('Failed to load Google Maps'));
+  }, []);
 
-    // If solo non-driver (no driver), show simple timeline without map
-    if (!cleaner.isDriver && !myDriver) {
-      buildSoloRoute();
-      return;
+  // Auto-fill cleaner address when typing a known cleaner name for pickup/dropoff
+  useEffect(() => {
+    if ((newStopType === 'pickup' || newStopType === 'dropoff') && newStopLabel.trim()) {
+      const matched = cleaners.find(c =>
+        c.name.toLowerCase() === newStopLabel.trim().toLowerCase() ||
+        c.name.toLowerCase().includes(newStopLabel.trim().toLowerCase())
+      );
+      if (matched?.address) {
+        setNewStopAddress(matched.address);
+      }
     }
-
-    // Otherwise build full Google Maps route (driver or non-driver on team)
-    const driver = cleaner.isDriver ? cleaner : myDriver!;
-    buildFullRoute(driver);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
+  }, [newStopLabel, newStopType]);
 
-  // Render map AFTER routeStops state update causes re-render (so mapRef is mounted)
+  // Auto-calculate if opened from ScheduleBoard with initialDriver
   useEffect(() => {
-    if (directionsResultRef.current && mapRef.current && routeStops.length > 0 && window.google) {
-      renderMap(routeStops, directionsResultRef.current);
+    if (initialDriver) {
+      setSelectedDriver(initialDriver);
+      setReliefMode(false);
+      const timer = setTimeout(() => {
+        buildRoute(initialDriver);
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, [routeStops]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDriver]);
 
-  const clearMap = () => {
-    markersRef.current.forEach(m => m.setMap(null));
-    markersRef.current = [];
-    infoWindowsRef.current.forEach((iw: any) => iw.close());
-    infoWindowsRef.current = [];
-    if (directionsRenderer.current) {
-      directionsRenderer.current.setDirections({ routes: [] });
+  // Auto-load relief driver if opened from ScheduleBoard with initialReliefDate
+  useEffect(() => {
+    if (initialReliefDate) {
+      setReliefMode(true);
+      const saved = getSavedRelief(initialReliefDate);
+      if (saved && saved.length > 0) {
+        setRouteStops(saved);
+        setReliefSaved(true);
+        const name = saved[0]?.label?.replace('Leave Home — ', '') || 'Relief Driver';
+        setReliefName(name);
+        recalcStatsFromStops(saved);
+        setTimeout(() => renderMap(saved), 300);
+      }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialReliefDate]);
+
+  // Rebuild route when selected date or visits change and a driver is already active
+  useEffect(() => {
+    if (selectedDriver && !reliefMode && !loading) {
+      buildRoute(selectedDriver);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateStr, dayVisits]);
+
+  const recalcStatsFromStops = (stops: RouteStop[]) => {
+    const included = stops.filter(s => s.included !== false);
+    const totalDist = included.reduce((sum, s) => sum + (s.legDistanceKm || 0), 0);
+    const totalDrive = included.reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
+    const workMins = included.filter(s => s.type !== 'depart' && s.type !== 'home').reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const waitMins = included.filter(s => s.waitMin && s.waitMin > 0).reduce((sum, s) => sum + (s.waitMin || 0), 0);
+    // Driver hours = total time from first to last stop minus wait time
+    const firstStop = included[0];
+    const lastStop = included[included.length - 1];
+    let driverHrs = 0;
+    if (firstStop?.arrivalTime && lastStop?.departTime) {
+      const start = parse(firstStop.arrivalTime, 'HH:mm', new Date());
+      const end = parse(lastStop.departTime, 'HH:mm', new Date());
+      const totalMin = Math.round((end.getTime() - start.getTime()) / 60000) - waitMins;
+      driverHrs = Math.round((totalMin / 60) * 10) / 10;
+    }
+    setTotalKm(totalDist);
+    setActualDriveMinutes(totalDrive);
+    setDriverHours(driverHrs);
+    setCleanHours(Math.round((workMins / 60) * 10) / 10);
+    setTeamHours([]);
+  };
+
+  const renderMap = (stops: RouteStop[]) => {
+    const included = stops.filter(s => s.included !== false);
+    const latLngs = included.map(s => s.latLng).filter(Boolean);
+    if (latLngs.length < 2 || !mapRef.current || !window.google) return;
+
+    const origin = latLngs[0];
+    const destination = latLngs[latLngs.length - 1];
+    const waypoints = latLngs.slice(1, -1);
+
     if (!isMapAlive()) {
       mapInstance.current = null;
       directionsRenderer.current = null;
     }
+    if (!mapInstance.current) {
+      mapInstance.current = new window.google.maps.Map(mapRef.current, {
+        zoom: 12,
+        center: origin,
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+      });
+    }
+
+    const directionsService = new window.google.maps.DirectionsService();
+    directionsService.route(
+      {
+        origin,
+        destination,
+        waypoints: waypoints.map((ll: any) => ({ location: ll, stopover: true })),
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false,
+      },
+      (result: any, status: any) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result?.routes?.[0]) {
+          if (!directionsRenderer.current) {
+            directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+              map: mapInstance.current,
+              suppressMarkers: true,
+            });
+          }
+          setTimeout(() => {
+            if (directionsRenderer.current) {
+              directionsRenderer.current.setDirections(result);
+            }
+            if (mapInstance.current) {
+              mapInstance.current.fitBounds(result.routes[0].bounds);
+              addMarkers(mapInstance.current, included);
+            }
+          }, 0);
+        } else {
+          // Fallback: show markers only, no route line
+          if (directionsRenderer.current) {
+            directionsRenderer.current.setDirections({ routes: [] });
+          }
+          const bounds = new window.google.maps.LatLngBounds();
+          latLngs.forEach((ll: any) => bounds.extend(ll));
+          if (!bounds.isEmpty()) {
+            mapInstance.current!.fitBounds(bounds);
+          }
+          addMarkers(mapInstance.current!, included);
+        }
+      }
+    );
+  };
+
+  const clearMarkers = () => {
+    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current = [];
+    infoWindowsRef.current.forEach((iw: any) => iw.close());
+    infoWindowsRef.current = [];
   };
 
   const isMapAlive = (): boolean => {
@@ -182,43 +421,623 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     }
   };
 
+  const addMarkers = (map: any, stops: RouteStop[]) => {
+    clearMarkers();
+    let cleanCount = 0;
+    let pickupCount = 0;
+    let dropoffCount = 0;
+    let activeInfoWindow: any = null;
 
+    stops.forEach((stop, i) => {
+      if (!stop.latLng) return;
 
-  const buildSoloRoute = () => {
-    // Non-driver with no driver — just their own visits
-    const stops: RouteStop[] = myVisits.map((v) => {
-      const client = clients.find(c => c.id === v.clientId);
-      return {
-        type: 'clean',
-        label: `Clean — ${v.clientName}`,
-        address: v.clientAddress || client?.address || 'Unknown',
-        arrivalTime: v.startTime,
-        departTime: format(addMinutesDateFns(parse(v.startTime, 'HH:mm', new Date()), v.durationMinutes), 'HH:mm'),
-        durationMin: v.durationMinutes,
-        visitId: v.id,
-      };
+      let labelText = '';
+      let color = '#64748b';
+      let zIndex = 5;
+
+      if (stop.type === 'depart') { labelText = 'S'; color = '#2563eb'; zIndex = 8; }
+      else if (stop.type === 'pickup') { labelText = `P${++pickupCount}`; color = '#059669'; zIndex = 7; }
+      else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; zIndex = 10; }
+      else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
+      else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
+      else if (stop.type === 'other') { labelText = `${++cleanCount}`; color = '#9333ea'; zIndex = 9; }
+
+      const marker = new window.google.maps.Marker({
+        position: stop.latLng,
+        map,
+        label: {
+          text: labelText,
+          color: 'white',
+          fontSize: '13px',
+          fontWeight: 'bold',
+        },
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: color,
+          fillOpacity: 1,
+          strokeColor: 'white',
+          strokeWeight: 2,
+          scale: 16,
+        },
+        zIndex,
+      });
+
+      const infoContent = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; padding: 6px; min-width: 200px; line-height: 1.4;">
+          <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 3px;">
+            ${stop.label.replace(/—/g, '-')}
+          </div>
+          <div style="font-size: 12px; color: #334155; margin-bottom: 5px; word-wrap: break-word; max-width: 200px;">
+            ${stop.address}
+          </div>
+          ${stop.arrivalTime ? `<div style="font-size: 11px; color: #475569;"><strong>Arrive:</strong> ${stop.arrivalTime}</div>` : ''}
+          ${stop.departTime ? `<div style="font-size: 11px; color: #475569;"><strong>Depart:</strong> ${stop.departTime}</div>` : ''}
+          ${stop.durationMin ? `<div style="font-size: 11px; color: #475569;"><strong>Duration:</strong> ${stop.durationMin} min</div>` : ''}
+          ${stop.targetTime ? `<div style="font-size: 11px; color: #475569;"><strong>Target:</strong> ${stop.targetTime}</div>` : ''}
+          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">⏳ Wait ${stop.waitMin} min (arrived early)</div>` : ''}
+          ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">⚠️ Late ${stop.lateMin} min past window</div>` : ''}
+          ${(i > 0 && stop.legDistanceKm !== undefined) ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid #e2e8f0; padding-top: 4px;">🚗 ${stop.legDistanceKm.toFixed(1)} km • ${Math.round(stop.legDurationMin || 0)} min drive</div>` : ''}
+        </div>
+      `;
+
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: infoContent,
+        maxWidth: 240,
+      });
+
+      marker.addListener('click', () => {
+        if (activeInfoWindow) activeInfoWindow.close();
+        infoWindow.open(map, marker);
+        activeInfoWindow = infoWindow;
+      });
+
+      markersRef.current.push(marker);
+      infoWindowsRef.current.push(infoWindow);
     });
-
-    setRouteStops(stops);
-    const first = stops[0];
-    const last = stops[stops.length - 1];
-    const start = parse(first.arrivalTime, 'HH:mm', new Date());
-    const end = parse(last.departTime || last.arrivalTime, 'HH:mm', new Date());
-    const mins = Math.round((end.getTime() - start.getTime()) / 60000);
-    setDriverHours(0);
-    setCleanHours(Math.round((mins / 60) * 10) / 10);
-    setActualDriveMinutes(0);
-    setTotalKm(0);
-    setTeamHours([]);
-    setRouteUrl('');
-    clearMap();
-    setLoading(false);
   };
 
-  const buildFullRoute = async (driver: Cleaner) => {
+  const processRoute = useCallback(async (data: RouteData, stops: RouteStop[]) => {
+    const includedStops = stops.filter(s => s.included !== false);
+    const latLngs = includedStops.map(s => s.latLng).filter(Boolean);
+
+    if (latLngs.length < 2) {
+      setApiError('Not enough stops to build a route. Please check at least 2 stops.');
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
+
+    const origin = latLngs[0];
+    const destination = latLngs[latLngs.length - 1];
+    const waypoints = latLngs.slice(1, -1);
+
+    // Build Google Maps directions URL
+    const originStr = `${origin.lat()},${origin.lng()}`;
+    const destStr = `${destination.lat()},${destination.lng()}`;
+    const waypointsStr = waypoints.map((ll: any) => `${ll.lat()},${ll.lng()}`).join('|');
+    const mapsUrl = waypointsStr
+      ? `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}&waypoints=${waypointsStr}`
+      : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
+    setRouteUrl(mapsUrl);
+
+    // Pre-flight: every included stop must have a valid latLng
+    const missingLatLng = includedStops.filter(s => !s.latLng);
+    if (missingLatLng.length > 0) {
+      setApiError(`Cannot route: missing map location for ${missingLatLng.map(s => s.label).join(', ')}. Check the address.`);
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
+
+    let routeResult = await calculateRoute(origin, destination, waypoints);
+    let legs: any[] = [];
+    const expectedLegs = includedStops.length - 1;
+
+    if (routeResult && routeResult.routes?.[0]?.legs) {
+      legs = routeResult.routes[0].legs;
+      // Pad missing legs for consecutive stops at the same location (Google Maps collapses them)
+      if (legs.length < expectedLegs) {
+        const paddedLegs: any[] = [];
+        let legIdx = 0;
+        for (let i = 1; i < includedStops.length; i++) {
+          const prev = includedStops[i - 1];
+          const curr = includedStops[i];
+          if (prev.latLng && curr.latLng && areSameLatLng(prev.latLng, curr.latLng)) {
+            paddedLegs.push({
+              distance: { value: 0, text: '0 m' },
+              duration: { value: 0, text: '0 min' },
+              steps: [],
+              start_location: prev.latLng,
+              end_location: curr.latLng,
+            });
+          } else {
+            paddedLegs.push(legs[legIdx] || {
+              distance: { value: 0, text: '0 m' },
+              duration: { value: 0, text: '0 min' },
+              steps: [],
+              start_location: prev.latLng,
+              end_location: curr.latLng,
+            });
+            legIdx++;
+          }
+        }
+        legs = paddedLegs;
+      }
+    } else {
+      // Google Maps returned ZERO_RESULTS or failed — build synthetic zero-distance legs
+      setApiError(null); // Clear any previous error; we will render markers-only map
+      for (let i = 1; i < includedStops.length; i++) {
+        legs.push({
+          distance: { value: 0, text: '0 m' },
+          duration: { value: 0, text: '0 min' },
+          steps: [],
+          start_location: includedStops[i - 1].latLng,
+          end_location: includedStops[i].latLng,
+        });
+      }
+    }
+    let totalDist = 0;
+    let actualDriveSeconds = 0;
+
+    const firstCleanIdx = includedStops.findIndex(s => s.type === 'clean');
+    let firstCleanVisit = null;
+    if (firstCleanIdx >= 0) {
+      const stop = includedStops[firstCleanIdx];
+      if (stop.visitId) {
+        firstCleanVisit = data.driverVisits.find(dv => dv.id === stop.visitId);
+      }
+      // For add-on cleans without visitId, use targetTime as anchor
+      if (!firstCleanVisit && stop.targetTime) {
+        firstCleanVisit = { startTime: stop.targetTime, durationMinutes: stop.durationMin || 60 } as Visit;
+      }
+    }
+
+    let departTime: Date;
+    if (firstCleanVisit) {
+      departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
+      for (let i = firstCleanIdx; i > 0; i--) {
+        const leg = legs[i - 1];
+        departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
+        const prevStop = includedStops[i - 1];
+        if (prevStop.durationMin) {
+          departTime = addMinutes(departTime, -prevStop.durationMin);
+        }
+      }
+    } else {
+      departTime = parse('08:00', 'HH:mm', new Date());
+    }
+
+    let runningTime = new Date(departTime.getTime());
+    includedStops[0].arrivalTime = format(runningTime, 'HH:mm');
+
+    for (let i = 1; i < includedStops.length; i++) {
+      const leg = legs[i - 1];
+      if (!leg) {
+        includedStops[i].arrivalTime = format(runningTime, 'HH:mm');
+        continue;
+      }
+      totalDist += leg.distance.value;
+      actualDriveSeconds += leg.duration.value;
+      const driveMs = leg.duration.value * 1000;
+      runningTime = new Date(runningTime.getTime() + driveMs);
+
+      includedStops[i].legDistanceKm = leg.distance.value / 1000;
+      includedStops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+      includedStops[i].arrivalTime = format(runningTime, 'HH:mm');
+
+      if (includedStops[i].type === 'clean') {
+        let v = data.driverVisits.find(dv => dv.id === includedStops[i].visitId);
+        // For add-on cleans without visitId, use targetTime
+        if (!v && includedStops[i].targetTime) {
+          v = { startTime: includedStops[i].targetTime, durationMinutes: includedStops[i].durationMin || 60 } as Visit;
+        }
+        if (v) {
+          const scheduledStart = parse(v.startTime, 'HH:mm', new Date());
+          const earliestStart = addMinutes(scheduledStart, -15);
+          const latestStart = addMinutes(scheduledStart, 15);
+
+          if (isBefore(runningTime, earliestStart)) {
+            includedStops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
+            includedStops[i].actualStartTime = format(earliestStart, 'HH:mm');
+            runningTime = addMinutes(earliestStart, v.durationMinutes);
+            includedStops[i].departTime = format(runningTime, 'HH:mm');
+          } else if (isAfter(runningTime, latestStart)) {
+            includedStops[i].isLate = true;
+            includedStops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
+            includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+            runningTime = addMinutes(runningTime, v.durationMinutes);
+            includedStops[i].departTime = format(runningTime, 'HH:mm');
+          } else {
+            includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+            runningTime = addMinutes(runningTime, v.durationMinutes);
+            includedStops[i].departTime = format(runningTime, 'HH:mm');
+          }
+        }
+      } else if (includedStops[i].targetTime && includedStops[i].type !== 'home') {
+        // Non-clean stops with targetTime (pickup/dropoff/other): same ±15 min grace as cleans
+        const targetTime = parse(includedStops[i].targetTime || '08:00', 'HH:mm', new Date());
+        const earliestStart = addMinutes(targetTime, -15);
+        const latestStart = addMinutes(targetTime, 15);
+
+        if (isBefore(runningTime, earliestStart)) {
+          // Arrived more than 15 min early — wait until window opens
+          includedStops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
+          includedStops[i].actualStartTime = format(earliestStart, 'HH:mm');
+          runningTime = addMinutes(earliestStart, includedStops[i].durationMin || 0);
+          includedStops[i].departTime = format(runningTime, 'HH:mm');
+        } else if (isAfter(runningTime, latestStart)) {
+          // Arrived more than 15 min late
+          includedStops[i].isLate = true;
+          includedStops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
+          includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
+          includedStops[i].departTime = format(runningTime, 'HH:mm');
+        } else {
+          // Within ±15 min window — start immediately, no wait/late
+          includedStops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
+          includedStops[i].departTime = format(runningTime, 'HH:mm');
+        }
+      } else if (includedStops[i].durationMin) {
+        runningTime = addMinutes(runningTime, includedStops[i].durationMin || 0);
+        includedStops[i].departTime = format(runningTime, 'HH:mm');
+      }
+    }
+
+    // Save late alerts (>25 min = 15 min grace + 10 min buffer)
+    const lateAlerts = includedStops
+      .filter(s => s.isLate && (s.lateMin || 0) > 25)
+      .map(s => ({
+        id: `late_${dateStr}_${s.visitId || s.label}_${s.lateMin}`,
+        visitId: s.visitId || '',
+        label: s.label,
+        lateMin: s.lateMin,
+        arrivalTime: s.arrivalTime,
+        driverName: data.driver.name,
+        severity: (s.lateMin || 0) > 40 ? 'error' : 'warning'
+      }));
+    const existingAlerts = getLateAlerts(dateStr).filter((a: any) => a.driverName !== data.driver.name);
+    saveLateAlerts(dateStr, [...existingAlerts, ...lateAlerts]);
+
+    // Calculate total wait time across included cleans only
+    const totalWaitMin = includedStops
+      .filter(s => s.type === 'clean')
+      .reduce((sum, s) => sum + (s.waitMin || 0), 0);
+
+    // Driver door-to-door minutes MINUS wait time
+    const firstIncluded = includedStops[0];
+    const lastIncluded = includedStops[includedStops.length - 1];
+    const startTime = parse(firstIncluded.arrivalTime, 'HH:mm', new Date());
+    const endTime = parse(lastIncluded.departTime || lastIncluded.arrivalTime, 'HH:mm', new Date());
+    const rawDriverMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+    const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
+    const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
+
+    // Billable clean time (pure cleaning, no wait)
+    const cleanTotalMinutes = includedStops
+      .filter(s => s.type === 'clean')
+      .reduce((sum, s) => sum + (s.durationMin || 0), 0);
+    const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
+
+    // Actual driving minutes from Google Maps legs
+    const actualDriveMin = Math.round(actualDriveSeconds / 60);
+
+    // Build comprehensive team member list including extra pickups/dropoffs
+    const allTeamMemberIds = new Set<string>();
+    data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
+    // Also find cleaners from extra pickup/dropoff stops
+    includedStops.forEach((s) => {
+      if (s.type === 'pickup' && s.label.startsWith('Pick up ')) {
+        const name = s.label.replace('Pick up ', '');
+        const c = cleaners.find(x => x.name === name);
+        if (c) allTeamMemberIds.add(c.id);
+      }
+      if (s.type === 'dropoff' && s.label.startsWith('Drop off ')) {
+        const name = s.label.replace('Drop off ', '');
+        const c = cleaners.find(x => x.name === name);
+        if (c) allTeamMemberIds.add(c.id);
+      }
+    });
+
+    const memberHours: TeamMemberHours[] = Array.from(allTeamMemberIds).map(id => {
+      const tm = cleaners.find(c => c.id === id);
+      if (!tm) return null;
+
+      // Find this cleaner's pickup and dropoff stops by teamMemberId OR by label
+      const pickupIdx = includedStops.findIndex(s =>
+        (s.type === 'pickup' && s.teamMemberId === id) ||
+        (s.type === 'pickup' && s.label === `Pick up ${tm.name}`)
+      );
+      const dropoffIdx = includedStops.findIndex(s =>
+        (s.type === 'dropoff' && s.teamMemberId === id) ||
+        (s.type === 'dropoff' && s.label === `Drop off ${tm.name}`)
+      );
+
+      // Find cleans this cleaner actually worked on (between pickup and dropoff)
+      let relevantCleans: RouteStop[] = [];
+      let searchStart = 0;
+      let searchEnd = includedStops.length;
+
+      if (pickupIdx >= 0) searchStart = pickupIdx + 1;
+      if (dropoffIdx >= 0) searchEnd = dropoffIdx;
+
+      const candidateCleans = includedStops.slice(searchStart, searchEnd).filter(s => s.type === 'clean');
+
+      // For each clean, check if this cleaner is assigned to it
+      for (const clean of candidateCleans) {
+        if (!clean.visitId) {
+          // Add-on clean without visitId — include it
+          relevantCleans.push(clean);
+          continue;
+        }
+        const visit = data.driverVisits.find(v => v.id === clean.visitId);
+        if (visit) {
+          let assignedIds = visit.assignedCleanerIds || [];
+          if (assignedIds.length === 0) {
+            const team = teams.find(t => t.id === visit.assignedTeamId);
+            if (team) assignedIds = team.cleanerIds;
+          }
+          if (assignedIds.includes(id)) {
+            relevantCleans.push(clean);
+          }
+        }
+      }
+
+      const isMainDriver = tm.id === data.driver.id;
+
+      if (!isMainDriver) {
+        // Passenger: from arrival at first clean to departure from last clean
+        // NO pickup travel, NO dropoff travel included
+        if (relevantCleans.length === 0) {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
+        }
+
+        const firstClean = relevantCleans[0];
+        const lastClean = relevantCleans[relevantCleans.length - 1];
+
+        // Find indices in includedStops for leg calculation
+        const firstCleanIdx = includedStops.indexOf(firstClean);
+        const lastCleanIdx = includedStops.indexOf(lastClean);
+
+        // Travel minutes: sum of legDurationMin from the stop after firstClean up to lastClean
+        let travelMinutes = 0;
+        for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
+          travelMinutes += includedStops[i].legDurationMin || 0;
+        }
+
+        // Clean minutes: sum of all clean durations they work
+        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+
+        // Total: from arrival at first clean to departure from last clean
+        const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
+        const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
+        const totalMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
+
+        // Wait time is whatever is left after clean + travel
+        const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
+        const paidMinutes = cleanMinutes + travelMinutes;
+
+        return {
+          name: tm.name,
+          minutes: paidMinutes,
+          hours: Math.round((paidMinutes / 60) * 10) / 10,
+          isDriver: false,
+          cleanMinutes,
+          travelMinutes,
+          waitMinutes
+        };
+      } else {
+        // Main driver: door-to-door (existing logic)
+        let startTime: Date;
+        let endTime: Date;
+
+        if (pickupIdx >= 0) {
+          startTime = parse(includedStops[pickupIdx].arrivalTime, 'HH:mm', new Date());
+        } else if (relevantCleans.length > 0) {
+          startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
+        } else {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
+        }
+
+        if (dropoffIdx >= 0) {
+          endTime = parse(includedStops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
+        } else if (relevantCleans.length > 0) {
+          endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
+        } else {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
+        }
+
+        const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+        const minutes = rawMinutes - totalWaitMin;
+
+        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+        const travelMinutes = Math.max(0, minutes - cleanMinutes);
+
+        return {
+          name: tm.name,
+          minutes,
+          hours: Math.round((minutes / 60) * 10) / 10,
+          isDriver: true,
+          cleanMinutes,
+          travelMinutes,
+          waitMinutes: 0
+        };
+      }
+    }).filter(Boolean) as TeamMemberHours[];
+
+    setTotalKm(Math.round(totalDist / 100) / 10);
+    setDriverHours(driverTotalHours);
+    setCleanHours(cleanTotalHours);
+    setActualDriveMinutes(actualDriveMin);
+    setTeamHours(memberHours);
+    setRouteStops(stops); // Update with new times on included stops
+
+    if (mapRef.current && window.google) {
+      if (!isMapAlive()) {
+        mapInstance.current = null;
+        directionsRenderer.current = null;
+      }
+      if (!mapInstance.current) {
+        mapInstance.current = new window.google.maps.Map(mapRef.current, {
+          zoom: 12,
+          center: origin,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+        });
+      }
+      if (routeResult && routeResult.routes?.[0]) {
+        if (!directionsRenderer.current) {
+          directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+            map: mapInstance.current,
+            suppressMarkers: true,
+          });
+        }
+        directionsRenderer.current.setDirections(routeResult);
+        mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+      } else {
+        // No valid route result — clear any old route line and fit to markers
+        if (directionsRenderer.current) {
+          directionsRenderer.current.setDirections({ routes: [] });
+        }
+        const bounds = new window.google.maps.LatLngBounds();
+        includedStops.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
+        if (!bounds.isEmpty()) {
+          mapInstance.current.fitBounds(bounds);
+        }
+      }
+      addMarkers(mapInstance.current, includedStops);
+    }
+
+    // Clear stale extra violations that reference now-cancelled or missing visits
+    try {
+      const allVios = getExtraViolations(dateStr);
+      const freshVios = allVios.filter(vio => {
+        if (!vio.visitId) return true;
+        const visit = visits.find(v => v.id === vio.visitId);
+        // Keep violation only if the referenced visit still exists, is active, and is on this date
+        return visit && !visit.cancelled && visit.date === dateStr;
+      });
+      if (freshVios.length !== allVios.length) {
+        saveExtraViolations(dateStr, freshVios);
+      }
+    } catch { /* ignore */ }
+
+    setLoading(false);
+  }, [dateStr, cleaners, teams, visits]);
+
+  const toggleStop = (index: number) => {
+    const newStops = routeStops.map((s, i) =>
+      i === index ? { ...s, included: s.included === false ? true : false } : s
+    );
+    setRouteStops(newStops);
+    setSaveStatus('idle');
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (routeDataRef.current && !reliefMode) {
+        setLoading(true);
+        setApiError(null);
+        processRoute(routeDataRef.current, newStops);
+      } else if (reliefMode) {
+        recalcStatsFromStops(newStops);
+        saveRelief(dateStr, newStops);
+        setReliefSaved(true);
+        renderMap(newStops);
+      }
+    }, 400);
+  };
+
+  const copyPlan = () => {
+    if (routeStops.length === 0 || (!selectedDriver && !reliefMode)) return;
+    const includedStops = routeStops.filter(s => s.included !== false);
+
+    const dateLabel = format(selectedDate, 'EEEE, MMM d, yyyy');
+
+    let text = `HHCE ROUTE PLAN\n`;
+    text += `${dateLabel}\n`;
+    text += reliefMode
+      ? `Relief Driver: ${reliefName}\n`
+      : `Driver: ${selectedDriver?.name}\n`;
+    if (teamHours.length > 0) {
+      const teamList = teamHours.map(t => `${t.name}${t.isDriver ? ' (Driver)' : ' (Cleaner)'}`).join(', ');
+      text += `Team: ${teamList}\n`;
+    }
+    text += `═══════════════════════════════════════\n\n`;
+
+    includedStops.forEach((stop, i) => {
+      text += `${stop.arrivalTime || '----'} — ${stop.label}\n`;
+      text += `${stop.address}\n`;
+
+      if (stop.type === 'clean' && stop.visitId) {
+        const v = dayVisits.find(dv => dv.id === stop.visitId);
+        if (v) {
+          const sched = parse(v.startTime, 'HH:mm', new Date());
+          const earliest = format(addMinutes(sched, -15), 'HH:mm');
+          const latest = format(addMinutes(sched, 15), 'HH:mm');
+          text += `Scheduled: ${v.startTime} | Window: ${earliest}–${latest}\n`;
+          if (stop.waitMin && stop.waitMin > 0) {
+            text += `WAIT: ${stop.waitMin} min (possible break)\n`;
+          }
+          if (stop.isLate && stop.lateMin) {
+            text += `LATE: ${stop.lateMin} min past window\n`;
+          }
+          text += `Clean: ${stop.actualStartTime || stop.arrivalTime} – ${stop.departTime || 'N/A'} (${stop.durationMin} min)\n`;
+        }
+      } else if (stop.type === 'pickup') {
+        text += `Pickup window: 5 min\n`;
+      } else if (stop.type === 'dropoff') {
+        text += `Dropoff\n`;
+      } else if (stop.type === 'other' && stop.durationMin) {
+        text += `Duration: ${stop.durationMin} min\n`;
+      }
+
+      if (i > 0 && stop.legDistanceKm !== undefined) {
+        text += `Drive: ${stop.legDistanceKm.toFixed(1)} km (${Math.round(stop.legDurationMin || 0)} min)\n`;
+      }
+      text += `\n`;
+    });
+
+    const skippedStops = routeStops.filter(s => s.included === false);
+    if (skippedStops.length > 0) {
+      text += `--- SKIPPED STOPS ---\n`;
+      skippedStops.forEach(s => {
+        text += `☐ ${s.label} — ${s.address}\n`;
+      });
+      text += `\n`;
+    }
+
+    text += `═══════════════════════════════════════\n`;
+    text += `TOTAL DISTANCE: ${totalKm.toFixed(1)} km\n`;
+    text += `TOTAL DRIVER HOURS: ${driverHours.toFixed(1)} hrs (door to door)\n`;
+    text += `BILLABLE CLEAN HOURS: ${cleanHours.toFixed(1)} hrs (revenue)\n`;
+    text += `ACTUAL DRIVING MINUTES: ${actualDriveMinutes} min (Google Maps)\n`;
+    if (teamHours.length > 0) {
+      text += `TEAM HOURS:\n`;
+      teamHours.forEach(tm => {
+        const payType = tm.isDriver ? 'door-to-door' : 'clean-to-clean';
+        text += `  ${tm.name}: ${tm.hours.toFixed(1)} hrs (${tm.minutes} min) [${payType}]\n`;
+      });
+    }
+    if (routeUrl) {
+      text += `\n📍 GOOGLE MAPS ROUTE:\n${routeUrl}\n`;
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const buildRoute = async (driver: Cleaner) => {
+    if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
     setLoading(true);
+    setSelectedDriver(driver);
+    setReliefMode(false);
     setApiError(null);
-    clearMap();
+    setCopied(false);
+    setRouteUrl('');
+    setExtraSaved(false);
 
     await loadGoogleMaps(API_KEY);
 
@@ -231,10 +1050,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       return ids.includes(driver.id);
     });
 
-    if (driverVisits.length === 0) {
-      setLoading(false);
-      return;
-    }
+    if (driverVisits.length === 0) { setLoading(false); return; }
 
     const teamMemberIds = new Set<string>();
     driverVisits.forEach(v => {
@@ -277,6 +1093,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     }
 
     const stops: RouteStop[] = [];
+
     stops.push({
       type: 'depart',
       label: `Leave Home — ${driver.name}`,
@@ -284,6 +1101,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       arrivalTime: '',
       durationMin: 0,
       latLng: driverHome,
+      included: true,
     });
 
     for (const tm of teamMembersWithAddr) {
@@ -295,6 +1113,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         durationMin: 5,
         teamMemberId: tm.id,
         latLng: teamLocs[tm.id],
+        included: true,
       });
     }
 
@@ -309,6 +1128,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         durationMin: v.durationMinutes,
         visitId: v.id,
         latLng: clientLocs[v.id],
+        included: !v.cancelled,
       });
     }
 
@@ -321,6 +1141,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         durationMin: 5,
         teamMemberId: tm.id,
         latLng: teamLocs[tm.id],
+        included: true,
       });
     });
 
@@ -331,6 +1152,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       arrivalTime: '',
       durationMin: 0,
       latLng: driverHome,
+      included: true,
     });
 
     routeDataRef.current = {
@@ -342,22 +1164,196 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       teamLocs,
     };
 
-    await processRoute(routeDataRef.current, stops);
-  };
+    // Apply saved route states from localStorage
+    const savedStates = getSavedRouteStates(dateStr, driver.id);
+    if (savedStates) {
+      savedStates.forEach(state => {
+        const stopIdx = stops.findIndex(s => s.visitId === state.visitId);
+        if (stopIdx >= 0) {
+          const visit = driverVisits.find(v => v.id === state.visitId);
+          // Only override inclusion if the visit is still active (not cancelled)
+          if (visit && !visit.cancelled) {
+            stops[stopIdx].included = state.included;
+          }
+        }
+      });
+    }
 
-  const processRoute = useCallback(async (data: RouteData, stops: RouteStop[]) => {
-    const latLngs = stops.map(s => s.latLng).filter(Boolean);
-    if (latLngs.length < 2) {
-      setApiError('Not enough stops to build a route.');
+    // Smart pickup/dropoff: exclude team members who have no active cleans today
+    const activeTeamMemberIds = new Set<string>();
+    driverVisits.forEach(v => {
+      if (v.cancelled) return;
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const team = teams.find(t => t.id === v.assignedTeamId);
+        if (team) ids = team.cleanerIds;
+      }
+      ids.forEach(id => { if (id !== driver.id) activeTeamMemberIds.add(id); });
+    });
+    stops.forEach(s => {
+      if ((s.type === 'pickup' || s.type === 'dropoff') && s.teamMemberId) {
+        if (!activeTeamMemberIds.has(s.teamMemberId)) {
+          s.included = false;
+        }
+      }
+    });
+
+    // If no work stops remain, show empty route without calling Google Maps
+    const hasWorkStops = stops.some(s => s.included !== false && (s.type === 'clean' || s.type === 'pickup' || s.type === 'dropoff'));
+    if (!hasWorkStops) {
+      setRouteStops(stops);
+      setTotalKm(0);
+      setDriverHours(0);
+      setCleanHours(0);
+      setActualDriveMinutes(0);
+      setTeamHours([]);
+      setRouteUrl('');
       setLoading(false);
       return;
     }
 
+    await processRoute(routeDataRef.current, stops);
+
+    // Check for saved extra stops and merge them in
+    let savedExtras: RouteStop[] | null = null;
+    try {
+      const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+      if (raw) {
+        const all = JSON.parse(raw);
+        savedExtras = all[`${dateStr}_${driver.id}`] || null;
+      }
+    } catch { /* ignore */ }
+    if (savedExtras && savedExtras.length > 0) {
+      const customStops = savedExtras.filter(s => s.isCustom);
+      if (customStops.length > 0) {
+        const merged = [...stops, ...customStops];
+        // Sort by targetTime/arrivalTime
+        merged.sort((a, b) => {
+          const ta = a.targetTime || a.arrivalTime || '99:99';
+          const tb = b.targetTime || b.arrivalTime || '99:99';
+          return ta.localeCompare(tb);
+        });
+        // Ensure home is last
+        const homeIdx = merged.findIndex(s => s.type === 'home');
+        if (homeIdx >= 0) {
+          const home = merged.splice(homeIdx, 1)[0];
+          merged.push(home);
+        }
+        await processRoute(routeDataRef.current, merged);
+        setExtraSaved(true);
+      }
+    }
+  };
+
+  // RELIEF DRIVER FUNCTIONS
+  const addReliefStopInput = () => {
+    if (!newStopLabel || !newStopAddress || !newStopStartTime) return;
+    const stop: ReliefStopInput = {
+      id: `relief_${Date.now()}`,
+      type: newStopType,
+      label: newStopLabel,
+      address: newStopAddress,
+      startTime: newStopStartTime,
+      durationMin: newStopDuration,
+    };
+    setReliefStops(prev => [...prev, stop]);
+    setNewStopLabel('');
+    setNewStopAddress('');
+    setNewStopStartTime('09:00');
+    setNewStopDuration(newStopType === 'pickup' || newStopType === 'dropoff' ? 5 : 60);
+    setShowAddStop(false);
+  };
+
+  const removeReliefStopInput = (id: string) => {
+    setReliefStops(prev => prev.filter(s => s.id !== id));
+  };
+
+  const calculateReliefRoute = async () => {
+    if (!API_KEY) { setApiError('Add VITE_GOOGLE_MAPS_API_KEY to your .env file'); return; }
+    if (!reliefHomeAddress.trim()) { setApiError('Please enter a home address for the relief driver'); return; }
+    if (reliefStops.length === 0) { setApiError('Please add at least one stop'); return; }
+    // Validate all stops have startTime
+    const missingTime = reliefStops.find(s => !s.startTime || !s.startTime.trim());
+    if (missingTime) { setApiError(`Stop "${missingTime.label}" is missing a start time`); return; }
+
+    setLoading(true);
+    setApiError(null);
+    setCopied(false);
+    setRouteUrl('');
+
+    await loadGoogleMaps(API_KEY);
+
+    // Geocode home
+    const homeLoc = await geocodeAddress(reliefHomeAddress.trim());
+    if (!homeLoc) {
+      setApiError(`Could not locate home address: ${reliefHomeAddress}`);
+      setLoading(false);
+      return;
+    }
+
+    // Geocode all stops
+    const stopLocs: Record<string, any> = {};
+    const missing: string[] = [];
+    for (const stop of reliefStops) {
+      const loc = await geocodeAddress(stop.address.trim());
+      if (loc) {
+        stopLocs[stop.id] = loc;
+      } else {
+        missing.push(stop.label);
+      }
+    }
+
+    if (missing.length > 0) {
+      setApiError(`Could not locate: ${missing.join(', ')}. Please check addresses.`);
+      setLoading(false);
+      return;
+    }
+
+    // Build stops array with target times
+    const stops: RouteStop[] = [];
+    stops.push({
+      type: 'depart',
+      label: `Leave Home — ${reliefName}`,
+      address: reliefHomeAddress,
+      arrivalTime: '',
+      durationMin: 0,
+      latLng: homeLoc,
+      included: true,
+    });
+
+    for (const rs of reliefStops) {
+      stops.push({
+        type: rs.type,
+        label: rs.type === 'pickup' ? `Pick up ${rs.label}` :
+               rs.type === 'dropoff' ? `Drop off ${rs.label}` :
+               rs.type === 'clean' ? `Clean — ${rs.label}` :
+               rs.label,
+        address: rs.address,
+        arrivalTime: '',
+        durationMin: rs.durationMin,
+        targetTime: rs.startTime,
+        latLng: stopLocs[rs.id],
+        included: true,
+      });
+    }
+
+    stops.push({
+      type: 'home',
+      label: `Arrive Home — ${reliefName}`,
+      address: reliefHomeAddress,
+      arrivalTime: '',
+      durationMin: 0,
+      latLng: homeLoc,
+      included: true,
+    });
+
+    // Calculate route with Google Maps
+    const latLngs = stops.map(s => s.latLng).filter(Boolean);
     const origin = latLngs[0];
     const destination = latLngs[latLngs.length - 1];
     const waypoints = latLngs.slice(1, -1);
 
-    // Build Google Maps URL
+    // Build URL
     const originStr = `${origin.lat()},${origin.lng()}`;
     const destStr = `${destination.lat()},${destination.lng()}`;
     const waypointsStr = waypoints.map((ll: any) => `${ll.lat()},${ll.lng()}`).join('|');
@@ -365,6 +1361,15 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       ? `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}&waypoints=${waypointsStr}`
       : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
     setRouteUrl(mapsUrl);
+
+    // Pre-flight: every stop must have a valid latLng
+    const missingLatLng = stops.filter((s: RouteStop) => !s.latLng);
+    if (missingLatLng.length > 0) {
+      setApiError(`Cannot route: missing map location for ${missingLatLng.map((s: RouteStop) => s.label).join(', ')}. Check the address.`);
+      setRouteStops(stops);
+      setLoading(false);
+      return;
+    }
 
     const routeResult = await calculateRoute(origin, destination, waypoints);
     if (!routeResult) {
@@ -376,42 +1381,39 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const legs = routeResult.routes[0].legs;
     const expectedLegs = stops.length - 1;
     if (legs.length < expectedLegs) {
-      setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address.`);
+      setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address, or a location is unreachable.`);
+      setRouteStops(stops);
       setLoading(false);
       return;
     }
-
     let totalDist = 0;
     let actualDriveSeconds = 0;
 
-    // Find first clean anchor
-    const firstCleanIdx = stops.findIndex(s => s.type === 'clean');
-    let firstCleanVisit: Visit | null = null;
-    if (firstCleanIdx >= 0) {
-      const stop = stops[firstCleanIdx];
-      if (stop.visitId) {
-        firstCleanVisit = data.driverVisits.find(dv => dv.id === stop.visitId) || null;
+    // Find anchor: first non-home stop with a targetTime
+    let anchorIdx = -1;
+    for (let i = 0; i < stops.length; i++) {
+      if (stops[i].type !== 'depart' && stops[i].type !== 'home' && stops[i].targetTime) {
+        anchorIdx = i;
+        break;
+      }
+    }
+    if (anchorIdx < 0) anchorIdx = 1;
+
+    // Work backward from anchor to find home departure time
+    let departTime = parse(stops[anchorIdx].targetTime!, 'HH:mm', new Date());
+    for (let i = anchorIdx; i > 0; i--) {
+      const leg = legs[i - 1];
+      // Subtract drive time
+      departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
+      // Subtract previous stop's duration
+      if (stops[i - 1].durationMin) {
+        departTime = addMinutes(departTime, -(stops[i - 1].durationMin || 0));
       }
     }
 
-    // Work backward from first clean to find home departure time
-    let departTime: Date;
-    if (firstCleanVisit) {
-      departTime = parse(firstCleanVisit.startTime, 'HH:mm', new Date());
-      for (let i = firstCleanIdx; i > 0; i--) {
-        const leg = legs[i - 1];
-        departTime = new Date(departTime.getTime() - (leg.duration.value * 1000));
-        if (stops[i - 1].durationMin) {
-          departTime = addMinutesDateFns(departTime, -(stops[i - 1].durationMin || 0));
-        }
-      }
-    } else {
-      departTime = parse('08:00', 'HH:mm', new Date());
-    }
-
-    // Work forward
+    // Work forward from home departure
     let runningTime = new Date(departTime.getTime());
-    stops[0].arrivalTime = format(runningTime, 'HH:mm');
+    stops[0].arrivalTime = format(runningTime, 'HH:mm'); // Leave home time
 
     for (let i = 1; i < stops.length; i++) {
       const leg = legs[i - 1];
@@ -424,680 +1426,961 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
       stops[i].arrivalTime = format(runningTime, 'HH:mm');
 
-      if (stops[i].type === 'clean') {
-        let v = data.driverVisits.find(dv => dv.id === stops[i].visitId);
-        if (v) {
-          const scheduledStart = parse(v.startTime, 'HH:mm', new Date());
-          const earliestStart = addMinutesDateFns(scheduledStart, -15);
-          const latestStart = addMinutesDateFns(scheduledStart, 15);
+      // Check against target startTime for work stops
+      if (stops[i].targetTime && stops[i].type !== 'home') {
+        const targetTime = parse(stops[i].targetTime || '08:00', 'HH:mm', new Date());
+        const earliestStart = addMinutes(targetTime, -15);
+        const latestStart = addMinutes(targetTime, 15);
 
-          if (isBefore(runningTime, earliestStart)) {
-            stops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
-            stops[i].actualStartTime = format(earliestStart, 'HH:mm');
-            runningTime = addMinutesDateFns(earliestStart, v.durationMinutes);
-            stops[i].departTime = format(runningTime, 'HH:mm');
-          } else if (isAfter(runningTime, latestStart)) {
-            stops[i].isLate = true;
-            stops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
-            stops[i].actualStartTime = format(runningTime, 'HH:mm');
-            runningTime = addMinutesDateFns(runningTime, v.durationMinutes);
-            stops[i].departTime = format(runningTime, 'HH:mm');
-          } else {
-            stops[i].actualStartTime = format(runningTime, 'HH:mm');
-            runningTime = addMinutesDateFns(runningTime, v.durationMinutes);
-            stops[i].departTime = format(runningTime, 'HH:mm');
-          }
+        if (isBefore(runningTime, earliestStart)) {
+          // Arrived early — wait until earliest start
+          stops[i].waitMin = Math.ceil((earliestStart.getTime() - runningTime.getTime()) / 60000);
+          stops[i].actualStartTime = format(earliestStart, 'HH:mm');
+          runningTime = addMinutes(earliestStart, stops[i].durationMin || 0);
+        } else if (isAfter(runningTime, latestStart)) {
+          // Arrived late
+          stops[i].isLate = true;
+          stops[i].lateMin = Math.ceil((runningTime.getTime() - latestStart.getTime()) / 60000);
+          stops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
+        } else {
+          // On time
+          stops[i].actualStartTime = format(runningTime, 'HH:mm');
+          runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
         }
+        stops[i].departTime = format(runningTime, 'HH:mm');
       } else if (stops[i].durationMin) {
-        runningTime = addMinutesDateFns(runningTime, stops[i].durationMin || 0);
+        runningTime = addMinutes(runningTime, stops[i].durationMin || 0);
         stops[i].departTime = format(runningTime, 'HH:mm');
       }
     }
 
-    // Stats
-    const totalWaitMin = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.waitMin || 0), 0);
-    const firstStop = stops[0];
-    const lastStop = stops[stops.length - 1];
-    const startTime = parse(firstStop.arrivalTime, 'HH:mm', new Date());
-    const endTime = parse(lastStop.departTime || lastStop.arrivalTime, 'HH:mm', new Date());
-    const rawDriverMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-    const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
-    const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
+    // Calculate stats
+    const included = stops.filter(s => s.included !== false);
 
-    const cleanTotalMinutes = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
-    const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
-    const actualDriveMin = Math.round(actualDriveSeconds / 60);
+    // Save late alerts for relief driver (>25 min = 15 min grace + 10 min buffer)
+    const lateAlerts = included
+      .filter(s => s.isLate && (s.lateMin || 0) > 25)
+      .map(s => ({
+        id: `late_relief_${dateStr}_${s.label}_${s.lateMin}`,
+        visitId: s.visitId || '',
+        label: s.label,
+        lateMin: s.lateMin,
+        arrivalTime: s.arrivalTime,
+        driverName: reliefName,
+        severity: (s.lateMin || 0) > 40 ? 'error' : 'warning'
+      }));
+    const existingAlerts = getLateAlerts(dateStr).filter((a: any) => a.driverName !== reliefName);
+    saveLateAlerts(dateStr, [...existingAlerts, ...lateAlerts]);
+    const totalDriveMin = Math.round(actualDriveSeconds / 60);
+    const workMins = included.filter(s => s.type !== 'depart' && s.type !== 'home').reduce((sum, s) => sum + (s.durationMin || 0), 0);
 
-    // Team member hours (same logic as RoutePlanner)
-    const allTeamMemberIds = new Set<string>();
-    data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
-
-    const memberHours: TeamMemberHours[] = Array.from(allTeamMemberIds).map(id => {
-      const tm = cleaners.find(c => c.id === id);
-      if (!tm) return null;
-
-      const pickupIdx = stops.findIndex(s =>
-        (s.type === 'pickup' && s.teamMemberId === id) ||
-        (s.type === 'pickup' && s.label === `Pick up ${tm.name}`)
-      );
-      const dropoffIdx = stops.findIndex(s =>
-        (s.type === 'dropoff' && s.teamMemberId === id) ||
-        (s.type === 'dropoff' && s.label === `Drop off ${tm.name}`)
-      );
-
-      let searchStart = 0;
-      let searchEnd = stops.length;
-      if (pickupIdx >= 0) searchStart = pickupIdx + 1;
-      if (dropoffIdx >= 0) searchEnd = dropoffIdx;
-
-      const candidateCleans = stops.slice(searchStart, searchEnd).filter(s => s.type === 'clean');
-      let relevantCleans: RouteStop[] = [];
-      for (const clean of candidateCleans) {
-        if (!clean.visitId) { relevantCleans.push(clean); continue; }
-        const visit = data.driverVisits.find(v => v.id === clean.visitId);
-        if (visit) {
-          let assignedIds = visit.assignedCleanerIds || [];
-          if (assignedIds.length === 0) {
-            const team = teams.find(t => t.id === visit.assignedTeamId);
-            if (team) assignedIds = team.cleanerIds;
-          }
-          if (assignedIds.includes(id)) relevantCleans.push(clean);
-        }
-      }
-
-      const isMainDriver = tm.id === data.driver.id;
-
-      if (!isMainDriver) {
-        // Passenger: from arrival at first clean to departure from last clean
-        if (relevantCleans.length === 0) {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-
-        const firstClean = relevantCleans[0];
-        const lastClean = relevantCleans[relevantCleans.length - 1];
-
-        const firstCleanIdx = stops.indexOf(firstClean);
-        const lastCleanIdx = stops.indexOf(lastClean);
-
-        let travelMinutes = 0;
-        for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
-          travelMinutes += stops[i].legDurationMin || 0;
-        }
-
-        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
-
-        const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
-        const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
-        const totalMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
-
-        const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
-        const paidMinutes = cleanMinutes + travelMinutes;
-
-        return {
-          name: tm.name,
-          minutes: paidMinutes,
-          hours: Math.round((paidMinutes / 60) * 10) / 10,
-          isDriver: false,
-          cleanMinutes,
-          travelMinutes,
-          waitMinutes
-        };
-      } else {
-        // Main driver: door-to-door
-        let startTime: Date;
-        let endTime: Date;
-        if (pickupIdx >= 0) {
-          startTime = parse(stops[pickupIdx].arrivalTime, 'HH:mm', new Date());
-        } else if (relevantCleans.length > 0) {
-          startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
-        } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-        if (dropoffIdx >= 0) {
-          endTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
-        } else if (relevantCleans.length > 0) {
-          endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
-        } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-        const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-        const minutes = rawMinutes - totalWaitMin;
-
-        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
-        const travelMinutes = Math.max(0, minutes - cleanMinutes);
-
-        return {
-          name: tm.name,
-          minutes,
-          hours: Math.round((minutes / 60) * 10) / 10,
-          isDriver: true,
-          cleanMinutes,
-          travelMinutes,
-          waitMinutes: 0
-        };
-      }
-    }).filter(Boolean) as TeamMemberHours[];
+    // Driver hours: total elapsed from leaving home to arriving back home
+    const firstStop = included[0];
+    const lastStop = included[included.length - 1];
+    let driverHrs = 0;
+    if (firstStop?.arrivalTime && (lastStop?.departTime || lastStop?.arrivalTime)) {
+      const start = parse(firstStop.arrivalTime, 'HH:mm', new Date());
+      const end = parse(lastStop.departTime || lastStop.arrivalTime, 'HH:mm', new Date());
+      const totalMin = Math.round((end.getTime() - start.getTime()) / 60000);
+      driverHrs = Math.round((totalMin / 60) * 10) / 10;
+    }
 
     setTotalKm(Math.round(totalDist / 100) / 10);
-    setDriverHours(driverTotalHours);
-    setCleanHours(cleanTotalHours);
-    setActualDriveMinutes(actualDriveMin);
-    setTeamHours(memberHours);
+    setDriverHours(driverHrs);
+    setCleanHours(Math.round((workMins / 60) * 10) / 10);
+    setActualDriveMinutes(totalDriveMin);
+    setTeamHours([]);
     setRouteStops(stops);
+
+    // Render map
+    if (mapRef.current && window.google) {
+      if (!isMapAlive()) {
+        mapInstance.current = null;
+        directionsRenderer.current = null;
+      }
+      if (!mapInstance.current) {
+        mapInstance.current = new window.google.maps.Map(mapRef.current, {
+          zoom: 12,
+          center: origin,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+        });
+      }
+      if (routeResult && routeResult.routes?.[0]) {
+        if (!directionsRenderer.current) {
+          directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+            map: mapInstance.current,
+            suppressMarkers: true,
+          });
+        }
+        directionsRenderer.current.setDirections(routeResult);
+        mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+      } else {
+        if (directionsRenderer.current) {
+          directionsRenderer.current.setDirections({ routes: [] });
+        }
+        const bounds = new window.google.maps.LatLngBounds();
+        included.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
+        if (!bounds.isEmpty()) {
+          mapInstance.current.fitBounds(bounds);
+        }
+      }
+      addMarkers(mapInstance.current, included);
+    }
+
     setLoading(false);
-    directionsResultRef.current = routeResult;
-  }, [cleaners, teams]);
+  };
 
-  const renderMap = (stops: RouteStop[], routeResult: any) => {
-    const included = stops;
-    const latLngs = included.map(s => s.latLng).filter(Boolean);
-    if (latLngs.length < 2 || !mapRef.current || !window.google) return;
+  const handleSaveRelief = () => {
+    saveRelief(dateStr, routeStops);
+    setReliefSaved(true);
+  };
 
-    const origin = latLngs[0];
+  const handleClearRelief = () => {
+    if (confirm('Delete saved relief driver for this day?')) {
+      clearRelief(dateStr);
+      // Clear late alerts for relief driver
+      try {
+        const raw = localStorage.getItem(LATE_ALERTS_KEY);
+        if (raw) {
+          const all = JSON.parse(raw);
+          if (all[dateStr]) {
+            all[dateStr] = all[dateStr].filter((a: any) => !a.id.startsWith('late_relief_'));
+            if (all[dateStr].length === 0) delete all[dateStr];
+            localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+          }
+        }
+      } catch { /* ignore */ }
+      setRouteStops([]);
+      setReliefStops([]);
+      setReliefSaved(false);
+      setTotalKm(0);
+      setDriverHours(0);
+      setCleanHours(0);
+      setActualDriveMinutes(0);
+      setTeamHours([]);
+      setRouteUrl('');
+      clearMarkers();
+      if (directionsRenderer.current) {
+        directionsRenderer.current.setMap(null);
+        directionsRenderer.current = null;
+      }
+    }
+  };
 
-    if (!isMapAlive()) {
-      mapInstance.current = null;
-      directionsRenderer.current = null;
+  const handleSaveExtraStops = () => {
+    if (selectedDriver) {
+      saveExtraStops(dateStr, selectedDriver.id, routeStops);
+      setExtraSaved(true);
+    }
+  };
+
+  const handleClearExtraStops = () => {
+    if (selectedDriver && confirm("Remove all extra stops from this driver's route?")) {
+      try {
+        const raw = localStorage.getItem(EXTRA_STOPS_KEY);
+        if (raw) {
+          const all = JSON.parse(raw);
+          delete all[`${dateStr}_${selectedDriver.id}`];
+          localStorage.setItem(EXTRA_STOPS_KEY, JSON.stringify(all));
+        }
+      } catch { /* ignore */ }
+      setExtraSaved(false);
+      // Clear late alerts for this driver
+      try {
+        const raw = localStorage.getItem(LATE_ALERTS_KEY);
+        if (raw) {
+          const all = JSON.parse(raw);
+          if (all[dateStr]) {
+            all[dateStr] = all[dateStr].filter((a: any) => a.driverName !== selectedDriver?.name);
+            if (all[dateStr].length === 0) delete all[dateStr];
+            localStorage.setItem(LATE_ALERTS_KEY, JSON.stringify(all));
+          }
+        }
+      } catch { /* ignore */ }
+      if (routeDataRef.current) {
+        const originalStops = routeStops.filter(s => !s.isCustom);
+        setLoading(true);
+        processRoute(routeDataRef.current, originalStops).then(() => setLoading(false));
+      }
+    }
+  };
+
+  const saveRouteChanges = () => {
+    if (!selectedDriver) return;
+    setSaveStatus('saving');
+    try {
+      const states = routeStops
+        .filter(s => s.type === 'clean' && s.visitId)
+        .map(s => ({ visitId: s.visitId!, included: s.included !== false }));
+
+      // Update global visits array for cross-device sync
+      const updatedVisits = visits.map(v => {
+        if (v.date !== dateStr) return v;
+        const state = states.find(s => s.visitId === v.id);
+        if (state) {
+          return { ...v, cancelled: !state.included };
+        }
+        return v;
+      });
+      setVisits(updatedVisits);
+
+      // Save to localStorage as device backup
+      saveRouteStates(dateStr, selectedDriver.id, states);
+
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (err: any) {
+      console.error('Failed to save route changes:', err);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 4000);
+    }
+  };
+
+  const addExtraStop = async () => {
+    if (!routeDataRef.current) return;
+    setApiError(null);
+
+    // Geocode address
+    const loc = await geocodeAddress(extraAddress.trim());
+    if (!loc) {
+      setApiError(`Could not locate: ${extraAddress}`);
+      setLoading(false);
+      return;
     }
 
-    if (!mapInstance.current) {
-      mapInstance.current = new window.google.maps.Map(mapRef.current, {
-        zoom: 12,
-        center: origin,
-        streetViewControl: false,
-        mapTypeControl: false,
-        fullscreenControl: false,
-      });
+    // Build new stop
+    let stopLabel = extraType === 'pickup' ? `Pick up ${extraLabel}` :
+                    extraType === 'dropoff' ? `Drop off ${extraLabel}` :
+                    extraType === 'clean' ? `Clean — ${extraLabel}` :
+                    extraLabel;
+    if (extraType === 'other' && extraNotes.trim()) {
+      stopLabel += ` — ${extraNotes.trim()}`;
     }
-    if (!directionsRenderer.current) {
-      directionsRenderer.current = new window.google.maps.DirectionsRenderer({
-        map: mapInstance.current,
-        suppressMarkers: true,
-      });
+    if (extraTeamMembers.length > 0) {
+      const memberNames = extraTeamMembers.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ');
+      if (memberNames) stopLabel += ` [${memberNames}]`;
     }
-    directionsRenderer.current.setDirections(routeResult);
-    mapInstance.current.fitBounds(routeResult.routes[0].bounds);
-    addMarkers(mapInstance.current, included);
+    const newStop: RouteStop = {
+      type: extraType,
+      label: stopLabel,
+      address: extraAddress,
+      arrivalTime: '',
+      durationMin: extraDuration,
+      targetTime: extraStartTime,
+      latLng: loc,
+      included: true,
+      isCustom: true,
+    };
+
+    // Insert into routeStops at correct chronological position (before home)
+    const updatedStops = [...routeStops];
+    let insertIdx = updatedStops.length - 1; // Before home
+    for (let i = 0; i < updatedStops.length; i++) {
+      const s = updatedStops[i];
+      let t = s.targetTime;
+      // For scheduled cleans, look up their original start time from visit data
+      if (!t && s.visitId) {
+        const v = dayVisits.find(dv => dv.id === s.visitId);
+        if (v) t = v.startTime;
+      }
+      // Use >= so same-time stops insert before (dropoff before clean)
+      if (t && t >= extraStartTime && s.type !== 'home') {
+        insertIdx = i;
+        break;
+      }
+    }
+    updatedStops.splice(insertIdx, 0, newStop);
+
+    // If pickup, add cleaner to teamMembersWithAddr if known
+    if (extraType === 'pickup') {
+      const matched = cleaners.find(c =>
+        c.name.toLowerCase() === extraLabel.trim().toLowerCase() ||
+        c.name.toLowerCase().includes(extraLabel.trim().toLowerCase())
+      );
+    if (matched && matched.address && !routeDataRef.current!.teamMembersWithAddr.find(tm => tm.id === matched.id)) {
+      routeDataRef.current!.teamMembersWithAddr.push(matched);
+      }
+    }
+
+    // Recalculate route — this handles backward timing from target times
+    await processRoute(routeDataRef.current!, updatedStops);
+
+    // Check for conflicts AFTER recalculation (using actual calculated times)
+    const conflicts: string[] = [];
+    const newStart = parse(extraStartTime, 'HH:mm', new Date());
+    const newEnd = addMinutes(newStart, extraDuration);
+
+    for (const stop of updatedStops) {
+      if (stop.included === false || stop.type === 'depart' || stop.type === 'home') continue;
+      if (stop === newStop) continue; // Don't check against itself
+      const stopStart = stop.arrivalTime ? parse(stop.arrivalTime, 'HH:mm', new Date()) : null;
+      const stopEnd = stop.departTime ? parse(stop.departTime, 'HH:mm', new Date()) : (stopStart ? addMinutes(stopStart, stop.durationMin || 0) : null);
+      if (!stopStart || !stopEnd) continue;
+
+      if (newStart < stopEnd && newEnd > stopStart) {
+        if (stop.type === 'clean' && extraType === 'clean') {
+          conflicts.push(`ALERT: Overlaps existing clean: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
+        } else {
+          conflicts.push(`WARNING: Conflicts with: ${stop.label} (${stop.arrivalTime}–${stop.departTime})`);
+        }
+      }
+    }
+
+    if (conflicts.length > 0) {
+      // Save violations to localStorage so they appear on calendar
+      const existing = getExtraViolations(dateStr);
+      const newVios: ConstraintViolation[] = conflicts.map((msg, idx) => ({
+        id: `extra_${Date.now()}_${idx}`,
+        visitId: updatedStops.find(s => s.type === 'clean' && s.included !== false)?.visitId || '',
+        message: msg,
+        severity: msg.startsWith('ALERT') ? 'error' : 'warning',
+      }));
+      saveExtraViolations(dateStr, [...existing, ...newVios]);
+      setApiError(conflicts.join('; '));
+    }
+
+    // Reset form
+    setExtraLabel('');
+    setExtraAddress('');
+    setExtraStartTime('09:00');
+    setExtraDuration(60);
+    setExtraNotes('');
+    setExtraTeamMembers([]);
+    setShowAddExtra(false);
+    setLoading(false);
   };
 
-  const addMarkers = (map: any, stops: RouteStop[]) => {
-    markersRef.current.forEach(m => m.setMap(null));
-    markersRef.current = [];
-    infoWindowsRef.current.forEach((iw: any) => iw.close());
-    infoWindowsRef.current = [];
-    let cleanCount = 0;
-    let pickupCount = 0;
-    let dropoffCount = 0;
-    let activeInfoWindow: any = null;
-
-    stops.forEach((stop, i) => {
-      if (!stop.latLng) return;
-
-      let labelText = '';
-      let color = '#64748b';
-      let zIndex = 5;
-
-      if (stop.type === 'depart') { labelText = 'S'; color = '#2563eb'; zIndex = 8; }
-      else if (stop.type === 'pickup') { labelText = `P${++pickupCount}`; color = '#059669'; zIndex = 7; }
-      else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; zIndex = 10; }
-      else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
-      else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
-
-      const marker = new window.google.maps.Marker({
-        position: stop.latLng,
-        map,
-        label: { text: labelText, color: 'white', fontSize: '13px', fontWeight: 'bold' },
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: color,
-          fillOpacity: 1,
-          strokeColor: 'white',
-          strokeWeight: 2,
-          scale: 16,
-        },
-        zIndex,
-      });
-
-      const infoContent = `
-        <div style="font-family: system-ui, sans-serif; padding: 6px; min-width: 200px; line-height: 1.4;">
-          <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 3px;">${stop.label}</div>
-          <div style="font-size: 12px; color: #334155; margin-bottom: 5px; word-wrap: break-word; max-width: 200px;">${stop.address}</div>
-          ${stop.arrivalTime ? `<div style="font-size: 11px; color: #475569;"><strong>Arrive:</strong> ${stop.arrivalTime}</div>` : ''}
-          ${stop.departTime ? `<div style="font-size: 11px; color: #475569;"><strong>Depart:</strong> ${stop.departTime}</div>` : ''}
-          ${stop.durationMin ? `<div style="font-size: 11px; color: #475569;"><strong>Duration:</strong> ${stop.durationMin} min</div>` : ''}
-          ${stop.waitMin ? `<div style="font-size: 11px; color: #b45309; font-weight: 600; margin-top: 3px;">Wait ${stop.waitMin} min</div>` : ''}
-          ${stop.isLate ? `<div style="font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 3px;">Late ${stop.lateMin} min</div>` : ''}
-          ${(i > 0 && stop.legDistanceKm !== undefined) ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid #e2e8f0; padding-top: 4px;">${stop.legDistanceKm.toFixed(1)} km • ${Math.round(stop.legDurationMin || 0)} min drive</div>` : ''}
-        </div>
-      `;
-
-      const infoWindow = new window.google.maps.InfoWindow({ content: infoContent, maxWidth: 240 });
-      marker.addListener('click', () => {
-        if (activeInfoWindow) activeInfoWindow.close();
-        infoWindow.open(map, marker);
-        activeInfoWindow = infoWindow;
-      });
-
-      markersRef.current.push(marker);
-      infoWindowsRef.current.push(infoWindow);
-    });
-  };
-
-  const goPrevDay = () => {
-    const d = new Date(selectedDate + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    setSelectedDate(formatLocalDate(d));
-  };
-
-  const goNextDay = () => {
-    const d = new Date(selectedDate + 'T00:00:00');
-    d.setDate(d.getDate() + 1);
-    setSelectedDate(formatLocalDate(d));
-  };
-
-
-  // Find this cleaner's relevant stats from the full route
-  const myPickupStop = hasDriverPickup
-    ? routeStops.find(s => s.type === 'pickup' && s.teamMemberId === cleaner.id)
-    : null;
-  const myDropoffStop = hasDriverPickup
-    ? routeStops.find(s => s.type === 'dropoff' && s.teamMemberId === cleaner.id)
-    : null;
-
-  const myTeamHours = teamHours.find(t => t.name === cleaner.name);
-  const myPaidHours = myTeamHours?.hours ?? 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      {/* Header */}
-      <header className="bg-hhce-dark border-b border-slate-800 sticky top-0 z-30 shadow-lg">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-700 rounded-lg flex items-center justify-center text-white shadow-md">
-              <User size={18} />
-            </div>
-            <div>
-              <h1 className="text-sm font-black text-white leading-none">{cleaner.name}</h1>
-              <p className="text-[9px] text-green-400 font-bold uppercase tracking-wider">
-                {cleaner.isDriver ? 'Driver' : 'Cleaner'}
-              </p>
-            </div>
-          </div>
-          <button 
-            onClick={onLogout} 
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors active:scale-95"
+    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+      <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shrink-0">
+        <h2 className="text-lg font-black flex items-center gap-2">
+          <Navigation size={20} /> Route Planner
+        </h2>
+        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl active:scale-95">
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+          {reliefMode ? `Relief Driver — ${format(selectedDate, 'EEEE, MMM d')}` : `Drivers on ${format(selectedDate, 'EEEE, MMM d')}`}
+        </label>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {!reliefMode && drivers.map(d => (
+            <button
+              key={d.id}
+              onClick={() => buildRoute(d)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                selectedDriver?.id === d.id
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:border-blue-300'
+              }`}
+            >
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color || '#94a3b8' }} />
+              {d.name}
+            </button>
+          ))}
+          {!reliefMode && drivers.length === 0 && (
+            <span className="text-sm text-slate-400 font-medium">No drivers scheduled today.</span>
+          )}
+          <button
+            onClick={() => {
+              const enteringRelief = !reliefMode;
+              setReliefMode(enteringRelief);
+              setSelectedDriver(null);
+              setRouteStops([]);
+              setReliefStops([]);
+              setTotalKm(0);
+              setDriverHours(0);
+              setCleanHours(0);
+              setActualDriveMinutes(0);
+              setTeamHours([]);
+              setApiError(null);
+              setRouteUrl('');
+              clearMarkers();
+              if (directionsRenderer.current) {
+                directionsRenderer.current.setMap(null);
+                directionsRenderer.current = null;
+              }
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+              reliefMode
+                ? 'bg-amber-500 text-white shadow-md'
+                : 'bg-white text-amber-700 border border-amber-200 hover:border-amber-400'
+            }`}
           >
-            <LogOut size={14} /> Exit
+            <Bus size={16} />
+            {reliefMode ? 'Exit Relief Driver' : 'Relief Driver'}
           </button>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-3xl mx-auto px-3 py-4 space-y-4">
-        {/* Date Navigator */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm flex items-center gap-2">
-          <button onClick={goPrevDay} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors active:scale-95">
-            <ChevronLeft size={20} />
-          </button>
-          <div className="flex-1 text-center">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{dayName(selectedDate)}</p>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="w-full text-center text-sm font-bold text-slate-800 bg-transparent focus:outline-none"
-            />
-          </div>
-          <button onClick={goNextDay} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors active:scale-95">
-            <ChevronRight size={20} />
-          </button>
-        </div>
-
-        {loading && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm text-center">
-            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-slate-500 font-medium">Calculating route...</p>
-          </div>
-        )}
-
-        {apiError && !loading && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-bold flex items-center gap-2">
-            <AlertTriangle size={14} /> {apiError}
-          </div>
-        )}
-
-        {myVisits.length === 0 && !loading && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm text-center">
-            <Calendar size={32} className="text-slate-300 mx-auto mb-2" />
-            <p className="text-slate-500 font-bold text-sm">No cleans scheduled.</p>
-            <p className="text-slate-400 text-xs mt-1">Enjoy your day off!</p>
-          </div>
-        )}
-
-        {myVisits.length > 0 && !loading && (
-          <>
-            {/* Summary Cards — same as RoutePlanner */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <Clock size={16} className="text-blue-600" /> Day Summary
-              </h2>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider block mb-1">First Clean</span>
-                  <span className="text-slate-800 font-black text-xl">
-                    {routeStops.find(s => s.type === 'clean')?.actualStartTime || routeStops.find(s => s.type === 'clean')?.arrivalTime || myVisits[0]?.startTime}
-                  </span>
-                </div>
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider block mb-1">Last Clean Ends</span>
-                  <span className="text-slate-800 font-black text-xl">
-                    {[...routeStops].reverse().find(s => s.type === 'clean')?.departTime || myVisits[myVisits.length - 1]?.startTime}
-                  </span>
-                </div>
-              </div>
-
-              {/* Driver / Pickup info */}
-              {cleaner.isDriver && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1">
-                  <p className="text-blue-800 text-xs font-bold flex items-center gap-2">
-                    <Car size={14} /> You are driving today
-                  </p>
-                  {teamHours.length > 0 && (
-                    <p className="text-slate-600 text-xs">
-                      With: <span className="font-bold">{teamHours.map(t => t.name).join(', ')}</span>
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {!cleaner.isDriver && hasDriverPickup && myDriver && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-blue-800 font-bold text-xs">
-                    <Car size={14} /> Driver Pickup — {myDriver.name}
-                  </div>
-                  {myPickupStop && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">Pickup time:</span>
-                      <span className="font-bold text-slate-800">{myPickupStop.arrivalTime}</span>
-                    </div>
-                  )}
-                  {myDropoffStop && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">Dropoff time:</span>
-                      <span className="font-bold text-slate-800">{myDropoffStop.arrivalTime}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {!cleaner.isDriver && !hasDriverPickup && (
-                <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                  <p className="text-amber-800 text-xs font-bold flex items-center gap-2">
-                    <User size={14} /> Solo Assignment — No driver pickup today
-                  </p>
-                </div>
-              )}
-
-              {/* Stats row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex items-center justify-between">
-                  <span className="text-green-800 text-xs font-bold uppercase tracking-wider">
-                    {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
-                  </span>
-                  <span className="text-green-700 font-black text-2xl">
-                    {cleaner.isDriver ? driverHours.toFixed(1) : myPaidHours.toFixed(1)} <span className="text-sm">hrs</span>
-                  </span>
-                </div>
-                <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
-                  <span className="text-purple-800 text-xs font-bold uppercase tracking-wider">Clean Hours</span>
-                  <span className="text-purple-700 font-black text-2xl">{cleanHours.toFixed(1)} <span className="text-sm">hrs</span></span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
-                  <span className="text-blue-800 text-xs font-bold uppercase tracking-wider">Total Distance</span>
-                  <span className="text-blue-700 font-black text-xl">{totalKm.toFixed(1)} <span className="text-sm">km</span></span>
-                </div>
-                <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center justify-between">
-                  <span className="text-amber-800 text-xs font-bold uppercase tracking-wider">Drive Time</span>
-                  <span className="text-amber-700 font-black text-xl">{actualDriveMinutes} <span className="text-sm">min</span></span>
-                </div>
-              </div>
-
-              {routeUrl && (
-                <a
-                  href={routeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors active:scale-95"
-                >
-                  <Navigation size={14} /> Open in Google Maps
-                </a>
-              )}
+      <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
+        <div className="sm:w-[420px] sm:border-r border-slate-200 overflow-y-auto bg-white">
+          {apiError && (
+            <div className="m-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-bold flex items-center gap-2">
+              <AlertTriangle size={14} /> {apiError}
             </div>
+          )}
 
-            {/* Route Timeline — identical to RoutePlanner read-only */}
-            <div className="space-y-3">
-              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <MapPin size={16} className="text-green-600" /> 
-                {cleaner.isDriver ? 'Your Route' : `${myDriver?.name}'s Route`} 
-                ({routeStops.filter(s => s.type === 'clean').length} cleans)
-              </h2>
+          {loading && (
+            <div className="p-8 text-center">
+              <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-slate-500 font-medium">Recalculating route...</p>
+            </div>
+          )}
 
-              <div className="relative pl-6 space-y-4">
-                <div className="absolute left-[11px] top-3 bottom-3 w-0.5 bg-slate-200" />
+          {/* RELIEF DRIVER SETUP PANEL */}
+          {reliefMode && routeStops.length === 0 && !loading && (
+            <div className="p-4 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-black text-amber-800 flex items-center gap-2">
+                  <Bus size={16} /> Relief Driver Setup
+                </h3>
 
-                {routeStops.map((stop, idx) => {
-                  const isMyStop = stop.type === 'clean' && myVisits.some(v => v.id === stop.visitId);
-                  const isMyPickup = stop.type === 'pickup' && stop.teamMemberId === cleaner.id;
-                  const isMyDropoff = stop.type === 'dropoff' && stop.teamMemberId === cleaner.id;
-                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || cleaner.isDriver || stop.type === 'depart' || stop.type === 'home';
-                  const isFirst = idx === 0;
-                  const isLast = idx === routeStops.length - 1;
+                <div>
+                  <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block mb-1">Driver Name</label>
+                  <input
+                    type="text"
+                    value={reliefName}
+                    onChange={e => setReliefName(e.target.value)}
+                    placeholder="e.g. Backup Driver"
+                    className="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  />
+                </div>
 
+                <div>
+                  <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block mb-1">Home Address</label>
+                  <input
+                    type="text"
+                    value={reliefHomeAddress}
+                    onChange={e => setReliefHomeAddress(e.target.value)}
+                    placeholder="e.g. 123 Main St, Kitchener"
+                    className="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Added stops list */}
+              {reliefStops.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Planned Stops ({reliefStops.length})</p>
+                  {reliefStops.map((stop) => (
+                    <div key={stop.id} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                        stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
+                        stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
+                        stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
+                        'bg-pink-100 text-pink-600'
+                      }`}>
+                        {stop.type === 'pickup' && <Users size={14} />}
+                        {stop.type === 'clean' && <MapPin size={14} />}
+                        {stop.type === 'dropoff' && <Users size={14} />}
+                        {stop.type === 'other' && <MapPin size={14} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">{stop.label}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{stop.address}</p>
+                        <p className="text-[10px] text-slate-400">
+                          <Clock size={9} className="inline mr-0.5" />
+                          Start {stop.startTime} • {stop.durationMin} min • {stop.type}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => removeReliefStopInput(stop.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors active:scale-95"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add stop form */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                <button
+                  onClick={() => setShowAddStop(!showAddStop)}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors active:scale-95"
+                >
+                  <Plus size={14} /> {showAddStop ? 'Cancel' : 'Add Stop'}
+                </button>
+
+                {showAddStop && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <select
+                      value={newStopType}
+                      onChange={e => {
+                        const t = e.target.value as any;
+                        setNewStopType(t);
+                        setNewStopDuration(t === 'pickup' || t === 'dropoff' ? 5 : 60);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                    >
+                      <option value="pickup">Pickup (team member)</option>
+                      <option value="clean">Clean (client)</option>
+                      <option value="dropoff">Dropoff (team member)</option>
+                      <option value="other">Other stop</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={newStopLabel}
+                      onChange={e => setNewStopLabel(e.target.value)}
+                      placeholder={newStopType === 'pickup' ? 'Team member name' : newStopType === 'clean' ? 'Client name' : newStopType === 'dropoff' ? 'Team member name' : 'Stop label'}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    />
+                    <input
+                      type="text"
+                      value={newStopAddress}
+                      onChange={e => setNewStopAddress(e.target.value)}
+                      placeholder="Address"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    />
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Start Time</label>
+                        <input
+                          type="time"
+                          value={newStopStartTime}
+                          onChange={e => setNewStopStartTime(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Duration (min)</label>
+                        <input
+                          type="number"
+                          value={newStopDuration}
+                          onChange={e => setNewStopDuration(Number(e.target.value))}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={addReliefStopInput}
+                      disabled={!newStopLabel || !newStopAddress || !newStopStartTime}
+                      className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 active:scale-95"
+                    >
+                      Add Stop
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={calculateReliefRoute}
+                disabled={reliefStops.length === 0 || !reliefHomeAddress.trim()}
+                className="w-full py-3 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Bus size={16} /> Calculate Relief Driver Route
+              </button>
+            </div>
+          )}
+
+          {/* ROUTE DISPLAY (shared for regular and relief) */}
+          {!loading && routeStops.length > 0 && (
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                  <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Total Distance</p>
+                  <p className="text-2xl font-black text-blue-700">{totalKm.toFixed(1)} <span className="text-sm font-bold">km</span></p>
+                </div>
+                <div className="p-3 bg-green-50 rounded-xl border border-green-100">
+                  <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Driver Hours</p>
+                  <p className="text-2xl font-black text-green-700">{driverHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
+                  <p className="text-[10px] text-green-600 font-medium mt-0.5">Door to door</p>
+                </div>
+                <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
+                  <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wider">Clean Hours</p>
+                  <p className="text-2xl font-black text-purple-700">{cleanHours.toFixed(1)} <span className="text-sm font-bold">hrs</span></p>
+                  <p className="text-[10px] text-purple-600 font-medium mt-0.5">Billable to clients</p>
+                </div>
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Actual Drive</p>
+                  <p className="text-2xl font-black text-amber-700">{actualDriveMinutes} <span className="text-sm font-bold">min</span></p>
+                  <p className="text-[10px] text-amber-600 font-medium mt-0.5">Google Maps directions</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <button
+                  onClick={copyPlan}
+                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${
+                    copied
+                      ? 'bg-green-600 text-white'
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                  {copied ? 'Copied!' : 'Copy Plan'}
+                </button>
+
+                {routeUrl && (
+                  <a
+                    href={routeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-95"
+                  >
+                    <ExternalLink size={16} />
+                    Open in Maps
+                  </a>
+                )}
+              </div>
+
+              {/* Save Route Changes */}
+              {!reliefMode && selectedDriver && routeStops.length > 0 && (
+                <div className="mb-4">
+                  <button
+                    onClick={saveRouteChanges}
+                    disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${
+                      saveStatus === 'saved'
+                        ? 'bg-green-600 text-white'
+                        : saveStatus === 'error'
+                        ? 'bg-red-600 text-white hover:bg-red-700'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                  >
+                    {saveStatus === 'saving' && (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Saving...
+                      </>
+                    )}
+                    {saveStatus === 'saved' && (
+                      <>
+                        <Check size={16} /> Saved
+                      </>
+                    )}
+                    {saveStatus === 'error' && (
+                      <>
+                        <AlertTriangle size={16} /> Retry Save
+                      </>
+                    )}
+                    {saveStatus === 'idle' && (
+                      <>
+                        <Save size={16} /> Save Changes
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-slate-400 text-center mt-1 font-medium">
+                    Saves stop inclusions for this device
+                  </p>
+                </div>
+              )}
+
+              {/* Relief save/clear buttons */}
+              {reliefMode && (
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={handleSaveRelief}
+                    disabled={reliefSaved}
+                    className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-600 transition-colors disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Save size={14} /> {reliefSaved ? 'Route Saved' : 'Save Relief Driver'}
+                  </button>
+                  <button
+                    onClick={handleClearRelief}
+                    className="px-4 py-2.5 bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-red-200 transition-colors active:scale-95 flex items-center gap-2"
+                  >
+                    <RotateCcw size={14} /> Clear
+                  </button>
+                </div>
+              )}
+
+              {/* Regular driver: save/clear extra stops */}
+              {!reliefMode && selectedDriver && routeStops.some(s => s.isCustom) && (
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={handleSaveExtraStops}
+                    disabled={extraSaved}
+                    className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-blue-700 transition-colors disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Save size={14} /> {extraSaved ? 'Saved' : 'Save Extra Stops'}
+                  </button>
+                  <button
+                    onClick={handleClearExtraStops}
+                    className="px-4 py-2.5 bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-red-200 transition-colors active:scale-95 flex items-center gap-2"
+                  >
+                    <RotateCcw size={14} /> Clear Extras
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-0 mb-4">
+                {routeStops.map((stop, i) => {
+                  const isExcluded = stop.included === false;
                   return (
-                    <div key={idx} className={`relative ${!cleaner.isDriver && !isRelevant ? 'opacity-40' : ''}`}>
-                      <div className={`absolute -left-[25px] top-2 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-black shadow-sm
-                        ${isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
-                          isLast ? 'bg-slate-500 border-slate-500 text-white' :
-                          stop.type === 'pickup' ? 'bg-green-600 border-green-600 text-white' :
-                          stop.type === 'dropoff' ? 'bg-amber-600 border-amber-600 text-white' :
-                          stop.type === 'clean' ? 'bg-purple-600 border-purple-600 text-white' :
-                          'bg-white border-slate-300 text-slate-500'}`}>
-                        {isFirst ? 'S' : isLast ? 'E' : stop.type === 'pickup' ? 'P' : stop.type === 'dropoff' ? 'D' : stop.type === 'clean' ? 'C' : ''}
+                    <div key={i} className={`flex gap-3 relative ${isExcluded ? 'opacity-50' : ''}`}>
+                      {i < routeStops.length - 1 && (
+                        <div className="absolute left-[19px] top-10 bottom-0 w-0.5 bg-slate-200" />
+                      )}
+                      <div className="flex flex-col items-center shrink-0 z-10 pt-1">
+                        <input
+                          type="checkbox"
+                          checked={stop.included !== false}
+                          onChange={() => toggleStop(i)}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </div>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 z-10 ${
+                        stop.type === 'depart' ? 'bg-blue-100 text-blue-600' :
+                        stop.type === 'pickup' ? 'bg-green-100 text-green-600' :
+                        stop.type === 'clean' ? 'bg-purple-100 text-purple-600' :
+                        stop.type === 'dropoff' ? 'bg-amber-100 text-amber-600' :
+                        stop.type === 'other' ? 'bg-pink-100 text-pink-600' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {stop.type === 'depart' && <Home size={18} />}
+                        {stop.type === 'pickup' && <Users size={18} />}
+                        {stop.type === 'clean' && <MapPin size={18} />}
+                        {stop.type === 'dropoff' && <Users size={18} />}
+                        {stop.type === 'home' && <Home size={18} />}
+                        {stop.type === 'other' && <MapPin size={18} />}
                       </div>
 
-                      <div 
-                        onClick={() => {
-                          if (stop.visitId) {
-                            const v = myVisits.find(x => x.id === stop.visitId);
-                            if (v) setDetailVisit(v);
-                          }
-                        }}
-                        className={`bg-white rounded-2xl border border-slate-200 p-3 shadow-sm transition-all ${stop.visitId ? 'cursor-pointer hover:shadow-md active:scale-[0.98]' : ''}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                              <span className={`text-xs font-black px-2 py-0.5 rounded-lg flex items-center gap-1 ${
-                                stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
-                              }`}>
-                                <Clock size={10} />
-                                {stop.arrivalTime || '----'}
-                                {stop.departTime && stop.departTime !== stop.arrivalTime ? ` – ${stop.departTime}` : ''}
-                              </span>
-                              {stop.waitMin && stop.waitMin > 0 && (
-                                <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                                  WAIT {stop.waitMin}m
-                                </span>
-                              )}
-                              {stop.isLate && (
-                                <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
-                                  LATE {stop.lateMin}m
-                                </span>
-                              )}
-                            </div>
-                            <h3 className={`font-bold text-sm mt-0.5 truncate ${cleaner.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
-                              {stop.label}
-                            </h3>
-                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                              <MapPin size={10} className="shrink-0" /> {stop.address}
-                            </p>
-                          </div>
-                          <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold shrink-0">
-                            {stop.durationMin || 0}m
+                      <div className="pb-5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          <span className={`text-sm font-bold ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                            {stop.label}
                           </span>
+                          {!isExcluded && (
+                            <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
+                              stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
+                            }`}>
+                              <Clock size={10} className="inline mr-0.5" />
+                              {stop.arrivalTime}
+                              {stop.departTime && ` – ${stop.departTime}`}
+                            </span>
+                          )}
+                          {!isExcluded && stop.waitMin && stop.waitMin > 0 && (
+                            <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                              WAIT {stop.waitMin} MIN
+                            </span>
+                          )}
+                          {!isExcluded && stop.isLate && (
+                            <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
+                              {stop.lateMin} MIN LATE
+                            </span>
+                          )}
+                          {isExcluded && (
+                            <span className="text-[10px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">
+                              SKIPPED
+                            </span>
+                          )}
                         </div>
-
-
-                        {idx > 0 && stop.legDistanceKm !== undefined && (
-                          <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
-                            <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km • {Math.round(stop.legDurationMin || 0)} min drive
+                        <p className={`text-xs truncate ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-500'}`}>
+                          {stop.address}
+                        </p>
+                        {!isExcluded && stop.targetTime && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Target: {stop.targetTime}
+                            {stop.actualStartTime && stop.actualStartTime !== stop.arrivalTime && ` • Actual: ${stop.actualStartTime}`}
                           </p>
                         )}
-
+                        {!isExcluded && stop.type === 'clean' && stop.durationMin && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {stop.durationMin} min estimated clean
+                          </p>
+                        )}
+                        {!isExcluded && stop.type === 'pickup' && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">5 min pickup window</p>
+                        )}
+                        {!isExcluded && i > 0 && stop.legDistanceKm !== undefined && (
+                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                            <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km drive • {Math.round(stop.legDurationMin || 0)} min
+                            {(stop.legDurationMin || 0) > 30 && (
+                              <span className="text-amber-600 font-bold ml-1">(tight)</span>
+                            )}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Team hours breakdown */}
-            {teamHours.length > 0 && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                  <Users size={10} /> Team Hours
-                </p>
-                <div className="space-y-2">
-                  {teamHours.map(tm => (
-                    <div key={tm.name} className={`flex items-center justify-between p-3 rounded-xl border ${tm.name === cleaner.name ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-100'}`}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tm.isDriver ? '#2563eb' : '#059669' }} />
-                        <div>
-                          <span className="text-sm font-bold text-slate-700">{tm.name}</span>
-                          {tm.name === cleaner.name && <span className="text-[10px] text-green-600 font-bold ml-1.5">(You)</span>}
-                          <span className="text-[10px] text-slate-400 ml-1.5 font-medium">
-                            {tm.isDriver ? 'Driver' : 'Cleaner'}
-                          </span>
+              {teamHours.length > 0 && (
+                <div className="border-t border-slate-200 pt-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1">
+                    <Users size={10} /> Team Member Hours
+                  </p>
+                  <div className="space-y-2">
+                    {teamHours.map(tm => (
+                      <div key={tm.name} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tm.isDriver ? '#2563eb' : '#059669' }} />
+                          <div>
+                            <span className="text-sm font-bold text-slate-700">{tm.name}</span>
+                            <span className="text-[10px] text-slate-400 ml-1.5 font-medium">
+                              {tm.isDriver ? '(Driver — door to door)' : '(Cleaner — first to last clean)'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-lg font-black text-slate-800">{tm.hours.toFixed(1)}</span>
+                          <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
+                          <p className="text-[10px] text-slate-400">{tm.minutes} min total</p>
+                          {!tm.isDriver && tm.cleanMinutes !== undefined && (
+                            <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                              <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
+                              <span className="mx-1">·</span>
+                              <span className="text-amber-600 font-bold">{Math.round(((tm.travelMinutes ?? 0) / 60) * 10) / 10}h</span> travel
+                            </p>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-lg font-black text-slate-800">{tm.hours.toFixed(1)}</span>
-                        <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
-                        <p className="text-[10px] text-slate-400">{tm.minutes} min</p>
-                        {!tm.isDriver && tm.cleanMinutes !== undefined && (
-                          <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                            <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
-                            <span className="mx-1">·</span>
-                            <span className="text-amber-600 font-bold">{Math.round(((tm.travelMinutes ?? 0) / 60) * 10) / 10}h</span> travel
-
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Google Map */}
-            {routeStops.length > 0 && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                  <Navigation size={10} /> Route Map
-                </p>
-                <div ref={mapRef} className="w-full h-64 rounded-xl bg-slate-100" />
-                {!API_KEY && (
-                  <p className="text-xs text-slate-400 text-center mt-2">Google Maps API key not configured.</p>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </main>
+              {/* ADD EXTRA STOP — only for regular driver routes */}
+              {!reliefMode && routeStops.length > 0 && (
+                <div className="border-t border-slate-200 pt-4 mt-4">
+                  <button
+                    onClick={() => setShowAddExtra(!showAddExtra)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors active:scale-95 mb-3"
+                  >
+                    <Plus size={14} /> {showAddExtra ? 'Cancel' : 'Add Extra Stop'}
+                  </button>
 
-      {/* Detail Modal */}
-      {detailVisit && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={() => setDetailVisit(null)}
-        >
-          <div 
-            className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg p-5 space-y-4 shadow-2xl animate-slide-up"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-lg text-slate-800">{detailVisit.clientName}</h3>
-              <button onClick={() => setDetailVisit(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">✕</button>
+                  {showAddExtra && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      <select
+                        value={extraType}
+                        onChange={e => {
+                          const t = e.target.value as any;
+                          setExtraType(t);
+                          setExtraDuration(t === 'pickup' || t === 'dropoff' ? 5 : 60);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                      >
+                        <option value="pickup">Pickup (team member)</option>
+                        <option value="clean">Clean (client)</option>
+                        <option value="dropoff">Dropoff (team member)</option>
+                        <option value="other">Other stop</option>
+                      </select>
+
+                      <input
+                        type="text"
+                        value={extraLabel}
+                        onChange={e => setExtraLabel(e.target.value)}
+                        placeholder={extraType === 'pickup' ? 'Team member name' : extraType === 'clean' ? 'Client name' : extraType === 'dropoff' ? 'Team member name' : 'Stop label'}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+
+                      <input
+                        type="text"
+                        value={extraAddress}
+                        onChange={e => setExtraAddress(e.target.value)}
+                        placeholder="Address"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+
+                      {extraType === 'other' && (
+                        <textarea
+                          value={extraNotes}
+                          onChange={e => setExtraNotes(e.target.value)}
+                          placeholder="Additional information about this stop..."
+                          rows={2}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                        />
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Start Time</label>
+                          <input
+                            type="time"
+                            value={extraStartTime}
+                            onChange={e => setExtraStartTime(e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Duration (min)</label>
+                          <input
+                            type="number"
+                            value={extraDuration}
+                            onChange={e => setExtraDuration(Number(e.target.value))}
+                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Team member checkboxes */}
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Who is in the car?</label>
+                        <div className="flex flex-wrap gap-2">
+                          {cleaners.filter(c => c.active).map(c => (
+                            <label key={c.id} className="flex items-center gap-1.5 text-xs text-slate-700 bg-white px-2 py-1 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+                              <input
+                                type="checkbox"
+                                checked={extraTeamMembers.includes(c.id)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setExtraTeamMembers(prev => [...prev, c.id]);
+                                  } else {
+                                    setExtraTeamMembers(prev => prev.filter(id => id !== c.id));
+                                  }
+                                }}
+                                className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                              />
+                              <span className="font-medium">{c.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={addExtraStop}
+                        disabled={!extraLabel || !extraAddress || !extraStartTime}
+                        className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-blue-700 transition-colors disabled:opacity-50 active:scale-95"
+                      >
+                        Add to Route
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <DetailContent visit={detailVisit} clients={clients} cleaners={cleaners} teams={teams} onClose={() => setDetailVisit(null)} />
-          </div>
+          )}
+
+          {!loading && !selectedDriver && !reliefMode && !apiError && (
+            <div className="p-8 text-center">
+              <Car className="mx-auto mb-3 text-slate-300" size={40} />
+              <p className="text-sm text-slate-500 font-medium">Select a driver to calculate their route.</p>
+            </div>
+          )}
+
+          {reliefMode && routeStops.length === 0 && !loading && reliefStops.length === 0 && (
+            <div className="p-8 text-center">
+              <Bus className="mx-auto mb-3 text-slate-300" size={40} />
+              <p className="text-sm text-slate-500 font-medium">Add stops to build a relief driver route.</p>
+              <p className="text-xs text-slate-400 mt-1">Enter driver name, home address, and add stops with start times.</p>
+            </div>
+          )}
         </div>
-      )}
+
+        <div className="flex-1 bg-slate-100 relative min-h-[300px]">
+          <div ref={mapRef} className="absolute inset-0" />
+          {!API_KEY && !mapInstance.current && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center p-6">
+                <MapPin className="mx-auto mb-3 text-slate-300" size={40} />
+                <p className="text-sm text-slate-500 font-medium">Google Maps API key required.</p>
+                <p className="text-xs text-slate-400 mt-1">Add VITE_GOOGLE_MAPS_API_KEY to .env</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
-
-function DetailContent({ visit, clients, cleaners, teams, onClose }: {
-  visit: Visit;
-  clients: import('../types').Client[];
-  cleaners: import('../types').Cleaner[];
-  teams: import('../types').Team[];
-  onClose: () => void;
-}) {
-  const client = clients.find(c => c.id === visit.clientId);
-  const endTime = format(addMinutesDateFns(parse(visit.startTime, 'HH:mm', new Date()), visit.durationMinutes), 'HH:mm');
-  let assignedIds = visit.assignedCleanerIds || [];
-  if (assignedIds.length === 0) {
-    const team = teams.find(t => t.id === visit.assignedTeamId);
-    if (team) assignedIds = team.cleanerIds;
-  }
-
-  return (
-    <div className="space-y-3 text-sm">
-      <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-3">
-        <Clock size={18} className="text-blue-500 shrink-0" />
-        <div>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Scheduled Time</p>
-          <p className="font-black text-slate-800">{visit.startTime} – {endTime} <span className="text-slate-400 font-normal">({visit.durationMinutes} min)</span></p>
-        </div>
-      </div>
-      <div className="flex items-start gap-3 text-slate-600">
-        <MapPin size={18} className="text-green-500 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Address</p>
-          <p>{visit.clientAddress || client?.address || 'No address on file'}</p>
-        </div>
-      </div>
-      {client?.phone && (
-        <div className="flex items-center gap-3 text-slate-600">
-          <Phone size={18} className="text-green-500 shrink-0" />
-          <div>
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Phone</p>
-            <p className="font-medium">{client.phone}</p>
-          </div>
-        </div>
-      )}
-      {client?.zone && <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Zone: {client.zone}</span>}
-      {client?.notes && (
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
-          <p className="font-bold flex items-center gap-1"><FileText size={12} /> House Notes</p>
-          <p>{client.notes}</p>
-        </div>
-      )}
-      {visit.teamName && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-800">
-          <p className="font-bold flex items-center gap-1"><Users size={12} /> Team: {visit.teamName}</p>
-          <p className="text-slate-600">
-            Assigned: {assignedIds.map(id => cleaners.find(c => c.id === id)?.name).filter(Boolean).join(', ')}
-          </p>
-        </div>
-      )}
-      <button onClick={onClose} className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 active:scale-[0.98]">
-        Close
-      </button>
-    </div>
-  );
-}
