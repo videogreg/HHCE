@@ -19,7 +19,17 @@ export const geocodeAddress = (address: string): Promise<any | null> => {
   return new Promise((resolve) => {
     if (!address) { resolve(null); return; }
     const geocoder = new (window as any).google.maps.Geocoder();
-    geocoder.geocode({ address }, (results: any, status: any) => {
+    // Bias geocoding to Ontario, Canada to prevent addresses like "London"
+    // from resolving to London UK instead of London Ontario.
+    const ontarioBounds = new (window as any).google.maps.LatLngBounds(
+      new (window as any).google.maps.LatLng(41.6, -95.2), // SW corner
+      new (window as any).google.maps.LatLng(56.9, -74.3)  // NE corner
+    );
+    geocoder.geocode({
+      address,
+      region: 'ca',
+      bounds: ontarioBounds,
+    }, (results: any, status: any) => {
       if (status === 'OK' && results?.[0]) {
         resolve(results[0].geometry.location);
       } else {
