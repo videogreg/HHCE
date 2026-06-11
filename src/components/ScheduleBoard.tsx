@@ -31,6 +31,11 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner } | { type: 'relief'; date: string } | null>(null);
   const [routeRefreshKey, setRouteRefreshKey] = useState(0);
 
+  // Scroll to top whenever admin switches view or date so alerts are always visible first
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [viewMode, selectedDate]);
+
   useEffect(() => {
     setCurrentMonth(selectedDate);
   }, [selectedDate]);
@@ -181,10 +186,18 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     } catch { return []; }
   })();
 
-  const activeDayCount = dayVisits.filter(v => !v.cancelled).length;
+  const getLateAlertsForVisit = (visit: Visit): any[] => {
+    return lateAlerts.filter((alert: any) => {
+      if (!alert.label) return false;
+      return alert.label === visit.clientName ||
+             alert.label === visit.clientAddress ||
+             (visit.clientName && alert.label.includes(visit.clientName)) ||
+             (alert.label && visit.clientName.includes(alert.label));
+    });
+  };
 
   const stats = {
-    total: activeDayCount,
+    total: dayVisits.filter(v => !v.cancelled).length,
     cancelled: dayVisits.filter(v => v.cancelled).length,
     errors: errorCount,
     warnings: warningCount,
@@ -328,7 +341,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               <>
                 <h2 className="text-lg font-black text-slate-800">{format(selectedDate, 'EEEE, MMM d')}</h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  {activeDayCount} visit{activeDayCount !== 1 ? 's' : ''}
+                  {stats.total} visit{stats.total !== 1 ? 's' : ''}
                 </p>
               </>
             )}
@@ -570,6 +583,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               const visibleViolations = getVisibleViolationsForVisit(visit);
               const hasError = visibleViolations.some((v: any) => v.severity === 'error');
               const hasWarning = visibleViolations.some((v: any) => v.severity === 'warning');
+              const visitLateAlerts = getLateAlertsForVisit(visit);
+              const hasLate = visitLateAlerts.length > 0;
               const team = teams.find(t => t.id === visit.assignedTeamId);
               const client = clients.find(c => c.id === visit.clientId);
 
@@ -596,6 +611,8 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       ? 'border-slate-200 opacity-50 grayscale'
                       : hasError
                       ? 'border-red-300 shadow-sm shadow-red-100'
+                      : hasLate
+                      ? 'border-orange-300 shadow-sm shadow-orange-100'
                       : hasWarning
                       ? 'border-amber-300 shadow-sm shadow-amber-100'
                       : 'border-white shadow-sm hover:shadow-md'
@@ -612,6 +629,11 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                         </h3>
                         {client?.preferredCleaners.length ? <Star size={12} className="text-amber-400 shrink-0" /> : null}
                         {client?.avoidCleaners.length ? <Ban size={12} className="text-red-400 shrink-0" /> : null}
+                        {hasLate && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-200">
+                            <Clock size={10} /> Late
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] text-slate-400 truncate mt-0.5">{visit.clientAddress}</p>
                     </button>
@@ -633,6 +655,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                           ? <AlertCircle key={v.id} size={18} className="text-red-500" />
                           : <AlertTriangle key={v.id} size={18} className="text-amber-500" />
                       ))}
+                      {hasLate && <Clock size={18} className="text-orange-500" />}
                     </div>
                   </div>
 
@@ -690,6 +713,19 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                           <XCircle size={12} /> Cancel Visit
                         </button>
                       </div>
+                    </div>
+                  )}
+
+                  {hasLate && !visit.cancelled && (
+                    <div className="mt-2 pt-2 border-t border-orange-100 space-y-1">
+                      {visitLateAlerts.map((alert: any) => (
+                        <div key={alert.id} className="flex items-center justify-between text-[11px] font-medium text-orange-600">
+                          <span className="flex items-center gap-1">
+                            <Clock size={10} />
+                            Route running {alert.lateMin} min late — arriving at {alert.arrivalTime}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
 
