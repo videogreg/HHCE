@@ -20,7 +20,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
   const [editForm, setEditForm] = useState<Partial<Client>>({});
   const [newClient, setNewClient] = useState<Partial<Client>>({
     name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00',
-    preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''
+    preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: '', instructions: ''
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Client>[] | null>(null);
@@ -50,10 +50,11 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
       avoidCleaners: newClient.avoidCleaners || [],
       durationMinutes: newClient.durationMinutes || 120,
       phone: newClient.phone || '',
-      notes: newClient.notes || ''
+      notes: newClient.notes || '',
+      instructions: newClient.instructions || ''
     };
     setClients([...clients, client]);
-    setNewClient({ name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00', preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: '' });
+    setNewClient({ name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00', preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: '', instructions: '' });
     setShowAdd(false);
   };
 
@@ -134,6 +135,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           phone: p.phone || existing.phone,
           zone: p.zone || existing.zone,
           notes: p.notes || existing.notes,
+          instructions: p.instructions || existing.instructions,
           durationMinutes: (p.durationMinutes && p.durationMinutes !== 120) ? p.durationMinutes : (existing.durationMinutes || 120),
           notBefore: p.notBefore || existing.notBefore,
           notAfter: p.notAfter || existing.notAfter,
@@ -202,7 +204,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
                     {isExisting ? 'UPDATE' : 'NEW'}
                   </span>
                   <span className="text-slate-500">{c.phone || 'No phone'}</span>
-                  <span className="text-slate-400 truncate">{c.notes || ''}</span>
+                  <span className="text-slate-400 truncate">{c.instructions || c.notes || ''}</span>
                 </div>
               );
             })}
@@ -324,6 +326,12 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
               value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} placeholder="e.g. Dog friendly, alarm code 1234" />
           </div>
 
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Instructions</label>
+            <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              value={newClient.instructions} onChange={e => setNewClient({ ...newClient, instructions: e.target.value })} placeholder="e.g. Door code 1234, clean upstairs only" />
+          </div>
+
           <button onClick={addClient} disabled={!newClient.name?.trim()}
             className="w-full py-3 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 disabled:opacity-40 transition-colors active:scale-[0.98]">
             Add Client
@@ -365,6 +373,12 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
                   {client.phone && <div className="flex items-center gap-2"><Phone size={12} className="shrink-0 text-slate-400" /> {client.phone}</div>}
                   <div className="flex items-center gap-2"><Clock size={12} className="shrink-0 text-slate-400" /> Window: {client.notBefore} - {client.notAfter}</div>
                   {client.notes && <div className="flex items-start gap-2"><FileText size={12} className="shrink-0 mt-0.5 text-slate-400" /> {client.notes}</div>}
+                  {client.instructions && (
+                    <div className="flex items-start gap-2">
+                      <FileText size={12} className="shrink-0 mt-0.5 text-orange-400" />
+                      <span className="text-orange-700 font-medium">{client.instructions}</span>
+                    </div>
+                  )}
                   {client.preferredCleaners.length > 0 && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <Star size={12} className="shrink-0 text-amber-400" />
@@ -482,6 +496,11 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
                       <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                         value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Instructions</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        value={editForm.instructions || ''} onChange={e => setEditForm({ ...editForm, instructions: e.target.value })} />
                     </div>
                   </div>
                   <div className="flex gap-2">

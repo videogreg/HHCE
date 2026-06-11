@@ -124,6 +124,19 @@ const buildNotes = (row: Record<string, string>): string => {
   return '';
 };
 
+const buildInstructions = (row: Record<string, string>): string => {
+  const instructions = getColumn(row, [
+    'instructions',
+    'client instructions',
+    'house instructions',
+    'cleaning instructions',
+    'door code',
+    'access instructions'
+  ]);
+  if (instructions) return instructions;
+  return '';
+};
+
 const buildZone = (row: Record<string, string>): string => {
   const serviceCity = getColumn(row, ['service city']);
   if (serviceCity) return serviceCity;
@@ -299,6 +312,7 @@ export const parseClientsCSV = (csvContent: string): ParseClientsResult => {
       const address = buildAddress(row);
       const phone = buildPhone(row);
       const notes = buildNotes(row);
+      const instructions = buildInstructions(row);
       const zone = buildZone(row);
 
       clients.push({
@@ -312,6 +326,7 @@ export const parseClientsCSV = (csvContent: string): ParseClientsResult => {
         durationMinutes,
         zone,
         notes,
+        instructions,
       });
 
       stats.imported++;

@@ -1081,10 +1081,10 @@ function DetailContent({ visit, clients, cleaners, teams, onClose }: {
         </div>
       )}
       {client?.zone && <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Zone: {client.zone}</span>}
-      {client?.notes && (
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
-          <p className="font-bold flex items-center gap-1"><FileText size={12} /> House Notes</p>
-          <p>{client.notes}</p>
+      {client?.instructions && (
+        <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-xs text-orange-800">
+          <p className="font-bold flex items-center gap-1"><FileText size={12} /> Instructions</p>
+          <p>{client.instructions}</p>
         </div>
       )}
       {visit.teamName && (
