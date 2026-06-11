@@ -141,7 +141,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const paddingDays = Array.from({ length: startDayIndex }, () => null);
   const calendarDays = [...paddingDays, ...daysInMonth];
 
-  const getDayVisitCount = (d: Date) => visits.filter(v => v.date === format(d, 'yyyy-MM-dd') && !v.cancelled && v.durationMinutes > 0 && v.clientId && v.clientName).length;
+  const getDayVisitCount = (d: Date) => visits.filter(v => v.date === format(d, 'yyyy-MM-dd') && !v.cancelled).length;
   const getDayHasError = (d: Date) => {
     const ds = format(d, 'yyyy-MM-dd');
     const dVisits = visits.filter(v => v.date === ds);
@@ -181,8 +181,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     } catch { return []; }
   })();
 
+  const activeDayCount = dayVisits.filter(v => !v.cancelled).length;
+
   const stats = {
-    total: dayVisits.filter(v => v.durationMinutes > 0 && v.clientId && v.clientName).length,
+    total: activeDayCount,
     cancelled: dayVisits.filter(v => v.cancelled).length,
     errors: errorCount,
     warnings: warningCount,
@@ -326,7 +328,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               <>
                 <h2 className="text-lg font-black text-slate-800">{format(selectedDate, 'EEEE, MMM d')}</h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  {dayVisits.length} visit{dayVisits.length !== 1 ? 's' : ''}
+                  {activeDayCount} visit{activeDayCount !== 1 ? 's' : ''}
                 </p>
               </>
             )}
@@ -350,7 +352,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             {dayViewDays.map(d => {
               const isSelected = isSameDay(d, selectedDate);
               const ds = format(d, 'yyyy-MM-dd');
-              const count = visits.filter(v => v.date === ds && !v.cancelled && v.durationMinutes > 0 && v.clientId && v.clientName).length;
+              const count = visits.filter(v => v.date === ds && !v.cancelled).length;
               const isToday = isSameDay(d, new Date());
               const hasErr = getDayHasError(d);
               return (
@@ -468,7 +470,9 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             </div>
           </div>
         )}
-      </div>      <div className="grid grid-cols-4 gap-2">
+      </div>
+
+      <div className="grid grid-cols-5 gap-2">
         <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
           <div className="text-lg font-black text-slate-800">{stats.total}</div>
           <div className="text-[9px] font-bold text-slate-400 uppercase">Total</div>
