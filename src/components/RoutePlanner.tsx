@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner, Visit } from '../types';
-import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '../utils/maps';
+import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
 import {
-  X, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
+  LogOut, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
   ChevronLeft, ChevronRight, Navigation, AlertTriangle
 } from 'lucide-react';
-
-declare const google: any;
-
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -50,10 +47,9 @@ interface RouteData {
   teamLocs: Record<string, any>;
 }
 
-interface RoutePlannerProps {
-  onClose: () => void;
-  initialDriver?: Cleaner;
-  initialReliefDate?: string;
+interface CleanerDashboardProps {
+  cleaner: Cleaner;
+  onLogout: () => void;
 }
 
 const formatLocalDate = (d: Date): string => {
@@ -68,14 +64,13 @@ const dayName = (dateStr: string): string => {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 };
 
-export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate }) => {
+export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
   const { visits, clients, teams, cleaners } = useAppContext();
-  const [selectedDate, setSelectedDate] = useState<string>(initialReliefDate || formatLocalDate(new Date()));
-  const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(initialDriver || null);
-  const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate(new Date()));
+  const [detailVisit, setDetailVisit] = useState<<Visit | null>(null);
 
   // Route state (mirrors RoutePlanner)
-  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
+  const [routeStops, setRouteStops] = useState<<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);
@@ -86,12 +81,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [routeUrl, setRouteUrl] = useState('');
 
   // Map refs
-  const mapRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<any[]>([]);
-  const routeDataRef = useRef<RouteData | null>(null);
+  const routeDataRef = useRef<<RouteData | null>(null);
   const directionsResultRef = useRef<any>(null);
 
   // Determine role and driver for the day
@@ -106,13 +101,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         const team = teams.find(t => t.id === v.assignedTeamId);
         if (team) ids = team.cleanerIds;
       }
-      return ids.includes(selectedDriver?.id);
+      return ids.includes(cleaner.id);
     });
-  }, [dayVisits, selectedDriver?.id, teams]);
+  }, [dayVisits, cleaner.id, teams]);
 
   // Find the driver for this cleaner's team today
   const myDriver = useMemo(() => {
-    if (selectedDriver?.isDriver) return cleaner;
+    if (cleaner.isDriver) return cleaner;
     for (const v of myVisits) {
       let ids = v.assignedCleanerIds || [];
       if (ids.length === 0) {
@@ -127,7 +122,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     return null;
   }, [myVisits, cleaner, cleaners, teams]);
 
-  const hasDriverPickup = !!myDriver && !selectedDriver?.isDriver;
+  const hasDriverPickup = !!myDriver && !cleaner.isDriver;
 
   // Build route whenever date, cleaner, or visits change
   useEffect(() => {
@@ -145,16 +140,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     // If solo non-driver (no driver), show simple timeline without map
-    if (!selectedDriver?.isDriver && !myDriver) {
+    if (!cleaner.isDriver && !myDriver) {
       buildSoloRoute();
       return;
     }
 
     // Otherwise build full Google Maps route (driver or non-driver on team)
-    const driver = selectedDriver?.isDriver ? cleaner : myDriver!;
+    const driver = cleaner.isDriver ? cleaner : myDriver!;
     buildFullRoute(driver);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selectedDriver?.id, myVisits.length, myDriver?.id]);
+  }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
 
   // Render map whenever routeStops changes (even with null directionsResult)
   useEffect(() => {
@@ -749,13 +744,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   // Find this cleaner's relevant stats from the full route
   const myPickupStop = hasDriverPickup
-    ? routeStops.find(s => s.type === 'pickup' && s.teamMemberId === selectedDriver?.id)
+    ? routeStops.find(s => s.type === 'pickup' && s.teamMemberId === cleaner.id)
     : null;
   const myDropoffStop = hasDriverPickup
-    ? routeStops.find(s => s.type === 'dropoff' && s.teamMemberId === selectedDriver?.id)
+    ? routeStops.find(s => s.type === 'dropoff' && s.teamMemberId === cleaner.id)
     : null;
 
-  const myTeamHours = teamHours.find(t => t.name === selectedDriver?.name || 'Driver');
+  const myTeamHours = teamHours.find(t => t.name === cleaner.name);
   const myPaidHours = myTeamHours?.hours ?? 0;
 
   return (
@@ -768,17 +763,17 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
               <User size={18} />
             </div>
             <div>
-              <h1 className="text-sm font-black text-white leading-none">{selectedDriver?.name || 'Driver'}</h1>
+              <h1 className="text-sm font-black text-white leading-none">{cleaner.name}</h1>
               <p className="text-[9px] text-green-400 font-bold uppercase tracking-wider">
-                {selectedDriver?.isDriver ? 'Driver' : 'Cleaner'}
+                {cleaner.isDriver ? 'Driver' : 'Cleaner'}
               </p>
             </div>
           </div>
           <button 
-            onClick={onClose} 
+            onClick={onLogout} 
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors active:scale-95"
           >
-            <X size={14} /> Close
+            <LogOut size={14} /> Exit
           </button>
         </div>
       </header>
@@ -848,7 +843,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
               </div>
 
               {/* Driver / Pickup info */}
-              {selectedDriver?.isDriver && (
+              {cleaner.isDriver && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1">
                   <p className="text-blue-800 text-xs font-bold flex items-center gap-2">
                     <Car size={14} /> You are driving today
@@ -861,7 +856,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 </div>
               )}
 
-              {!selectedDriver?.isDriver && hasDriverPickup && myDriver && (
+              {!cleaner.isDriver && hasDriverPickup && myDriver && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
                   <div className="flex items-center gap-2 text-blue-800 font-bold text-xs">
                     <Car size={14} /> Driver Pickup — {myDriver.name}
@@ -881,7 +876,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 </div>
               )}
 
-              {!selectedDriver?.isDriver && !hasDriverPickup && (
+              {!cleaner.isDriver && !hasDriverPickup && (
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
                   <p className="text-amber-800 text-xs font-bold flex items-center gap-2">
                     <User size={14} /> Solo Assignment — No driver pickup today
@@ -893,10 +888,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-green-800 text-xs font-bold uppercase tracking-wider">
-                    {selectedDriver?.isDriver ? 'Driver Hours' : 'Paid Hours'}
+                    {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
                   </span>
                   <span className="text-green-700 font-black text-2xl">
-                    {selectedDriver?.isDriver ? driverHours.toFixed(1) : myPaidHours.toFixed(1)} <span className="text-sm">hrs</span>
+                    {cleaner.isDriver ? driverHours.toFixed(1) : myPaidHours.toFixed(1)} <span className="text-sm">hrs</span>
                   </span>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
@@ -932,7 +927,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             <div className="space-y-3">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <MapPin size={16} className="text-green-600" /> 
-                {selectedDriver?.isDriver ? 'Your Route' : `${myDriver?.name}'s Route`} 
+                {cleaner.isDriver ? 'Your Route' : `${myDriver?.name}'s Route`} 
                 ({routeStops.filter(s => s.type === 'clean').length} cleans)
               </h2>
 
@@ -941,14 +936,14 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
                 {routeStops.map((stop, idx) => {
                   const isMyStop = stop.type === 'clean' && myVisits.some(v => v.id === stop.visitId);
-                  const isMyPickup = stop.type === 'pickup' && stop.teamMemberId === selectedDriver?.id;
-                  const isMyDropoff = stop.type === 'dropoff' && stop.teamMemberId === selectedDriver?.id;
-                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || selectedDriver?.isDriver || stop.type === 'depart' || stop.type === 'home';
+                  const isMyPickup = stop.type === 'pickup' && stop.teamMemberId === cleaner.id;
+                  const isMyDropoff = stop.type === 'dropoff' && stop.teamMemberId === cleaner.id;
+                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || cleaner.isDriver || stop.type === 'depart' || stop.type === 'home';
                   const isFirst = idx === 0;
                   const isLast = idx === routeStops.length - 1;
 
                   return (
-                    <div key={idx} className={`relative ${!selectedDriver?.isDriver && !isRelevant ? 'opacity-40' : ''}`}>
+                    <div key={idx} className={`relative ${!cleaner.isDriver && !isRelevant ? 'opacity-40' : ''}`}>
                       <div className={`absolute -left-[25px] top-2 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-black shadow-sm
                         ${isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
                           isLast ? 'bg-slate-500 border-slate-500 text-white' :
@@ -989,7 +984,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                                 </span>
                               )}
                             </div>
-                            <h3 className={`font-bold text-sm mt-0.5 truncate ${selectedDriver?.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
+                            <h3 className={`font-bold text-sm mt-0.5 truncate ${cleaner.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
                               {stop.label}
                             </h3>
                             <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
@@ -1023,12 +1018,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 </p>
                 <div className="space-y-2">
                   {teamHours.map(tm => (
-                    <div key={tm.name} className={`flex items-center justify-between p-3 rounded-xl border ${tm.name === selectedDriver?.name || 'Driver' ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-100'}`}>
+                    <div key={tm.name} className={`flex items-center justify-between p-3 rounded-xl border ${tm.name === cleaner.name ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-100'}`}>
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tm.isDriver ? '#2563eb' : '#059669' }} />
                         <div>
                           <span className="text-sm font-bold text-slate-700">{tm.name}</span>
-                          {tm.name === selectedDriver?.name || 'Driver' && <span className="text-[10px] text-green-600 font-bold ml-1.5">(You)</span>}
+                          {tm.name === cleaner.name && <span className="text-[10px] text-green-600 font-bold ml-1.5">(You)</span>}
                           <span className="text-[10px] text-slate-400 ml-1.5 font-medium">
                             {tm.isDriver ? 'Driver' : 'Cleaner'}
                           </span>

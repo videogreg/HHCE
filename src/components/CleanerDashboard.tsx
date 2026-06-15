@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner, Visit } from '../types';
-import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '../utils/maps';
+import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
 import {
   LogOut, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
   ChevronLeft, ChevronRight, Navigation, AlertTriangle
 } from 'lucide-react';
-
-declare const google: any;
-
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -70,10 +67,10 @@ const dayName = (dateStr: string): string => {
 export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
   const { visits, clients, teams, cleaners } = useAppContext();
   const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate(new Date()));
-  const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
+  const [detailVisit, setDetailVisit] = useState<<Visit | null>(null);
 
   // Route state (mirrors RoutePlanner)
-  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
+  const [routeStops, setRouteStops] = useState<<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);
@@ -84,12 +81,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const [routeUrl, setRouteUrl] = useState('');
 
   // Map refs
-  const mapRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<any[]>([]);
-  const routeDataRef = useRef<RouteData | null>(null);
+  const routeDataRef = useRef<<RouteData | null>(null);
   const directionsResultRef = useRef<any>(null);
 
   // Determine role and driver for the day
