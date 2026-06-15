@@ -67,10 +67,10 @@ const dayName = (dateStr: string): string => {
 export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
   const { visits, clients, teams, cleaners } = useAppContext();
   const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate(new Date()));
-  const [detailVisit, setDetailVisit] = useState<<Visit | null>(null);
+  const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 
   // Route state (mirrors RoutePlanner)
-  const [routeStops, setRouteStops] = useState<<RouteStop[]>([]);
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);

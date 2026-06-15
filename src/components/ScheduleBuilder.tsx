@@ -20,12 +20,12 @@ interface Suggestion {
 export const ScheduleBuilder: React.FC = () => {
   const { visits, setVisits, cleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [showAdd, setShowAdd] = useState(false);
-  const [newVisit, setNewVisit] = useState<<Partial<<Visit>>({
+  const [newVisit, setNewVisit] = useState<Partial<Visit>({
     clientId: '', startTime: '09:00', assignedTeamId: '', durationMinutes: 120, assignedCleanerIds: []
   });
-  const [csvPreview, setCsvPreview] = useState<<Partial<<Visit>[] | null>(null);
+  const [csvPreview, setCsvPreview] = useState<Partial<Visit>[] | null>(null);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<<Partial<<Visit>>({});
+  const [editForm, setEditForm] = useState<Partial<Visit>({});
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime));
