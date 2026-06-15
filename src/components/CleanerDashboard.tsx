@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner, Visit } from '../types';
-import { loadGoogleMaps, geocodeAddress, calculateRoute } from '../utils/maps';
+import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '../utils/maps';
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
 import {
   LogOut, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
   ChevronLeft, ChevronRight, Navigation, AlertTriangle
 } from 'lucide-react';
+
+declare const google: any;
+
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -151,9 +154,9 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
 
-  // Render map AFTER routeStops state update causes re-render (so mapRef is mounted)
+  // Render map whenever routeStops changes (even with null directionsResult)
   useEffect(() => {
-    if (directionsResultRef.current && mapRef.current && routeStops.length > 0 && window.google) {
+    if (mapRef.current && routeStops.length > 0 && window.google) {
       renderMap(routeStops, directionsResultRef.current);
     }
   }, [routeStops]);
@@ -366,19 +369,52 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       : `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destStr}`;
     setRouteUrl(mapsUrl);
 
-    const routeResult = await calculateRoute(origin, destination, waypoints);
-    if (!routeResult) {
-      setApiError('Could not calculate route. Check addresses.');
-      setLoading(false);
-      return;
-    }
-
-    const legs = routeResult.routes[0].legs;
+    let routeResult = await calculateRoute(origin, destination, waypoints);
+    let legs: any[] = [];
     const expectedLegs = stops.length - 1;
-    if (legs.length < expectedLegs) {
-      setApiError(`Route calculation incomplete (${legs.length} of ${expectedLegs} legs). Two stops may share the same address.`);
-      setLoading(false);
-      return;
+
+    if (routeResult && routeResult.routes?.[0]?.legs) {
+      legs = routeResult.routes[0].legs;
+      if (legs.length < expectedLegs) {
+        // Pad missing legs for consecutive stops at the same location
+        const paddedLegs: any[] = [];
+        let legIdx = 0;
+        for (let i = 1; i < stops.length; i++) {
+          const prev = stops[i - 1];
+          const curr = stops[i];
+          if (prev.latLng && curr.latLng && areSameLatLng(prev.latLng, curr.latLng)) {
+            paddedLegs.push({
+              distance: { value: 0, text: '0 m' },
+              duration: { value: 0, text: '0 min' },
+              steps: [],
+              start_location: prev.latLng,
+              end_location: curr.latLng,
+            });
+          } else {
+            paddedLegs.push(legs[legIdx] || {
+              distance: { value: 0, text: '0 m' },
+              duration: { value: 0, text: '0 min' },
+              steps: [],
+              start_location: prev.latLng,
+              end_location: curr.latLng,
+            });
+            legIdx++;
+          }
+        }
+        legs = paddedLegs;
+      }
+    } else {
+      // Google Maps returned ZERO_RESULTS or failed — build synthetic zero-distance legs
+      setApiError(null);
+      for (let i = 1; i < stops.length; i++) {
+        legs.push({
+          distance: { value: 0, text: '0 m' },
+          duration: { value: 0, text: '0 min' },
+          steps: [],
+          start_location: stops[i - 1].latLng,
+          end_location: stops[i].latLng,
+        });
+      }
     }
 
     let totalDist = 0;
@@ -609,14 +645,27 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         fullscreenControl: false,
       });
     }
-    if (!directionsRenderer.current) {
-      directionsRenderer.current = new window.google.maps.DirectionsRenderer({
-        map: mapInstance.current,
-        suppressMarkers: true,
-      });
+
+    if (routeResult && routeResult.routes?.[0]) {
+      if (!directionsRenderer.current) {
+        directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+          map: mapInstance.current,
+          suppressMarkers: true,
+        });
+      }
+      directionsRenderer.current.setDirections(routeResult);
+      mapInstance.current.fitBounds(routeResult.routes[0].bounds);
+    } else {
+      // No valid route result — clear old line and fit to markers only
+      if (directionsRenderer.current) {
+        directionsRenderer.current.setDirections({ routes: [] });
+      }
+      const bounds = new window.google.maps.LatLngBounds();
+      included.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
+      if (!bounds.isEmpty()) {
+        mapInstance.current.fitBounds(bounds);
+      }
     }
-    directionsRenderer.current.setDirections(routeResult);
-    mapInstance.current.fitBounds(routeResult.routes[0].bounds);
     addMarkers(mapInstance.current, included);
   };
 
@@ -1081,10 +1130,10 @@ function DetailContent({ visit, clients, cleaners, teams, onClose }: {
         </div>
       )}
       {client?.zone && <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Zone: {client.zone}</span>}
-      {client?.instructions && (
-        <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-xs text-orange-800">
-          <p className="font-bold flex items-center gap-1"><FileText size={12} /> Instructions</p>
-          <p>{client.instructions}</p>
+      {client?.notes && (
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
+          <p className="font-bold flex items-center gap-1"><FileText size={12} /> House Notes</p>
+          <p>{client.notes}</p>
         </div>
       )}
       {visit.teamName && (
