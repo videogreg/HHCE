@@ -148,7 +148,7 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
 };
 
 export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
-  const { visits, clients, teams, cleaners } = useAppContext();
+  const { visits, clients, teams, cleaners, setVisits } = useAppContext();
   const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate(new Date()));
   const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 
