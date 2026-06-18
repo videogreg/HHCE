@@ -158,7 +158,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   // Render map whenever routeStops changes (even with null directionsResult)
   useEffect(() => {
-    if (mapRef.current && routeStops.length > 0 && window.google) {
+    if (mapRef.current && routeStops.length > 0 && (window as any).google) {
       renderMap(routeStops, directionsResultRef.current);
     }
   }, [routeStops]);
@@ -629,7 +629,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const renderMap = (stops: RouteStop[], routeResult: any) => {
     const included = stops;
     const latLngs = included.map(s => s.latLng).filter(Boolean);
-    if (latLngs.length < 2 || !mapRef.current || !window.google) return;
+    if (latLngs.length < 2 || !mapRef.current || !(window as any).google) return;
 
     const origin = latLngs[0];
 
@@ -639,7 +639,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     if (!mapInstance.current) {
-      mapInstance.current = new window.google.maps.Map(mapRef.current, {
+      mapInstance.current = new (window as any).google.maps.Map(mapRef.current, {
         zoom: 12,
         center: origin,
         streetViewControl: false,
@@ -650,7 +650,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
     if (routeResult && routeResult.routes?.[0]) {
       if (!directionsRenderer.current) {
-        directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+        directionsRenderer.current = new (window as any).google.maps.DirectionsRenderer({
           map: mapInstance.current,
           suppressMarkers: true,
         });
@@ -662,7 +662,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       if (directionsRenderer.current) {
         directionsRenderer.current.setDirections({ routes: [] });
       }
-      const bounds = new window.google.maps.LatLngBounds();
+      const bounds = new (window as any).google.maps.LatLngBounds();
       included.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
       if (!bounds.isEmpty()) {
         mapInstance.current.fitBounds(bounds);
@@ -694,12 +694,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
       else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
 
-      const marker = new window.google.maps.Marker({
+      const marker = new (window as any).google.maps.Marker({
         position: stop.latLng,
         map,
         label: { text: labelText, color: 'white', fontSize: '13px', fontWeight: 'bold' },
         icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
+          path: (window as any).google.maps.SymbolPath.CIRCLE,
           fillColor: color,
           fillOpacity: 1,
           strokeColor: 'white',
@@ -722,7 +722,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         </div>
       `;
 
-      const infoWindow = new window.google.maps.InfoWindow({ content: infoContent, maxWidth: 240 });
+      const infoWindow = new (window as any).google.maps.InfoWindow({ content: infoContent, maxWidth: 240 });
       marker.addListener('click', () => {
         if (activeInfoWindow) activeInfoWindow.close();
         infoWindow.open(map, marker);
