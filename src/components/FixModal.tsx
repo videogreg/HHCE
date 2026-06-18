@@ -134,6 +134,15 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
       if (!hasDriver) {
         warnings.push(`No driver assigned for ${client?.name || 'visit'} at ${v.startTime}`);
       }
+      const driverCount = finalTeamIds.filter(id => cleaners.find(c => c.id === id)?.isDriver).length;
+      if (driverCount > 1) {
+        const driverNames = finalTeamIds
+          .filter(id => cleaners.find(c => c.id === id)?.isDriver)
+          .map(id => cleaners.find(c => c.id === id)?.name)
+          .filter(Boolean)
+          .join(', ');
+        warnings.push(`Multiple drivers assigned for ${client?.name || 'visit'} at ${v.startTime} (${driverNames}). Only one driver per clean.`);
+      }
     });
 
     // Find conflict-free suggestion

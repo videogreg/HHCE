@@ -33,4 +33,17 @@ describe('checkConstraints', () => {
     const violations = checkConstraints(visits, mockCleaners, mockClients, mockTeams);
     expect(violations.some(v => v.severity === 'error' && v.message.includes("before client's 10:00"))).toBe(true);
   });
+
+  it('should flag multiple drivers on the same visit', () => {
+    const twoDrivers: Cleaner[] = [
+      { id: 'c1', name: 'Alice', isDriver: true, active: true, cannotWorkWith: [], unavailableDays: [], color: '#dbeafe' },
+      { id: 'c3', name: 'Charlie', isDriver: true, active: true, cannotWorkWith: [], unavailableDays: [], color: '#fef3c7' },
+    ];
+    const visits: Visit[] = [
+      { id: 'v2', clientId: 'cl1', clientName: 'Home A', clientAddress: '', date: '2024-05-07', startTime: '11:00', durationMinutes: 60, assignedCleanerIds: ['c1', 'c3'], assignedTeamId: '', cancelled: false }
+    ];
+
+    const violations = checkConstraints(visits, twoDrivers, mockClients, mockTeams);
+    expect(violations.some(v => v.severity === 'error' && v.message.includes('Multiple drivers assigned'))).toBe(true);
+  });
 });

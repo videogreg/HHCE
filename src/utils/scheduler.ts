@@ -125,6 +125,17 @@ export const checkConstraints = (
       });
     }
 
+    const driverCount = teamCleaners.filter(c => c.isDriver).length;
+    if (driverCount > 1) {
+      const driverNames = teamCleaners.filter(c => c.isDriver).map(c => c.name).join(', ');
+      violations.push({
+        id: hashString(`${visit.id}-multipleDrivers`),
+        visitId: visit.id,
+        message: `Multiple drivers assigned (${driverCount} drivers: ${driverNames}). Only one driver per clean.`,
+        severity: 'error'
+      });
+    }
+
     for (let i = 0; i < teamCleaners.length; i++) {
       for (let j = i + 1; j < teamCleaners.length; j++) {
         const c1 = teamCleaners[i];
