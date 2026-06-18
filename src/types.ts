@@ -31,6 +31,7 @@ export interface Client {
   phone?: string;
   email?: string;
   notes?: string;
+  instructions?: string; // door codes, access info, cleaning instructions for cleaners
 }
 
 export interface Visit {
