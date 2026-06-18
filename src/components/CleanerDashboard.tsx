@@ -187,7 +187,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
 
 
-  const buildSoloRoute = () => {
+  const buildSoloRoute = async () => {
+    setLoading(true);
+    setApiError(null);
+    clearMap();
+    directionsResultRef.current = null;
+
     // Non-driver with no driver — just their own visits
     const stops: RouteStop[] = myVisits.map((v) => {
       const client = clients.find(c => c.id === v.clientId);
@@ -202,6 +207,38 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       };
     });
 
+    // Geocode all client addresses so markers show on the map
+    await loadGoogleMaps(API_KEY);
+    const clientLocs: Record<string, any> = {};
+    for (const v of myVisits) {
+      const client = clients.find(c => c.id === v.clientId);
+      const addr = v.clientAddress || client?.address;
+      if (addr) {
+        const loc = await geocodeAddress(addr);
+        if (loc) clientLocs[v.id] = loc;
+      }
+    }
+    stops.forEach(s => {
+      if (s.visitId && clientLocs[s.visitId]) {
+        s.latLng = clientLocs[s.visitId];
+      }
+    });
+
+    // Build Google Maps URL for solo cleaner (search single, directions multi)
+    const validAddresses = stops
+      .filter(s => s.address && s.address !== 'Unknown')
+      .map(s => s.address);
+    if (validAddresses.length === 1) {
+      setRouteUrl(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(validAddresses[0])}`);
+    } else if (validAddresses.length > 1) {
+      const origin = encodeURIComponent(validAddresses[0]);
+      const destination = encodeURIComponent(validAddresses[validAddresses.length - 1]);
+      const waypoints = validAddresses.slice(1, -1).map(a => encodeURIComponent(a)).join('|');
+      setRouteUrl(
+        `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`
+      );
+    }
+
     setRouteStops(stops);
     const first = stops[0];
     const last = stops[stops.length - 1];
@@ -213,8 +250,6 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     setActualDriveMinutes(0);
     setTotalKm(0);
     setTeamHours([]);
-    setRouteUrl('');
-    clearMap();
     setLoading(false);
   };
 
@@ -627,7 +662,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const renderMap = (stops: RouteStop[], routeResult: any) => {
     const included = stops;
     const latLngs = included.map(s => s.latLng).filter(Boolean);
-    if (latLngs.length < 2 || !mapRef.current || !(window as any).google) return;
+    if (latLngs.length === 0 || !mapRef.current || !(window as any).google) return;
 
     const origin = latLngs[0];
 
@@ -638,7 +673,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
     if (!mapInstance.current) {
       mapInstance.current = new (window as any).google.maps.Map(mapRef.current, {
-        zoom: 12,
+        zoom: 14,
         center: origin,
         streetViewControl: false,
         mapTypeControl: false,
@@ -664,6 +699,14 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       included.forEach(s => { if (s.latLng) bounds.extend(s.latLng); });
       if (!bounds.isEmpty()) {
         mapInstance.current.fitBounds(bounds);
+        // Single marker zooms too close with fitBounds; back off a bit
+        if (latLngs.length === 1) {
+          const listener = mapInstance.current.addListener('idle', () => {
+            mapInstance.current.setZoom(Math.min(mapInstance.current.getZoom(), 15));
+          });
+          // Remove listener after one fire to avoid lingering
+          setTimeout(() => (window as any).google.maps.event.removeListener(listener), 500);
+        }
       }
     }
     addMarkers(mapInstance.current, included);
