@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { X, Wrench, Phone, AlertCircle, Check, RotateCcw, Bus, ChevronRight, UserX, Clock, CalendarX, CalendarClock, ArrowLeft, Save, Car, AlertTriangle } from 'lucide-react';
 import type { Visit } from '../types';
+import { checkConstraints } from '../utils/scheduler';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 
 interface FixModalProps {
@@ -312,14 +313,42 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
     const props: Proposal[] = [];
     const seed = proposalSet;
 
+    // Helper: check if a cleaner is already busy during a visit's time window
+    const hasTimeConflict = (cleanerId: string, visit: Visit, allVisits: Visit[]): boolean => {
+      const vStart = parse(visit.startTime, 'HH:mm', new Date());
+      const vEnd = addMinutes(vStart, visit.durationMinutes);
+      return allVisits.some(v => {
+        if (v.id === visit.id || v.cancelled) return false;
+        const ids = v.assignedCleanerIds || [];
+        if (!ids.includes(cleanerId)) return false;
+        const otherStart = parse(v.startTime, 'HH:mm', new Date());
+        const otherEnd = addMinutes(otherStart, v.durationMinutes);
+        return isBefore(vStart, otherEnd) && isBefore(otherStart, vEnd);
+      });
+    };
+
     // Helper: pick replacement candidate with variety based on seed
-    const pickReplacement = (candidates: any[], visit: Visit): any | undefined => {
+    // Prioritizes: preferred > unscheduled > busy, and within each: no-conflict > conflict
+    const pickReplacement = (candidates: any[], visit: Visit, allVisits?: Visit[]): any | undefined => {
       if (candidates.length === 0) return undefined;
       const client = clients.find(c => c.id === visit.clientId);
-      const preferred = candidates.filter(c => client?.preferredCleaners.includes(c.id));
-      const unscheduled = candidates.filter(c => !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
-      const busy = candidates.filter(c => dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
-      const ordered = [...preferred, ...unscheduled, ...busy];
+
+      let noConflict: any[] = candidates;
+      let conflict: any[] = [];
+
+      if (allVisits) {
+        noConflict = candidates.filter(c => !hasTimeConflict(c.id, visit, allVisits));
+        conflict = candidates.filter(c => hasTimeConflict(c.id, visit, allVisits));
+      }
+
+      const order = (pool: any[]) => {
+        const preferred = pool.filter(c => client?.preferredCleaners.includes(c.id));
+        const unscheduled = pool.filter(c => !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
+        const busy = pool.filter(c => dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
+        return [...preferred, ...unscheduled, ...busy];
+      };
+
+      const ordered = [...order(noConflict), ...order(conflict)];
       const unique = ordered.filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i);
       return unique[seed % unique.length] || unique[0];
     };
@@ -439,7 +468,8 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 if (c.cannotWorkWith.includes(did) || otherDriver.cannotWorkWith.includes(c.id)) return false;
                 return true;
               });
-              const partner = pickReplacement(candidates, targetVisit);
+              const tempVisit = { ...targetVisit, startTime: slotStart };
+              const partner = pickReplacement(candidates, tempVisit, dayVisits);
               const newIds = partner ? [did, partner.id] : [did];
               const p2: Proposal = { id: `time_p2_${targetVisit.id}_${did}_${seed}`, title: `Switch to ${otherDriver.name}`, subtitle: `Move to ${slotStart} in ${otherDriver.name}'s route`, changes: [], calls: [], visitUpdates: [], score: 75 };
               p2.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${slotStart} with ${otherDriver.name}`);
@@ -503,71 +533,117 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
             if (needsDriver && !c.isDriver) return false;
             return true;
           });
-          const best = pickReplacement(candidates, v);
+
+          // Prefer candidates with no time conflicts
+          const noConflict = candidates.filter(c => !hasTimeConflict(c.id, v, dayVisits));
+          const candidatesToPick = noConflict.length > 0 ? noConflict : candidates;
+          const best = pickReplacement(candidatesToPick, v, dayVisits);
           if (best) {
+            const isPreferred = client.preferredCleaners.includes(best.id);
+            const note = !isPreferred && client.preferredCleaners.length > 0 ? ' (not client preferred — ask for exception)' : '';
             const newIds = [...healthyIds, best.id];
-            p1.changes.push(`${v.clientName}: replace ${sickCleaner.name} with ${best.name}`);
+            p1.changes.push(`${v.clientName}: replace ${sickCleaner.name} with ${best.name}${note}`);
             p1.calls.push({ type: 'cleaner', name: best.name, phone: best.phone, message: `New assignment: ${v.clientName} at ${v.startTime} today.` });
             p1.visitUpdates.push({ visitId: v.id, updates: { assignedCleanerIds: newIds, assignedTeamId: '' } });
           }
         });
         if (p1.visitUpdates.length > 0) props.push(p1);
 
-        const p2: Proposal = { id: `sick_p2_${sickId}_${seed}`, title: 'Redistribute Visits', subtitle: 'Move visits to open slots in other driver routes', changes: [], calls: [], visitUpdates: [], score: 70 };
+        const p2: Proposal = { id: `sick_p2_${sickId}_${seed}`, title: 'Redistribute Visits', subtitle: 'Move visits to open slots in other driver routes or assign to unscheduled drivers', changes: [], calls: [], visitUpdates: [], score: 70 };
         p2.calls.push({ type: 'cleaner', name: sickCleaner.name, message: `Confirmed: you're off today.` });
         sickVisits.forEach(v => {
           const client = clients.find(c => c.id === v.clientId);
           if (!client) return;
           const dur = durationOf(v);
           let placed = false;
-          Object.entries(driverRoutes).forEach(([did, route]) => {
-            if (placed) return;
-            const driver = activeCleaners.find(c => c.id === did);
-            if (!driver || did === sickId) return;
-            for (let i = 0; i < route.length - 1; i++) {
-              const curEnd = addMinutes(parse(route[i].startTime, 'HH:mm', new Date()), durationOf(route[i]));
-              const nxtStart = parse(route[i + 1].startTime, 'HH:mm', new Date());
-              const gapMin = (nxtStart.getTime() - curEnd.getTime()) / 60000;
-              if (gapMin >= dur + 15) {
-                const slotStart = format(addMinutes(curEnd, 15), 'HH:mm');
-                const slotEnd = addMinutes(parse(slotStart, 'HH:mm', new Date()), dur);
-                if (client.notBefore && isBefore(parse(slotStart, 'HH:mm', new Date()), parse(client.notBefore, 'HH:mm', new Date()))) continue;
-                if (client.notAfter && isAfter(slotEnd, parse(client.notAfter, 'HH:mm', new Date()))) continue;
-                if (driver.mustBeOffBy && isAfter(slotEnd, parse(driver.mustBeOffBy, 'HH:mm', new Date()))) continue;
-                const paired = new Set<string>();
-                route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
-                const candidates = activeCleaners.filter(c => {
-                  if (c.id === did) return false;
-                  if (client.avoidCleaners.includes(c.id)) return false;
-                  if (c.cannotWorkWith.includes(did) || driver.cannotWorkWith.includes(c.id)) return false;
-                  return true;
-                });
-                const partner = pickReplacement(candidates, v);
-                const newIds = partner ? [did, partner.id] : [did];
-                p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
-                p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `Can we move your cleaning to ${slotStart} today?` });
-                p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
-                if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${driver.name} to ${v.clientName}.` });
-                p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
-                placed = true;
-                break;
-              }
-            }
+
+          // First try: find an unscheduled driver + free cleaner pair at the original time
+          const unscheduledDrivers = activeCleaners.filter(c => {
+            if (!c.isDriver) return false;
+            if (c.id === sickId) return false;
+            if (client.avoidCleaners.includes(c.id)) return false;
+            return !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id));
           });
+          for (const driver of unscheduledDrivers) {
+            if (placed) break;
+            const partnerCandidates = activeCleaners.filter(c => {
+              if (c.id === driver.id) return false;
+              if (c.id === sickId) return false;
+              if (client.avoidCleaners.includes(c.id)) return false;
+              if (c.cannotWorkWith.includes(driver.id) || driver.cannotWorkWith.includes(c.id)) return false;
+              return !hasTimeConflict(c.id, v, dayVisits);
+            });
+            const partner = pickReplacement(partnerCandidates, v, dayVisits);
+            const newIds = partner ? [driver.id, partner.id] : [driver.id];
+            const tempVisit = { ...v, assignedCleanerIds: newIds, assignedTeamId: '' };
+            const vios = checkConstraints([tempVisit], cleaners, clients, teams);
+            if (!vios.some(v => v.severity === 'error')) {
+              p2.changes.push(`${v.clientName}: assign to unscheduled driver ${driver.name}${partner ? ' + ' + partner.name : ''} at ${v.startTime}`);
+              p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `A new team will handle your cleaning at ${v.startTime} today.` });
+              p2.calls.push({ type: 'cleaner', name: driver.name, message: `New assignment: ${v.clientName} at ${v.startTime}.` });
+              if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${driver.name} to ${v.clientName}.` });
+              p2.visitUpdates.push({ visitId: v.id, updates: { startTime: v.startTime, assignedCleanerIds: newIds, assignedTeamId: '' } });
+              placed = true;
+              break;
+            }
+          }
+
+          // Second try: find gaps in existing driver routes
+          if (!placed) {
+            Object.entries(driverRoutes).forEach(([did, route]) => {
+              if (placed) return;
+              const driver = activeCleaners.find(c => c.id === did);
+              if (!driver || did === sickId) return;
+              for (let i = 0; i < route.length - 1; i++) {
+                const curEnd = addMinutes(parse(route[i].startTime, 'HH:mm', new Date()), durationOf(route[i]));
+                const nxtStart = parse(route[i + 1].startTime, 'HH:mm', new Date());
+                const gapMin = (nxtStart.getTime() - curEnd.getTime()) / 60000;
+                if (gapMin >= dur + 15) {
+                  const slotStart = format(addMinutes(curEnd, 15), 'HH:mm');
+                  const slotEnd = addMinutes(parse(slotStart, 'HH:mm', new Date()), dur);
+                  if (client.notBefore && isBefore(parse(slotStart, 'HH:mm', new Date()), parse(client.notBefore, 'HH:mm', new Date()))) continue;
+                  if (client.notAfter && isAfter(slotEnd, parse(client.notAfter, 'HH:mm', new Date()))) continue;
+                  if (driver.mustBeOffBy && isAfter(slotEnd, parse(driver.mustBeOffBy, 'HH:mm', new Date()))) continue;
+                  const paired = new Set<string>();
+                  route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
+                  const candidates = activeCleaners.filter(c => {
+                    if (c.id === did) return false;
+                    if (client.avoidCleaners.includes(c.id)) return false;
+                    if (c.cannotWorkWith.includes(did) || driver.cannotWorkWith.includes(c.id)) return false;
+                    return true;
+                  });
+                  const tempVisit = { ...v, startTime: slotStart };
+                  const partner = pickReplacement(candidates, tempVisit, dayVisits);
+                  const newIds = partner ? [did, partner.id] : [did];
+                  p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
+                  p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `Can we move your cleaning to ${slotStart} today?` });
+                  p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
+                  if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${driver.name} to ${v.clientName}.` });
+                  p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
+                  placed = true;
+                  break;
+                }
+              }
+            });
+          }
           if (!placed) p2.changes.push(`${v.clientName}: needs relief driver assignment`);
         });
         if (p2.visitUpdates.length > 0) props.push(p2);
 
         const reliefVisits = sickVisits.filter(v => !props.some(p => p.visitUpdates.some(u => u.visitId === v.id)));
         if (reliefVisits.length > 0 || props.length === 0) {
-          const p3: Proposal = { id: `sick_p3_${sickId}_${seed}`, title: 'Relief Driver Route', subtitle: 'Create a new route for unassigned visits', changes: [], calls: [], visitUpdates: [], score: 30 };
+          // Try to find a real unscheduled driver for the relief route
+          const unscheduledDrivers = activeCleaners.filter(c => c.isDriver && !dayVisits.some(v => (v.assignedCleanerIds || []).includes(c.id)));
+          const reliefDriver = unscheduledDrivers[seed % unscheduledDrivers.length] || unscheduledDrivers[0];
+          const reliefName = reliefDriver ? reliefDriver.name : 'Relief Driver';
+          const p3: Proposal = { id: `sick_p3_${sickId}_${seed}`, title: `Relief Driver Route${reliefDriver ? ` — ${reliefDriver.name}` : ''}`, subtitle: 'Create a new route for unassigned visits', changes: [], calls: [], visitUpdates: [], score: 30 };
           p3.calls.push({ type: 'cleaner', name: sickCleaner.name, message: `Confirmed: you're off today.` });
           reliefVisits.forEach(v => {
-            p3.changes.push(`${v.clientName}: relief driver at ${v.startTime}`);
+            p3.changes.push(`${v.clientName}: relief driver ${reliefName} at ${v.startTime}`);
             p3.calls.push({ type: 'client', name: v.clientName, phone: clients.find(c => c.id === v.clientId)?.phone, message: `A relief driver will handle your cleaning at ${v.startTime} today.` });
             p3.visitUpdates.push({ visitId: v.id, updates: { assignedCleanerIds: [], assignedTeamId: '' } });
           });
-          p3.reliefRoute = { name: 'Relief Driver', address: '', date: dateStr, stops: [] };
+          p3.reliefRoute = { name: reliefName, address: reliefDriver?.address || '', date: dateStr, stops: [] };
           props.push(p3);
         }
       });
