@@ -370,21 +370,30 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
         const driver = activeCleaners.find(c => ids.includes(c.id) && c.isDriver);
         if (driver) freedDriverIds.add(driver.id);
       });
-      let moved = false;
-      freedDriverIds.forEach(did => {
+      const freedDriverArray = Array.from(freedDriverIds);
+      if (freedDriverArray.length > 0) {
+        const driverIdx = seed % freedDriverArray.length;
+        const did = freedDriverArray[driverIdx];
         const route = driverRoutes[did] || [];
+        // Collect all valid visits that could be moved into a freed slot
+        const validMoves: { rv: Visit; cv: Visit }[] = [];
         route.forEach(rv => {
-          if (cancelledVisits.some(cv => cv.id === rv.id) || moved) return;
+          if (cancelledVisits.some(cv => cv.id === rv.id)) return;
           const cv = cancelledVisits.find(c => (c.assignedCleanerIds || []).includes(did));
-          if (cv) {
-            p1.changes.push(`Move ${rv.clientName} to ${cv.startTime} (freed slot)`);
-            p1.visitUpdates.push({ visitId: rv.id, updates: { startTime: cv.startTime } });
-            p1.calls.push({ type: 'client', name: rv.clientName, phone: clients.find(c => c.id === rv.clientId)?.phone, message: `Can we move your cleaning to ${cv.startTime} today?` });
-            moved = true;
-          }
+          if (cv) validMoves.push({ rv, cv });
         });
-      });
-      if (!moved) p1.changes.push('Cleaners get a shortened route / break');
+        if (validMoves.length > 0) {
+          const moveIdx = seed % validMoves.length;
+          const { rv, cv } = validMoves[moveIdx];
+          p1.changes.push(`Move ${rv.clientName} to ${cv.startTime} (freed slot)`);
+          p1.visitUpdates.push({ visitId: rv.id, updates: { startTime: cv.startTime } });
+          p1.calls.push({ type: 'client', name: rv.clientName, phone: clients.find(c => c.id === rv.clientId)?.phone, message: `Can we move your cleaning to ${cv.startTime} today?` });
+        } else {
+          p1.changes.push('Cleaners get a shortened route / break');
+        }
+      } else {
+        p1.changes.push('Cleaners get a shortened route / break');
+      }
       props.push(p1);
 
       const p2: Proposal = { id: `cancel_p2_${seed}`, title: 'Reassign Teams', subtitle: 'Cancel visits and send freed cleaners to help other busy routes', changes: [], calls: [], visitUpdates: [], score: 70 };
@@ -446,6 +455,8 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           }
         }
 
+        // Collect all valid gaps in all routes, then pick one using seed
+        const allGaps: { did: string; route: Visit[]; gapIdx: number; slotStart: string; otherDriver: any }[] = [];
         Object.entries(driverRoutes).forEach(([did, route]) => {
           const otherDriver = activeCleaners.find(c => c.id === did);
           if (!otherDriver) return;
@@ -459,29 +470,32 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
               if (client.notBefore && isBefore(parse(slotStart, 'HH:mm', new Date()), parse(client.notBefore, 'HH:mm', new Date()))) continue;
               if (client.notAfter && isAfter(slotEnd, parse(client.notAfter, 'HH:mm', new Date()))) continue;
               if (otherDriver.mustBeOffBy && isAfter(slotEnd, parse(otherDriver.mustBeOffBy, 'HH:mm', new Date()))) continue;
-
-              const paired = new Set<string>();
-              route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
-              const candidates = activeCleaners.filter(c => {
-                if (c.id === did) return false;
-                if (client.avoidCleaners.includes(c.id)) return false;
-                if (c.cannotWorkWith.includes(did) || otherDriver.cannotWorkWith.includes(c.id)) return false;
-                return true;
-              });
-              const tempVisit = { ...targetVisit, startTime: slotStart };
-              const partner = pickReplacement(candidates, tempVisit, dayVisits);
-              const newIds = partner ? [did, partner.id] : [did];
-              const p2: Proposal = { id: `time_p2_${targetVisit.id}_${did}_${seed}`, title: `Switch to ${otherDriver.name}`, subtitle: `Move to ${slotStart} in ${otherDriver.name}'s route`, changes: [], calls: [], visitUpdates: [], score: 75 };
-              p2.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${slotStart} with ${otherDriver.name}`);
-              p2.calls.push({ type: 'client', name: targetVisit.clientName, phone: client.phone, message: `Can we move your clean to ${slotStart} today?` });
-              p2.calls.push({ type: 'cleaner', name: otherDriver.name, message: `Added: ${targetVisit.clientName} at ${slotStart}.` });
-              if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${otherDriver.name} to ${targetVisit.clientName}.` });
-              p2.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
-              props.push(p2);
-              break;
+              allGaps.push({ did, route, gapIdx: i, slotStart, otherDriver });
             }
           }
         });
+
+        if (allGaps.length > 0) {
+          const gapIdx = seed % allGaps.length;
+          const { did, route, gapIdx: routeIdx, slotStart, otherDriver } = allGaps[gapIdx];
+          const paired = new Set<string>();
+          route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
+          const candidates = activeCleaners.filter(c => {
+            if (c.id === did) return false;
+            if (client.avoidCleaners.includes(c.id)) return false;
+            if (c.cannotWorkWith.includes(did) || otherDriver.cannotWorkWith.includes(c.id)) return false;
+            return true;
+          });
+          const tempVisit = { ...targetVisit, startTime: slotStart };
+          const partner = pickReplacement(candidates, tempVisit, dayVisits);
+          const newIds = partner ? [did, partner.id] : [did];
+          const p2: Proposal = { id: `time_p2_${targetVisit.id}_${did}_${seed}`, title: `Switch to ${otherDriver.name}`, subtitle: `Move to ${slotStart} in ${otherDriver.name}'s route`, changes: [], calls: [], visitUpdates: [], score: 75 };
+          p2.changes.push(`${targetVisit.clientName}: ${targetVisit.startTime} → ${slotStart} with ${otherDriver.name}`);
+          p2.calls.push({ type: 'client', name: targetVisit.clientName, phone: client.phone, message: `Can we move your clean to ${slotStart} today?` });
+          p2.calls.push({ type: 'cleaner', name: otherDriver.name, message: `Added: ${targetVisit.clientName} at ${slotStart}.` });
+          if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${otherDriver.name} to ${targetVisit.clientName}.` });
+          p2.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
+          props.push(p2);
 
         const freeDrivers = activeCleaners.filter(c => {
           if (!c.isDriver) return false;
@@ -590,8 +604,8 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
 
           // Second try: find gaps in existing driver routes
           if (!placed) {
+            const allGaps: { did: string; route: Visit[]; gapIdx: number; slotStart: string; driver: any }[] = [];
             Object.entries(driverRoutes).forEach(([did, route]) => {
-              if (placed) return;
               const driver = activeCleaners.find(c => c.id === did);
               if (!driver || did === sickId) return;
               for (let i = 0; i < route.length - 1; i++) {
@@ -601,30 +615,34 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 if (gapMin >= dur + 15) {
                   const slotStart = format(addMinutes(curEnd, 15), 'HH:mm');
                   const slotEnd = addMinutes(parse(slotStart, 'HH:mm', new Date()), dur);
-                  if (client.notBefore && isBefore(parse(slotStart, 'HH:mm', new Date()), parse(client.notBefore, 'HH:mm', new Date()))) continue;
-                  if (client.notAfter && isAfter(slotEnd, parse(client.notAfter, 'HH:mm', new Date()))) continue;
-                  if (driver.mustBeOffBy && isAfter(slotEnd, parse(driver.mustBeOffBy, 'HH:mm', new Date()))) continue;
-                  const paired = new Set<string>();
-                  route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
-                  const candidates = activeCleaners.filter(c => {
-                    if (c.id === did) return false;
-                    if (client.avoidCleaners.includes(c.id)) return false;
-                    if (c.cannotWorkWith.includes(did) || driver.cannotWorkWith.includes(c.id)) return false;
-                    return true;
-                  });
-                  const tempVisit = { ...v, startTime: slotStart };
-                  const partner = pickReplacement(candidates, tempVisit, dayVisits);
-                  const newIds = partner ? [did, partner.id] : [did];
-                  p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
-                  p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `Can we move your cleaning to ${slotStart} today?` });
-                  p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
-                  if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${driver.name} to ${v.clientName}.` });
-                  p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
-                  placed = true;
-                  break;
+                  if (client.notBefore && isBefore(parse(slotStart, 'HH:mm', new Date()), parse(client.notBefore, 'HH:mm', new Date()))) return;
+                  if (client.notAfter && isAfter(slotEnd, parse(client.notAfter, 'HH:mm', new Date()))) return;
+                  if (driver.mustBeOffBy && isAfter(slotEnd, parse(driver.mustBeOffBy, 'HH:mm', new Date()))) return;
+                  allGaps.push({ did, route, gapIdx: i, slotStart, driver });
                 }
               }
             });
+            if (allGaps.length > 0) {
+              const gapIdx = seed % allGaps.length;
+              const { did, route, slotStart, driver } = allGaps[gapIdx];
+              const paired = new Set<string>();
+              route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
+              const candidates = activeCleaners.filter(c => {
+                if (c.id === did) return false;
+                if (client.avoidCleaners.includes(c.id)) return false;
+                if (c.cannotWorkWith.includes(did) || driver.cannotWorkWith.includes(c.id)) return false;
+                return true;
+              });
+              const tempVisit = { ...v, startTime: slotStart };
+              const partner = pickReplacement(candidates, tempVisit, dayVisits);
+              const newIds = partner ? [did, partner.id] : [did];
+              p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
+              p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `Can we move your cleaning to ${slotStart} today?` });
+              p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
+              if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${driver.name} to ${v.clientName}.` });
+              p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
+              placed = true;
+            }
           }
           if (!placed) p2.changes.push(`${v.clientName}: needs relief driver assignment`);
         });
@@ -687,9 +705,9 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           const earlyVisits = cleanerVisits.filter(v => v.startTime < newStart);
           earlyVisits.forEach(v => {
             const client = clients.find(c => c.id === v.clientId);
-            let placed = false;
+            const allGaps: { did: string; route: Visit[]; gapIdx: number; slotStart: string; driver: any }[] = [];
             Object.entries(driverRoutes).forEach(([did, route]) => {
-              if (placed || did === cleanerId) return;
+              if (did === cleanerId) return;
               const driver = activeCleaners.find(c => c.id === did);
               if (!driver) return;
               for (let i = 0; i < route.length - 1; i++) {
@@ -698,16 +716,20 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 const gapMin = (nxtStart.getTime() - curEnd.getTime()) / 60000;
                 if (gapMin >= durationOf(v) + 15) {
                   const slotStart = format(addMinutes(curEnd, 15), 'HH:mm');
-                  p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
-                  p2.calls.push({ type: 'client', name: v.clientName, phone: client?.phone, message: `Can we move your clean to ${slotStart} today?` });
-                  p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
-                  p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: [did], assignedTeamId: '' } });
-                  placed = true;
-                  break;
+                  allGaps.push({ did, route, gapIdx: i, slotStart, driver });
                 }
               }
             });
-            if (!placed) p2.changes.push(`${v.clientName}: needs relief driver`);
+            if (allGaps.length > 0) {
+              const gapIdx = seed % allGaps.length;
+              const { did, slotStart, driver } = allGaps[gapIdx];
+              p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
+              p2.calls.push({ type: 'client', name: v.clientName, phone: client?.phone, message: `Can we move your clean to ${slotStart} today?` });
+              p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
+              p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: [did], assignedTeamId: '' } });
+            } else {
+              p2.changes.push(`${v.clientName}: needs relief driver`);
+            }
           });
           cleanerVisits.filter(v => v.startTime >= newStart).forEach(v => {
             p2.changes.push(`${v.clientName}: stays at ${v.startTime} with ${cleaner.name}`);
@@ -765,9 +787,9 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           });
           tailVisits.forEach(v => {
             const client = clients.find(c => c.id === v.clientId);
-            let placed = false;
+            const allGaps: { did: string; route: Visit[]; gapIdx: number; slotStart: string; driver: any }[] = [];
             Object.entries(driverRoutes).forEach(([did, route]) => {
-              if (placed || did === cleanerId) return;
+              if (did === cleanerId) return;
               const driver = activeCleaners.find(c => c.id === did);
               if (!driver) return;
               for (let i = 0; i < route.length - 1; i++) {
@@ -776,16 +798,20 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 const gapMin = (nxtStart.getTime() - curEnd.getTime()) / 60000;
                 if (gapMin >= durationOf(v) + 15) {
                   const slotStart = format(addMinutes(curEnd, 15), 'HH:mm');
-                  p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
-                  p2.calls.push({ type: 'client', name: v.clientName, phone: client?.phone, message: `Can we move your clean to ${slotStart} today?` });
-                  p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
-                  p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: [did], assignedTeamId: '' } });
-                  placed = true;
-                  break;
+                  allGaps.push({ did, route, gapIdx: i, slotStart, driver });
                 }
               }
             });
-            if (!placed) p2.changes.push(`${v.clientName}: needs relief driver`);
+            if (allGaps.length > 0) {
+              const gapIdx = seed % allGaps.length;
+              const { did, slotStart, driver } = allGaps[gapIdx];
+              p2.changes.push(`${v.clientName}: move to ${slotStart} with ${driver.name}`);
+              p2.calls.push({ type: 'client', name: v.clientName, phone: client?.phone, message: `Can we move your clean to ${slotStart} today?` });
+              p2.calls.push({ type: 'cleaner', name: driver.name, message: `Added: ${v.clientName} at ${slotStart}.` });
+              p2.visitUpdates.push({ visitId: v.id, updates: { startTime: slotStart, assignedCleanerIds: [did], assignedTeamId: '' } });
+            } else {
+              p2.changes.push(`${v.clientName}: needs relief driver`);
+            }
           });
           cleanerVisits.filter(v => !tailVisits.includes(v)).forEach(v => {
             p2.changes.push(`${v.clientName}: stays with ${cleaner.name}`);
@@ -1032,7 +1058,10 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           {step === 'solutions' && (
             <>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-bold text-slate-700">{proposals.length} suggestion{proposals.length !== 1 ? 's' : ''}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold text-slate-700">{proposals.length} suggestion{proposals.length !== 1 ? 's' : ''}</p>
+                  <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">Set {proposalSet + 1}</span>
+                </div>
                 <button onClick={() => setStep('affected')} className="text-xs font-bold text-blue-600 hover:underline">Back</button>
               </div>
 
@@ -1097,7 +1126,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
 
               <div className="flex gap-2">
                 <button onClick={() => setProposalSet(s => s + 1)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors active:scale-95 flex items-center justify-center gap-2">
-                  <RotateCcw size={14} /> Get 3 More Options
+                  <RotateCcw size={14} /> Next Options (Set {proposalSet + 2})
                 </button>
                 <button onClick={() => {
                   setStep('manual');
