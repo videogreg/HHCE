@@ -151,6 +151,30 @@ export const checkConstraints = (
       }
     }
 
+    const checkedIn = visit.checkedInCleanerIds || [];
+    const finished = visit.finishedCleanerIds || [];
+    const teamIds = teamCleaners.map(c => c.id);
+    if (checkedIn.length > 0 && checkedIn.length < teamIds.length) {
+      const checkedInNames = teamCleaners.filter(c => checkedIn.includes(c.id)).map(c => c.name).join(', ');
+      const notYetNames = teamCleaners.filter(c => !checkedIn.includes(c.id)).map(c => c.name).join(', ');
+      violations.push({
+        id: hashString(`${visit.id}-partialCheckIn`),
+        visitId: visit.id,
+        message: `Partial check-in: ${checkedInNames} checked in, but ${notYetNames} has not yet.`,
+        severity: 'warning'
+      });
+    }
+    if (finished.length > 0 && finished.length < teamIds.length) {
+      const finishedNames = teamCleaners.filter(c => finished.includes(c.id)).map(c => c.name).join(', ');
+      const notYetNames = teamCleaners.filter(c => !finished.includes(c.id)).map(c => c.name).join(', ');
+      violations.push({
+        id: hashString(`${visit.id}-partialFinish`),
+        visitId: visit.id,
+        message: `Partial finish: ${finishedNames} marked done, but ${notYetNames} has not yet.`,
+        severity: 'warning'
+      });
+    }
+
     const avoided = client.avoidCleaners.filter(id => visitCleanerIds.includes(id));
     if (avoided.length > 0) {
       const names = avoided.map(id => cleaners.find(c => c.id === id)?.name || 'Unknown').join(', ');

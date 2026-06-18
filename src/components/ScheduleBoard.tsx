@@ -4,7 +4,7 @@ import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
 import { RoutePlanner } from './RoutePlanner';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus } from 'lucide-react';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus, CheckCircle, LogIn } from 'lucide-react';
 import type { Visit, Cleaner, ConstraintViolation } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
@@ -682,18 +682,24 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                   {!visit.cancelled && (
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1.5">
-                        {assignedCleaners.map(c => (
-                          <button
-                            key={c!.id}
-                            onClick={() => markCleanerSick(c!.id)}
-                            className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1 hover:bg-red-50 hover:text-red-600 transition-colors active:scale-95 border border-transparent hover:border-red-200"
-                            title="Tap to mark sick"
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.active ? (c!.color || '#94a3b8') : '#ef4444' }} />
-                            {c!.name}
-                            {!c!.active && <span className="text-red-600 font-black">(SICK)</span>}
-                          </button>
-                        ))}
+                        {assignedCleaners.map(c => {
+                          const isCheckedIn = (visit.checkedInCleanerIds || []).includes(c!.id);
+                          const isFinished = (visit.finishedCleanerIds || []).includes(c!.id);
+                          return (
+                            <button
+                              key={c!.id}
+                              onClick={() => markCleanerSick(c!.id)}
+                              className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1 hover:bg-red-50 hover:text-red-600 transition-colors active:scale-95 border border-transparent hover:border-red-200"
+                              title="Tap to mark sick"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.active ? (c!.color || '#94a3b8') : '#ef4444' }} />
+                              {c!.name}
+                              {!c!.active && <span className="text-red-600 font-black">(SICK)</span>}
+                              {isFinished && <CheckCircle size={10} className="text-green-600 ml-0.5" />}
+                              {isCheckedIn && !isFinished && <LogIn size={10} className="text-blue-600 ml-0.5" />}
+                            </button>
+                          );
+                        })}
                         {assignedCleaners.length === 0 && team && (
                           <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-600">No active cleaners assigned</span>
                         )}

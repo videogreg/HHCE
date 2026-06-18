@@ -5,7 +5,7 @@ import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '.
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
 import {
   LogOut, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
-  ChevronLeft, ChevronRight, Navigation, AlertTriangle
+  ChevronLeft, ChevronRight, Navigation, AlertTriangle, CheckCircle, LogIn
 } from 'lucide-react';
 
 declare const google: any;
@@ -65,6 +65,86 @@ const formatLocalDate = (d: Date): string => {
 const dayName = (dateStr: string): string => {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+};
+
+// ── CHECK-IN / FINISH BUTTONS (cleaner portal) ──
+interface CleanerCheckInButtonsProps {
+  visitId: string;
+  cleanerId: string;
+  visits: Visit[];
+  setVisits: React.Dispatch<React.SetStateAction<Visit[]>>;
+}
+
+const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, cleanerId, visits, setVisits }) => {
+  const visit = visits.find(v => v.id === visitId);
+  if (!visit) return null;
+  const checkedIn = visit.checkedInCleanerIds || [];
+  const finished = visit.finishedCleanerIds || [];
+  const isCheckedIn = checkedIn.includes(cleanerId);
+  const isFinished = finished.includes(cleanerId);
+
+  const toggleCheckIn = () => {
+    setVisits(prev => prev.map(v => {
+      if (v.id !== visitId) return v;
+      const current = new Set(v.checkedInCleanerIds || []);
+      if (current.has(cleanerId)) {
+        current.delete(cleanerId);
+      } else {
+        current.add(cleanerId);
+      }
+      return { ...v, checkedInCleanerIds: Array.from(current) };
+    }));
+  };
+
+  const toggleFinish = () => {
+    setVisits(prev => prev.map(v => {
+      if (v.id !== visitId) return v;
+      const current = new Set(v.finishedCleanerIds || []);
+      if (current.has(cleanerId)) {
+        current.delete(cleanerId);
+      } else {
+        current.add(cleanerId);
+      }
+      return { ...v, finishedCleanerIds: Array.from(current) };
+    }));
+  };
+
+  if (isFinished) {
+    return (
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded-lg flex items-center gap-1">
+          <CheckCircle size={10} /> Finished
+        </span>
+      </div>
+    );
+  }
+
+  if (isCheckedIn) {
+    return (
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg flex items-center gap-1">
+          <LogIn size={10} /> Checked In
+        </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleFinish(); }}
+          className="text-[10px] font-bold bg-green-600 text-white px-2.5 py-1 rounded-lg hover:bg-green-700 transition-colors active:scale-95 flex items-center gap-1"
+        >
+          <CheckCircle size={10} /> Mark Finished
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <button
+        onClick={(e) => { e.stopPropagation(); toggleCheckIn(); }}
+        className="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-1 rounded-lg hover:bg-blue-700 transition-colors active:scale-95 flex items-center gap-1"
+      >
+        <LogIn size={10} /> Check In
+      </button>
+    </div>
+  );
 };
 
 export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
@@ -1043,6 +1123,15 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                           </span>
                         </div>
 
+
+                        {stop.type === 'clean' && isMyStop && stop.visitId && (
+                          <CleanerCheckInButtons
+                            visitId={stop.visitId}
+                            cleanerId={cleaner.id}
+                            visits={visits}
+                            setVisits={setVisits}
+                          />
+                        )}
 
                         {idx > 0 && stop.legDistanceKm !== undefined && (
                           <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">

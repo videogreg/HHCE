@@ -50,6 +50,8 @@ export interface Visit {
   jobType?: string;
   price?: number;
   notes?: string;
+  checkedInCleanerIds?: string[]; // Cleaner IDs who have checked in at this visit
+  finishedCleanerIds?: string[]; // Cleaner IDs who have marked this visit finished
   dismissedViolations?: string[]; // IDs of alerts the user has dismissed for this visit
 }
 
