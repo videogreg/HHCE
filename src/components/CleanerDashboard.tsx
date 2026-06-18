@@ -245,11 +245,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const start = parse(first.arrivalTime, 'HH:mm', new Date());
     const end = parse(last.departTime || last.arrivalTime, 'HH:mm', new Date());
     const mins = Math.round((end.getTime() - start.getTime()) / 60000);
+    const cleanHrs = Math.round((mins / 60) * 10) / 10;
     setDriverHours(0);
-    setCleanHours(Math.round((mins / 60) * 10) / 10);
+    setCleanHours(cleanHrs);
     setActualDriveMinutes(0);
     setTotalKm(0);
-    setTeamHours([]);
+    setTeamHours([{ name: cleaner.name, minutes: mins, hours: cleanHrs, isDriver: false, cleanMinutes: mins, travelMinutes: 0, waitMinutes: 0 }]);
     setLoading(false);
   };
 
