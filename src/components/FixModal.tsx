@@ -576,7 +576,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
             const partner = pickReplacement(partnerCandidates, v, dayVisits);
             const newIds = partner ? [driver.id, partner.id] : [driver.id];
             const tempVisit = { ...v, assignedCleanerIds: newIds, assignedTeamId: '' };
-            const vios = checkConstraints([tempVisit], cleaners, clients, teams);
+            const vios = checkConstraints([tempVisit], cleaners, clients, []);
             if (!vios.some(v => v.severity === 'error')) {
               p2.changes.push(`${v.clientName}: assign to unscheduled driver ${driver.name}${partner ? ' + ' + partner.name : ''} at ${v.startTime}`);
               p2.calls.push({ type: 'client', name: v.clientName, phone: client.phone, message: `A new team will handle your cleaning at ${v.startTime} today.` });
