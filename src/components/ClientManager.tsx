@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Client, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Users, Upload, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save, X } from 'lucide-react';
-import { parseClientsCSV } from '../utils/csvParser';
+import { Plus, Trash2, Users, Upload, Download, MapPin, Phone, FileText, ChevronDown, ChevronUp, Clock, Star, Ban, Pencil, Save, X } from 'lucide-react';
+import { parseClientsCSV, exportClientsCSV } from '../utils/csvParser';
 import { showToast } from '../utils/toast';
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -17,10 +17,10 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
   const { cleaners, clients, setClients } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<Client>>({});
-  const [newClient, setNewClient] = useState<Partial<Client>>({
+  const [editForm, setEditForm] = useState<Partial<Client>({});
+  const [newClient, setNewClient] = useState<Partial<Client>({
     name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00',
-    preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: ''
+    preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: '', instructions: ''
   });
   const [showAdd, setShowAdd] = useState(false);
   const [csvPreview, setCsvPreview] = useState<Partial<Client>[] | null>(null);
@@ -50,10 +50,11 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
       avoidCleaners: newClient.avoidCleaners || [],
       durationMinutes: newClient.durationMinutes || 120,
       phone: newClient.phone || '',
-      notes: newClient.notes || ''
+      notes: newClient.notes || '',
+      instructions: newClient.instructions || ''
     };
     setClients([...clients, client]);
-    setNewClient({ name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00', preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: '' });
+    setNewClient({ name: '', address: '', zone: '', preferredDays: [], notBefore: '09:00', notAfter: '17:00', preferredCleaners: [], avoidCleaners: [], durationMinutes: 120, phone: '', notes: '', instructions: '' });
     setShowAdd(false);
   };
 
@@ -101,16 +102,29 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const result = parseClientsCSV(text);
+      const result = parseClientsCSV(text, cleaners);
       setCsvPreview(result.clients);
     };
     reader.readAsText(file);
+  };
+
+  const handleExport = () => {
+    const csv = exportClientsCSV(clients, cleaners);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `hhce-clients-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${clients.length} clients to CSV`, 'success');
   };
 
   const confirmCsvImport = () => {
@@ -132,8 +146,10 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           name: importedName,
           address: p.address || existing.address,
           phone: p.phone || existing.phone,
+          email: p.email || existing.email,
           zone: p.zone || existing.zone,
           notes: p.notes || existing.notes,
+          instructions: p.instructions || existing.instructions,
           durationMinutes: (p.durationMinutes && p.durationMinutes !== 120) ? p.durationMinutes : (existing.durationMinutes || 120),
           notBefore: p.notBefore || existing.notBefore,
           notAfter: p.notAfter || existing.notAfter,
@@ -168,6 +184,13 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
           <Users className="text-green-600" size={24} /> Clients ({clients.length})
         </h2>
         <div className="flex gap-2">
+          <button
+            onClick={handleExport}
+            className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-2 text-sm font-bold active:scale-95"
+          >
+            <Download size={16} />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
           <label className="px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors flex items-center gap-2 text-sm font-bold active:scale-95">
             <Upload size={16} />
             <span className="hidden sm:inline">Import CSV</span>
@@ -202,7 +225,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
                     {isExisting ? 'UPDATE' : 'NEW'}
                   </span>
                   <span className="text-slate-500">{c.phone || 'No phone'}</span>
-                  <span className="text-slate-400 truncate">{c.notes || ''}</span>
+                  <span className="text-slate-400 truncate">{c.instructions || c.notes || ''}</span>
                 </div>
               );
             })}
@@ -324,6 +347,12 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
               value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} placeholder="e.g. Dog friendly, alarm code 1234" />
           </div>
 
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Instructions</label>
+            <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              value={newClient.instructions} onChange={e => setNewClient({ ...newClient, instructions: e.target.value })} placeholder="e.g. Door code 1234, clean upstairs only" />
+          </div>
+
           <button onClick={addClient} disabled={!newClient.name?.trim()}
             className="w-full py-3 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 disabled:opacity-40 transition-colors active:scale-[0.98]">
             Add Client
@@ -365,6 +394,12 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
                   {client.phone && <div className="flex items-center gap-2"><Phone size={12} className="shrink-0 text-slate-400" /> {client.phone}</div>}
                   <div className="flex items-center gap-2"><Clock size={12} className="shrink-0 text-slate-400" /> Window: {client.notBefore} - {client.notAfter}</div>
                   {client.notes && <div className="flex items-start gap-2"><FileText size={12} className="shrink-0 mt-0.5 text-slate-400" /> {client.notes}</div>}
+                  {client.instructions && (
+                    <div className="flex items-start gap-2">
+                      <FileText size={12} className="shrink-0 mt-0.5 text-orange-400" />
+                      <span className="text-orange-700 font-medium">{client.instructions}</span>
+                    </div>
+                  )}
                   {client.preferredCleaners.length > 0 && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <Star size={12} className="shrink-0 text-amber-400" />
@@ -482,6 +517,11 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notes</label>
                       <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                         value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Instructions</label>
+                      <input type="text" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        value={editForm.instructions || ''} onChange={e => setEditForm({ ...editForm, instructions: e.target.value })} />
                     </div>
                   </div>
                   <div className="flex gap-2">

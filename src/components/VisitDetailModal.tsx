@@ -558,6 +558,17 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
             </div>
           )}
 
+          {/* Client instructions */}
+          {client?.instructions && (
+            <div className="bg-orange-50 rounded-xl p-3 border border-orange-100">
+              <div className="flex items-center gap-1.5 mb-1">
+                <FileText size={12} className="text-orange-500" />
+                <span className="text-[9px] font-bold text-orange-600 uppercase tracking-wider">Instructions</span>
+              </div>
+              <p className="text-xs text-orange-800 font-medium">{client.instructions}</p>
+            </div>
+          )}
+
           {/* Visit notes */}
           {visit.notes && (
             <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">

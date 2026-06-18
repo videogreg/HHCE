@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import type { Client, Visit, Team, Cleaner } from '../types';
+import type { Client, Visit, Team, Cleaner, DayOfWeek } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ParseClientsResult {
@@ -71,7 +71,7 @@ const buildName = (row: Record<string, string>): string => {
 };
 
 const buildAddress = (row: Record<string, string>): string => {
-  const serviceStreet1 = getColumn(row, ['service street 1']);
+  const serviceStreet1 = getColumn(row, ['service street 1', 'address']);
   const serviceStreet2 = getColumn(row, ['service street 2']);
   const serviceCity = getColumn(row, ['service city']);
 
@@ -96,7 +96,7 @@ const buildAddress = (row: Record<string, string>): string => {
 };
 
 const buildPhone = (row: Record<string, string>): string => {
-  const mainPhone = getColumn(row, ['main phone s', 'main phone', 'mainphone']);
+  const mainPhone = getColumn(row, ['main phone s', 'main phone', 'mainphone', 'phone']);
   if (mainPhone) return mainPhone;
 
   const mobilePhone = getColumn(row, ['mobile phone s', 'mobile phone', 'mobilephone']);
@@ -111,8 +111,12 @@ const buildPhone = (row: Record<string, string>): string => {
   return '';
 };
 
+const buildEmail = (row: Record<string, string>): string => {
+  return getColumn(row, ['email', 'e-mail', 'email address']) || '';
+};
+
 const buildNotes = (row: Record<string, string>): string => {
-  const cftNotes1 = getColumn(row, ['cft notes']);
+  const cftNotes1 = getColumn(row, ['cft notes', 'notes']);
   const cftNotes2 = getColumn(row, ['cftnotes']);
   const tags = getColumn(row, ['tags']);
   const referredBy = getColumn(row, ['cft referred by', 'referred by']);
@@ -124,6 +128,19 @@ const buildNotes = (row: Record<string, string>): string => {
   return '';
 };
 
+const buildInstructions = (row: Record<string, string>): string => {
+  const instructions = getColumn(row, [
+    'instructions',
+    'client instructions',
+    'house instructions',
+    'cleaning instructions',
+    'door code',
+    'access instructions'
+  ]);
+  if (instructions) return instructions;
+  return '';
+};
+
 const buildZone = (row: Record<string, string>): string => {
   const serviceCity = getColumn(row, ['service city']);
   if (serviceCity) return serviceCity;
@@ -132,6 +149,61 @@ const buildZone = (row: Record<string, string>): string => {
   if (billingCity) return billingCity;
 
   return '';
+};
+
+const buildDurationMinutes = (row: Record<string, string>): number | undefined => {
+  const val = getColumn(row, ['duration minutes', 'duration', 'duration min', 'estimated duration']);
+  if (!val) return undefined;
+  if (/min/i.test(val)) {
+    const num = parseFloat(val.replace(/[^0-9.]/g, ''));
+    if (!isNaN(num)) return Math.round(num);
+  }
+  const num = parseFloat(val.replace(/[^0-9.]/g, ''));
+  if (!isNaN(num)) {
+    return num < 24 ? Math.round(num * 60) : Math.round(num);
+  }
+  return undefined;
+};
+
+const buildPreferredDays = (row: Record<string, string>): DayOfWeek[] => {
+  const val = getColumn(row, ['preferred days', 'preferred']);
+  if (!val) return [];
+  const dayMap: Record<string, DayOfWeek> = {
+    monday: 'Monday', mon: 'Monday',
+    tuesday: 'Tuesday', tue: 'Tuesday', tues: 'Tuesday',
+    wednesday: 'Wednesday', wed: 'Wednesday',
+    thursday: 'Thursday', thu: 'Thursday', thurs: 'Thursday',
+    friday: 'Friday', fri: 'Friday',
+    saturday: 'Saturday', sat: 'Saturday',
+    sunday: 'Sunday', sun: 'Sunday'
+  };
+  return val.split(/,|;/).map(s => s.trim().toLowerCase()).map(s => dayMap[s]).filter(Boolean) as DayOfWeek[];
+};
+
+const buildNotBefore = (row: Record<string, string>): string => {
+  return getColumn(row, ['not before', 'notbefore', 'start time']) || '09:00';
+};
+
+const buildNotAfter = (row: Record<string, string>): string => {
+  return getColumn(row, ['not after', 'notafter', 'end time']) || '17:00';
+};
+
+const buildPreferredCleaners = (row: Record<string, string>, cleaners: Cleaner[]): string[] => {
+  const val = getColumn(row, ['preferred cleaners']);
+  if (!val) return [];
+  return val.split(/,|;/).map(s => s.trim()).map(name => {
+    const lower = name.toLowerCase();
+    return cleaners.find(c => c.name.toLowerCase() === lower)?.id;
+  }).filter(Boolean) as string[];
+};
+
+const buildAvoidCleaners = (row: Record<string, string>, cleaners: Cleaner[]): string[] => {
+  const val = getColumn(row, ['avoid cleaners']);
+  if (!val) return [];
+  return val.split(/,|;/).map(s => s.trim()).map(name => {
+    const lower = name.toLowerCase();
+    return cleaners.find(c => c.name.toLowerCase() === lower)?.id;
+  }).filter(Boolean) as string[];
 };
 
 const extractDurationFromName = (name: string): { cleanName: string; durationMinutes: number } => {
@@ -243,7 +315,7 @@ const parseStartTime = (raw: string): string => {
   return '09:00';
 };
 
-export const parseClientsCSV = (csvContent: string): ParseClientsResult => {
+export const parseClientsCSV = (csvContent: string, cleaners: Cleaner[] = []): ParseClientsResult => {
   const stats: ParseClientsResult['stats'] = {
     totalRows: 0,
     imported: 0,
@@ -296,22 +368,39 @@ export const parseClientsCSV = (csvContent: string): ParseClientsResult => {
         return;
       }
 
+      // Override with explicit duration column if present
+      const explicitDuration = buildDurationMinutes(row);
+      if (explicitDuration !== undefined) {
+        durationMinutes = explicitDuration;
+      }
+
       const address = buildAddress(row);
       const phone = buildPhone(row);
+      const email = buildEmail(row);
       const notes = buildNotes(row);
+      const instructions = buildInstructions(row);
       const zone = buildZone(row);
+      const preferredDays = buildPreferredDays(row);
+      const notBefore = buildNotBefore(row);
+      const notAfter = buildNotAfter(row);
+      const preferredCleaners = buildPreferredCleaners(row, cleaners);
+      const avoidCleaners = buildAvoidCleaners(row, cleaners);
 
       clients.push({
         id: uuidv4(),
         name,
         address,
         phone,
-        preferredDays: [],
-        preferredCleaners: [],
-        avoidCleaners: [],
+        email: email || undefined,
+        preferredDays,
+        preferredCleaners,
+        avoidCleaners,
         durationMinutes,
+        notBefore,
+        notAfter,
         zone,
         notes,
+        instructions,
       });
 
       stats.imported++;
@@ -328,6 +417,25 @@ export const parseClientsCSV = (csvContent: string): ParseClientsResult => {
     stats.errors.push(err instanceof Error ? err.message : String(err));
     return { clients: [], stats };
   }
+};
+
+export const exportClientsCSV = (clients: Client[], cleaners: Cleaner[]): string => {
+  const data = clients.map(c => ({
+    'Name': c.name,
+    'Address': c.address,
+    'Zone': c.zone || '',
+    'Phone': c.phone || '',
+    'Email': c.email || '',
+    'Duration Minutes': c.durationMinutes,
+    'Not Before': c.notBefore || '',
+    'Not After': c.notAfter || '',
+    'Preferred Days': c.preferredDays.join(', '),
+    'Preferred Cleaners': c.preferredCleaners.map(id => cleaners.find(cl => cl.id === id)?.name || id).join(', '),
+    'Avoid Cleaners': c.avoidCleaners.map(id => cleaners.find(cl => cl.id === id)?.name || id).join(', '),
+    'Notes': c.notes || '',
+    'Instructions': c.instructions || '',
+  }));
+  return Papa.unparse(data);
 };
 
 export const parseVisitsCSV = (csvContent: string, clients: Client[], teams: Team[], cleaners: Cleaner[]): Partial<Visit>[] => {

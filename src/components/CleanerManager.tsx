@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, UserPlus, Car, Phone, Mail, MapPin, FileText, ChevronDown, ChevronUp, Upload, X, Save, Pencil } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Car, Phone, Mail, MapPin, FileText, ChevronDown, ChevronUp, Upload, Download, X, Save, Pencil } from 'lucide-react';
 import { parseCleanersCSV } from '../utils/csvParser';
+import { showToast } from '../utils/toast';
 
 const COLORS = [
   { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
@@ -23,12 +24,12 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
   const { cleaners, setCleaners } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<Cleaner>>({});
-  const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
+  const [editForm, setEditForm] = useState<<Partial<Cleaner>>({});
+  const [newCleaner, setNewCleaner] = useState<<Partial<Cleaner>>({
     name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: '', password: ''
   });
   const [showAdd, setShowAdd] = useState(false);
-  const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
+  const [csvPreview, setCsvPreview] = useState<<Partial<Cleaner>[] | null>(null);
 
   useEffect(() => {
     if (focusId && cleaners.some(c => c.id === focusId)) {
@@ -99,7 +100,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -109,6 +110,44 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
       setCsvPreview(parsed);
     };
     reader.readAsText(file);
+  };
+
+  const handleExport = () => {
+    if (cleaners.length === 0) {
+      showToast('No cleaners to export', 'warning');
+      return;
+    }
+    const headers = ['Name', 'Driver', 'Phone', 'Email', 'Address', 'Start', 'Off By', 'Active', 'Unavailable Days', 'Cannot Work With', 'Notes'];
+    const rows = cleaners.map(c => {
+      const cannotWorkNames = (c.cannotWorkWith || [])
+        .map(id => cleaners.find(x => x.id === id)?.name)
+        .filter(Boolean)
+        .join('; ');
+      return [
+        c.name,
+        c.isDriver ? 'Yes' : 'No',
+        c.phone || '',
+        c.email || '',
+        c.address || '',
+        c.canStartAt || '',
+        c.mustBeOffBy || '',
+        c.active ? 'Yes' : 'No',
+        (c.unavailableDays || []).join('; '),
+        cannotWorkNames,
+        c.notes || ''
+      ];
+    });
+    const escape = (cell: string | number) => `"${String(cell).replace(/"/g, '""')}"`;
+    const csv = [headers.join(','), ...rows.map(r => r.map(escape).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `hhce-cleaners-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${cleaners.length} cleaners to CSV`, 'success');
   };
 
   const confirmCsvImport = () => {
@@ -164,6 +203,12 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
           <UserPlus className="text-blue-600" size={24} /> Cleaners ({cleaners.length})
         </h2>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-1.5 text-xs font-bold active:scale-95"
+          >
+            <Download size={14} /> Export CSV
+          </button>
           <label className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl cursor-pointer hover:bg-slate-200 transition-colors flex items-center gap-1.5 text-xs font-bold active:scale-95 border border-slate-200">
             <Upload size={14} /> Import CSV
             <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />

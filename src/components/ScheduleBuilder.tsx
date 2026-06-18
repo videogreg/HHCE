@@ -2,11 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Visit, Cleaner } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Upload, X, Car, Star, Ban, Check, Pencil } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Upload, Download, X, Car, Star, Ban, Check, Pencil } from 'lucide-react';
 import { format, addDays, subDays, isSameDay, parse, addMinutes, isBefore, isAfter } from 'date-fns';
 import { checkConstraints } from '../utils/scheduler';
 import { parseVisitsCSV } from '../utils/csvParser';
 import { formatTotalHours } from '../utils/hours';
+import { showToast } from '../utils/toast';
 
 interface Suggestion {
   startTime: string;
@@ -19,12 +20,12 @@ interface Suggestion {
 export const ScheduleBuilder: React.FC = () => {
   const { visits, setVisits, cleaners, clients, teams, selectedDate, setSelectedDate } = useAppContext();
   const [showAdd, setShowAdd] = useState(false);
-  const [newVisit, setNewVisit] = useState<Partial<Visit>>({
+  const [newVisit, setNewVisit] = useState<Partial<Visit>({
     clientId: '', startTime: '09:00', assignedTeamId: '', durationMinutes: 120, assignedCleanerIds: []
   });
   const [csvPreview, setCsvPreview] = useState<Partial<Visit>[] | null>(null);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<Visit>>({});
+  const [editForm, setEditForm] = useState<Partial<Visit>({});
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const dayVisits = visits.filter(v => v.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -262,7 +263,7 @@ export const ScheduleBuilder: React.FC = () => {
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(subDays(selectedDate, 3), i));
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -307,6 +308,42 @@ export const ScheduleBuilder: React.FC = () => {
     });
     setVisits(updatedVisits);
     setCsvPreview(null);
+  };
+
+  const handleExport = () => {
+    if (visits.length === 0) {
+      showToast('No visits to export', 'warning');
+      return;
+    }
+    const headers = ['Date', 'Client', 'Address', 'Zone', 'Start Time', 'Duration (min)', 'Cleaners', 'Cancelled', 'Notes'];
+    const rows = visits.map(v => {
+      const cleanerNames = (v.assignedCleanerIds || [])
+        .map(id => cleaners.find(c => c.id === id)?.name)
+        .filter(Boolean)
+        .join('; ');
+      return [
+        v.date,
+        v.clientName,
+        v.clientAddress || '',
+        v.clientZone || '',
+        v.startTime,
+        v.durationMinutes,
+        cleanerNames,
+        v.cancelled ? 'Yes' : 'No',
+        v.notes || ''
+      ];
+    });
+    const escape = (cell: string | number) => `"${String(cell).replace(/"/g, '""')}"`;
+    const csv = [headers.join(','), ...rows.map(r => r.map(escape).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `hhce-visits-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${visits.length} visits to CSV`, 'success');
   };
 
   const toggleCleaner = (id: string) => {
@@ -360,6 +397,13 @@ export const ScheduleBuilder: React.FC = () => {
           <Calendar className="text-purple-600" size={24} /> Schedule Builder
         </h2>
         <div className="flex gap-2">
+          <button
+            onClick={handleExport}
+            className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-2 text-sm font-bold active:scale-95"
+          >
+            <Download size={16} />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
           <label className="px-3 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl cursor-pointer hover:bg-purple-100 transition-colors flex items-center gap-2 text-sm font-bold active:scale-95">
             <Upload size={16} />
             <span className="hidden sm:inline">Import CSV</span>
