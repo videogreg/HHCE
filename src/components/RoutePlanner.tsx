@@ -71,7 +71,7 @@ const dayName = (dateStr: string): string => {
 export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate }) => {
   const { visits, clients, teams, cleaners } = useAppContext();
   const [selectedDate, setSelectedDate] = useState<string>(initialReliefDate || formatLocalDate(new Date()));
-  const [selectedDriver, setSelectedDriver] = useState<Cleaner | null>(initialDriver || null);
+  const [selectedDriver] = useState<Cleaner | null>(initialDriver || null);
   const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 
   // Route state (mirrors RoutePlanner)
@@ -106,13 +106,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         const team = teams.find(t => t.id === v.assignedTeamId);
         if (team) ids = team.cleanerIds;
       }
-      return ids.includes(selectedDriver?.id);
+      return selectedDriver ? ids.includes(selectedDriver.id) : false;
     });
   }, [dayVisits, selectedDriver?.id, teams]);
 
   // Find the driver for this cleaner's team today
   const myDriver = useMemo(() => {
-    if (selectedDriver?.isDriver) return cleaner;
+    if (selectedDriver?.isDriver) return selectedDriver;
     for (const v of myVisits) {
       let ids = v.assignedCleanerIds || [];
       if (ids.length === 0) {
@@ -125,11 +125,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       }
     }
     return null;
-  }, [myVisits, cleaner, cleaners, teams]);
+  }, [myVisits, selectedDriver, cleaners, teams]);
 
   const hasDriverPickup = !!myDriver && !selectedDriver?.isDriver;
 
-  // Build route whenever date, cleaner, or visits change
+  // Build route whenever date, driver, or visits change
   useEffect(() => {
     if (!API_KEY) { setApiError('Google Maps API key not configured'); return; }
     if (myVisits.length === 0) {
@@ -151,7 +151,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     // Otherwise build full Google Maps route (driver or non-driver on team)
-    const driver = selectedDriver?.isDriver ? cleaner : myDriver!;
+    const driver = selectedDriver?.isDriver ? selectedDriver : myDriver!;
     buildFullRoute(driver);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, selectedDriver?.id, myVisits.length, myDriver?.id]);
@@ -1023,12 +1023,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                 </p>
                 <div className="space-y-2">
                   {teamHours.map(tm => (
-                    <div key={tm.name} className={`flex items-center justify-between p-3 rounded-xl border ${tm.name === selectedDriver?.name || 'Driver' ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-100'}`}>
+                    <div key={tm.name} className={`flex items-center justify-between p-3 rounded-xl border ${tm.name === selectedDriver?.name ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-100'}`}>
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tm.isDriver ? '#2563eb' : '#059669' }} />
                         <div>
                           <span className="text-sm font-bold text-slate-700">{tm.name}</span>
-                          {tm.name === selectedDriver?.name || 'Driver' && <span className="text-[10px] text-green-600 font-bold ml-1.5">(You)</span>}
+                          {tm.name === selectedDriver?.name && <span className="text-[10px] text-green-600 font-bold ml-1.5">(You)</span>}
                           <span className="text-[10px] text-slate-400 ml-1.5 font-medium">
                             {tm.isDriver ? 'Driver' : 'Cleaner'}
                           </span>

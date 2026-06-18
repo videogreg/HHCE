@@ -4,7 +4,7 @@ import { subscribeToToasts } from '../utils/toast';
 interface Toast {
   id: string;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
 }
 
 export default function ToastContainer() {

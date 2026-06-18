@@ -1,5 +1,12 @@
 let googleMapsLoaded = false;
 
+export const areSameLatLng = (a: any, b: any): boolean => {
+  if (!a || !b) return false;
+  const latDiff = Math.abs(a.lat() - b.lat());
+  const lngDiff = Math.abs(a.lng() - b.lng());
+  return latDiff < 0.0001 && lngDiff < 0.0001;
+};
+
 export const loadGoogleMaps = (apiKey: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     if (googleMapsLoaded) { resolve(); return; }
