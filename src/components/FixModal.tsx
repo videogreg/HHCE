@@ -477,7 +477,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
 
         if (allGaps.length > 0) {
           const gapIdx = seed % allGaps.length;
-          const { did, route, gapIdx: routeIdx, slotStart, otherDriver } = allGaps[gapIdx];
+          const { did, route, slotStart, otherDriver } = allGaps[gapIdx];
           const paired = new Set<string>();
           route.forEach(rv => (rv.assignedCleanerIds || []).forEach(id => { if (id !== did) paired.add(id); }));
           const candidates = activeCleaners.filter(c => {
