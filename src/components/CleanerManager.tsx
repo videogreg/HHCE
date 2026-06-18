@@ -24,12 +24,12 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
   const { cleaners, setCleaners } = useAppContext();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<<Partial<Cleaner>>({});
-  const [newCleaner, setNewCleaner] = useState<<Partial<Cleaner>>({
+  const [editForm, setEditForm] = useState<Partial<Cleaner>>({});
+  const [newCleaner, setNewCleaner] = useState<Partial<Cleaner>>({
     name: '', isDriver: false, canStartAt: '08:00', mustBeOffBy: '17:00', cannotWorkWith: [], unavailableDays: [], active: true, phone: '', email: '', address: '', notes: '', password: ''
   });
   const [showAdd, setShowAdd] = useState(false);
-  const [csvPreview, setCsvPreview] = useState<<Partial<Cleaner>[] | null>(null);
+  const [csvPreview, setCsvPreview] = useState<Partial<Cleaner>[] | null>(null);
 
   useEffect(() => {
     if (focusId && cleaners.some(c => c.id === focusId)) {
@@ -100,7 +100,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();

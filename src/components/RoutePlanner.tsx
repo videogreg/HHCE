@@ -70,7 +70,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 
   // Route state (mirrors RoutePlanner)
-  const [routeStops, setRouteStops] = useState<<RouteStop[]>([]);
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);

@@ -102,7 +102,7 @@ export const ClientManager: React.FC<ClientManagerProps> = ({ focusId, onFocusCl
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();

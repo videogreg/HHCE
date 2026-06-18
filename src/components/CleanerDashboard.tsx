@@ -86,7 +86,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const directionsRenderer = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<any[]>([]);
-  const routeDataRef = useRef<<RouteData | null>(null);
+  const routeDataRef = useRef<RouteData | null>(null);
   const directionsResultRef = useRef<any>(null);
 
   // Determine role and driver for the day

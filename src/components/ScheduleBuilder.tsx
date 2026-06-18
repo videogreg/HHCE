@@ -263,7 +263,7 @@ export const ScheduleBuilder: React.FC = () => {
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(subDays(selectedDate, 3), i));
 
-  const handleFileUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
