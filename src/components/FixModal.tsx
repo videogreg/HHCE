@@ -496,6 +496,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           if (partner) p2.calls.push({ type: 'cleaner', name: partner.name, message: `You're riding with ${otherDriver.name} to ${targetVisit.clientName}.` });
           p2.visitUpdates.push({ visitId: targetVisit.id, updates: { startTime: slotStart, assignedCleanerIds: newIds, assignedTeamId: '' } });
           props.push(p2);
+        }
 
         const freeDrivers = activeCleaners.filter(c => {
           if (!c.isDriver) return false;
