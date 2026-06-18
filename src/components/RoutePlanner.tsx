@@ -932,8 +932,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
             <div className="space-y-3">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <MapPin size={16} className="text-green-600" /> 
-                {selectedDriver?.isDriver ? 'Your Route' : `${myDriver?.name}'s Route`} 
-                ({routeStops.filter(s => s.type === 'clean').length} cleans)
+                {selectedDriver?.isDriver ? 'Your Route' : myDriver ? `${myDriver.name}'s Route` : 'Your Route'}
+                ({routeStops.filter(s => s.type === 'clean').length} {routeStops.filter(s => s.type === 'clean').length === 1 ? 'clean' : 'cleans'})
               </h2>
 
               <div className="relative pl-6 space-y-4">
