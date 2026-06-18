@@ -82,18 +82,55 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
   const finished = visit.finishedCleanerIds || [];
   const isCheckedIn = checkedIn.includes(cleanerId);
   const isFinished = finished.includes(cleanerId);
+  const [conflictMsg, setConflictMsg] = useState<string | null>(null);
+
+  const timeToMinutes = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const hasTimeConflict = (targetVisit: Visit) => {
+    const targetStart = timeToMinutes(targetVisit.startTime);
+    const targetEnd = targetStart + targetVisit.durationMinutes;
+    const otherCheckedIn = visits.filter(v =>
+      v.id !== targetVisit.id &&
+      v.date === targetVisit.date &&
+      (v.checkedInCleanerIds || []).includes(cleanerId) &&
+      !(v.finishedCleanerIds || []).includes(cleanerId)
+    );
+    for (const other of otherCheckedIn) {
+      const otherStart = timeToMinutes(other.startTime);
+      const otherEnd = otherStart + other.durationMinutes;
+      if (targetStart < otherEnd && otherStart < targetEnd) {
+        return other;
+      }
+    }
+    return null;
+  };
 
   const toggleCheckIn = () => {
+    if (isCheckedIn) {
+      setVisits(prev => prev.map(v => {
+        if (v.id !== visitId) return v;
+        const current = new Set(v.checkedInCleanerIds || []);
+        current.delete(cleanerId);
+        return { ...v, checkedInCleanerIds: Array.from(current) };
+      }));
+      setConflictMsg(null);
+      return;
+    }
+    const conflict = visit ? hasTimeConflict(visit) : null;
+    if (conflict) {
+      setConflictMsg(`Already checked in at ${conflict.clientName} (${conflict.startTime}) — finish that clean first.`);
+      return;
+    }
     setVisits(prev => prev.map(v => {
       if (v.id !== visitId) return v;
       const current = new Set(v.checkedInCleanerIds || []);
-      if (current.has(cleanerId)) {
-        current.delete(cleanerId);
-      } else {
-        current.add(cleanerId);
-      }
+      current.add(cleanerId);
       return { ...v, checkedInCleanerIds: Array.from(current) };
     }));
+    setConflictMsg(null);
   };
 
   const toggleFinish = () => {
@@ -136,13 +173,19 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
   }
 
   return (
-    <div className="flex items-center gap-2 mt-2">
+    <div className="flex flex-col gap-1 mt-2">
       <button
         onClick={(e) => { e.stopPropagation(); toggleCheckIn(); }}
-        className="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-1 rounded-lg hover:bg-blue-700 transition-colors active:scale-95 flex items-center gap-1"
+        className="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-1 rounded-lg hover:bg-blue-700 transition-colors active:scale-95 flex items-center gap-1 self-start"
       >
         <LogIn size={10} /> Check In
       </button>
+      {conflictMsg && (
+        <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg border border-red-200 flex items-start gap-1">
+          <AlertTriangle size={10} className="shrink-0 mt-0.5" />
+          {conflictMsg}
+        </span>
+      )}
     </div>
   );
 };

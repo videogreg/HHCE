@@ -202,6 +202,40 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     errors: errorCount,
     warnings: warningCount,
     late: lateAlerts.length,
+    notStarted: dayVisits.filter(v => {
+      if (v.cancelled) return false;
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const t = teams.find(tm => tm.id === v.assignedTeamId);
+        if (t) ids = t.cleanerIds;
+      }
+      const checkedIn = v.checkedInCleanerIds || [];
+      const finished = v.finishedCleanerIds || [];
+      return !ids.some(id => checkedIn.includes(id) || finished.includes(id));
+    }).length,
+    inProgress: dayVisits.filter(v => {
+      if (v.cancelled) return false;
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const t = teams.find(tm => tm.id === v.assignedTeamId);
+        if (t) ids = t.cleanerIds;
+      }
+      const finished = v.finishedCleanerIds || [];
+      const allFinished = ids.length > 0 && ids.every(id => finished.includes(id));
+      const anyCheckedIn = (v.checkedInCleanerIds || []).some(id => ids.includes(id));
+      const anyFinished = finished.some(id => ids.includes(id));
+      return !allFinished && (anyCheckedIn || anyFinished);
+    }).length,
+    completed: dayVisits.filter(v => {
+      if (v.cancelled) return false;
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const t = teams.find(tm => tm.id === v.assignedTeamId);
+        if (t) ids = t.cleanerIds;
+      }
+      const finished = v.finishedCleanerIds || [];
+      return ids.length > 0 && ids.every(id => finished.includes(id));
+    }).length,
   };
 
   const markCleanerSick = (cleanerId: string) => {
@@ -508,6 +542,27 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         </div>
       </div>
 
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+          <div className="text-lg font-black text-slate-500">{stats.notStarted}</div>
+          <div className="text-[9px] font-bold text-slate-400 uppercase flex items-center justify-center gap-1">
+            <Clock size={10} /> Not Started
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+          <div className="text-lg font-black text-blue-600">{stats.inProgress}</div>
+          <div className="text-[9px] font-bold text-slate-400 uppercase flex items-center justify-center gap-1">
+            <LogIn size={10} /> In Progress
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+          <div className="text-lg font-black text-green-600">{stats.completed}</div>
+          <div className="text-[9px] font-bold text-slate-400 uppercase flex items-center justify-center gap-1">
+            <CheckCircle size={10} /> Completed
+          </div>
+        </div>
+      </div>
+
       {viewMode === 'day' && (
         <div className="space-y-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
@@ -602,6 +657,19 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               const totalHours = formatTotalHours(visit.durationMinutes, cleanerCount);
               const onSiteHours = formatOnSiteHours(visit.durationMinutes, cleanerCount);
 
+              const finishedCount = (visit.finishedCleanerIds || []).filter(id => assignedCleanerIds.includes(id)).length;
+              const checkedInCount = (visit.checkedInCleanerIds || []).filter(id => assignedCleanerIds.includes(id)).length;
+              const allFinished = finishedCount === assignedCleanerIds.length && assignedCleanerIds.length > 0;
+              const anyCheckedIn = checkedInCount > 0 || finishedCount > 0;
+              const isPartial = anyCheckedIn && !allFinished;
+
+              const visitStatusLabel = allFinished ? 'Completed' : anyCheckedIn ? 'In Progress' : 'Not Started';
+              const visitStatusClass = allFinished
+                ? 'bg-green-100 text-green-700 border-green-200'
+                : anyCheckedIn
+                ? 'bg-blue-100 text-blue-700 border-blue-200'
+                : 'bg-slate-100 text-slate-500 border-slate-200';
+
               return (
                 <div
                   key={visit.id}
@@ -624,6 +692,13 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                       className="text-left min-w-0 flex-1"
                     >
                       <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${visitStatusClass}`}>
+                          {allFinished && <CheckCircle size={10} />}
+                          {anyCheckedIn && !allFinished && <LogIn size={10} />}
+                          {!anyCheckedIn && <Clock size={10} />}
+                          {visitStatusLabel}
+                          {isPartial && <span className="opacity-70">({finishedCount}/{assignedCleanerIds.length})</span>}
+                        </span>
                         <h3 className={`font-bold text-sm ${visit.cancelled ? 'line-through text-slate-400' : 'text-slate-800'}`}>
                           {visit.clientName}
                         </h3>
@@ -689,14 +764,30 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                             <button
                               key={c!.id}
                               onClick={() => markCleanerSick(c!.id)}
-                              className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1 hover:bg-red-50 hover:text-red-600 transition-colors active:scale-95 border border-transparent hover:border-red-200"
+                              className={`text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-red-50 hover:text-red-600 transition-colors active:scale-95 border ${
+                                isFinished
+                                  ? 'bg-green-50 text-green-700 border-green-200'
+                                  : isCheckedIn
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-slate-100 text-slate-600 border-transparent hover:border-red-200'
+                              }`}
                               title="Tap to mark sick"
                             >
                               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.active ? (c!.color || '#94a3b8') : '#ef4444' }} />
                               {c!.name}
                               {!c!.active && <span className="text-red-600 font-black">(SICK)</span>}
-                              {isFinished && <CheckCircle size={10} className="text-green-600 ml-0.5" />}
-                              {isCheckedIn && !isFinished && <LogIn size={10} className="text-blue-600 ml-0.5" />}
+                              {isFinished && (
+                                <span className="flex items-center gap-0.5 text-green-700 ml-0.5">
+                                  <CheckCircle size={12} />
+                                  <span className="text-[9px]">Done</span>
+                                </span>
+                              )}
+                              {isCheckedIn && !isFinished && (
+                                <span className="flex items-center gap-0.5 text-blue-700 ml-0.5">
+                                  <LogIn size={12} />
+                                  <span className="text-[9px]">In</span>
+                                </span>
+                              )}
                             </button>
                           );
                         })}
