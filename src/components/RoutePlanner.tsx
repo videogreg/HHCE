@@ -54,6 +54,7 @@ interface RoutePlannerProps {
   onClose: () => void;
   initialDriver?: Cleaner;
   initialReliefDate?: string;
+  initialDate?: string;
 }
 
 const formatLocalDate = (d: Date): string => {
@@ -68,9 +69,9 @@ const dayName = (dateStr: string): string => {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 };
 
-export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate }) => {
+export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate, initialDate }) => {
   const { visits, clients, teams, cleaners } = useAppContext();
-  const [selectedDate, setSelectedDate] = useState<string>(initialReliefDate || formatLocalDate(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(initialReliefDate || initialDate || formatLocalDate(new Date()));
   const [selectedDriver] = useState<Cleaner | null>(initialDriver || null);
   const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 

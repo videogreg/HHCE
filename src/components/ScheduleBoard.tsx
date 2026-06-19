@@ -28,7 +28,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
-  const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner } | { type: 'relief'; date: string } | null>(null);
+  const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner; date: string } | { type: 'relief'; date: string } | null>(null);
   const [routeRefreshKey, setRouteRefreshKey] = useState(0);
 
   // Scroll to top whenever admin switches view or date so alerts are always visible first
@@ -580,7 +580,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               return (
                 <button
                   key={driver.id}
-                  onClick={() => setActiveRoutePlanner({ type: 'driver', driver })}
+                  onClick={() => setActiveRoutePlanner({ type: 'driver', driver, date: dateStr })}
                   className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px]"
                 >
                   <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -649,7 +649,12 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               }
               const assignedCleaners = assignedCleanerIds
                 .map(id => cleaners.find(c => c.id === id))
-                .filter(Boolean);
+                .filter(Boolean)
+                .sort((a, b) => {
+                  if (a?.isDriver && !b?.isDriver) return -1;
+                  if (!a?.isDriver && b?.isDriver) return 1;
+                  return 0;
+                });
 
               const hasDriverAssigned = assignedCleaners.some(c => c?.isDriver);
 
@@ -717,7 +722,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                         <button
                           onClick={() => {
                             const driver = assignedCleaners.find(c => c?.isDriver);
-                            if (driver) setActiveRoutePlanner({ type: 'driver', driver });
+                            if (driver) setActiveRoutePlanner({ type: 'driver', driver, date: dateStr });
                           }}
                           className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 active:scale-95"
                           title="View driver route"
@@ -912,6 +917,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
           }}
           initialDriver={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver : undefined}
           initialReliefDate={activeRoutePlanner.type === 'relief' ? activeRoutePlanner.date : undefined}
+          initialDate={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.date : undefined}
         />
       )}
     </div>
