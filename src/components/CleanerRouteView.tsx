@@ -4,7 +4,7 @@ import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '.
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
 import {
   MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
-  Navigation, AlertTriangle, X, Star, Ban
+  Navigation, AlertTriangle, X
 } from 'lucide-react';
 
 declare const google: any;
