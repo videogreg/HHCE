@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Car, User, MapPin, X, ArrowRight, Navigation, Star, Ban } from 'lucide-react';
+import { Clock, Car, User, MapPin, X, ArrowRight, Star, Ban } from 'lucide-react';
 import type { Cleaner, Visit, Client, Team } from '../types';
 import { format, parse, addMinutes } from 'date-fns';
 
