@@ -52,8 +52,6 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
     .map(id => cleaners.find(c => c.id === id))
     .filter(Boolean);
 
-  const totalHours = ((visit.durationMinutes || 0) / 60).toFixed(1);
-
   // ── SMART MOVE SUGGESTION ENGINE ──
   const suggestions = useMemo((): MoveSuggestion[] => {
     if (!isEditing || !client) return [];
