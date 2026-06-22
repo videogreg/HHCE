@@ -205,12 +205,14 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
         <div className="flex items-center gap-2">
           <button
             onClick={handleExport}
-            className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-1.5 text-xs font-bold active:scale-95"
+            className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-2 text-sm font-bold active:scale-95"
           >
-            <Download size={14} /> Export CSV
+            <Download size={16} />
+            <span className="hidden sm:inline">Export CSV</span>
           </button>
-          <label className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl cursor-pointer hover:bg-slate-200 transition-colors flex items-center gap-1.5 text-xs font-bold active:scale-95 border border-slate-200">
-            <Upload size={14} /> Import CSV
+          <label className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-2 text-sm font-bold active:scale-95">
+            <Upload size={16} />
+            <span className="hidden sm:inline">Import CSV</span>
             <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
           </label>
           <button
