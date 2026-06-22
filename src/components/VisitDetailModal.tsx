@@ -4,6 +4,7 @@ import { X, Clock, MapPin, Phone, Mail, Calendar, FileText, User, AlertCircle, A
 import type { Visit, Cleaner, Client, ConstraintViolation } from '../types';
 import { checkConstraints } from '../utils/scheduler';
 import { format, parse, addMinutes, isBefore, isAfter } from 'date-fns';
+import { formatHrsMins } from '../utils/hours';
 
 interface VisitDetailModalProps {
   visit: Visit;
@@ -475,7 +476,7 @@ export const VisitDetailModal: React.FC<VisitDetailModalProps> = ({
                 <Clock size={12} className="text-slate-400" />
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Duration</span>
               </div>
-              <p className="text-xs font-bold text-slate-800">{totalHours} hrs ({visit.durationMinutes || 0} min)</p>
+              <p className="text-xs font-bold text-slate-800">{formatHrsMins(visit.durationMinutes || 0)} ({visit.durationMinutes || 0} min)</p>
             </div>
           </div>
 

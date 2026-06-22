@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffe
 import type { Cleaner, Visit, Client, Team } from '../types';
 import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '../utils/maps';
 import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } from 'date-fns';
+import { formatHrsMins } from '../utils/hours';
 import {
   MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
   Navigation, AlertTriangle, X
@@ -820,7 +821,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
           <div>
             <h3 className="text-sm font-bold text-slate-800">{cleaner.name}</h3>
             <p className="text-[10px] text-slate-500 font-medium">
-              {myVisits.length} visit{myVisits.length !== 1 ? 's' : ''} • {cleaner.isDriver ? driverHours.toFixed(1) : myPaidHours.toFixed(1)} hrs • {startTime} – {endTime}
+              {myVisits.length} visit{myVisits.length !== 1 ? 's' : ''} • {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myPaidHours * 60)} • {startTime} – {endTime}
             </p>
           </div>
         </div>
@@ -924,12 +925,12 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
                   {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
                 </span>
                 <span className="text-green-700 font-black text-2xl">
-                  {cleaner.isDriver ? driverHours.toFixed(1) : myPaidHours.toFixed(1)} <span className="text-sm">hrs</span>
+                  {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myPaidHours * 60)}
                 </span>
               </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
                 <span className="text-purple-800 text-xs font-bold uppercase tracking-wider">Clean Hours</span>
-                <span className="text-purple-700 font-black text-2xl">{cleanHours.toFixed(1)} <span className="text-sm">hrs</span></span>
+                <span className="text-purple-700 font-black text-2xl">{formatHrsMins(cleanHours * 60)}</span>
               </div>
             </div>
 
@@ -940,7 +941,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
               </div>
               <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center justify-between">
                 <span className="text-amber-800 text-xs font-bold uppercase tracking-wider">Drive Time</span>
-                <span className="text-amber-700 font-black text-xl">{actualDriveMinutes} <span className="text-sm">min</span></span>
+                <span className="text-amber-700 font-black text-xl">{formatHrsMins(actualDriveMinutes)}</span>
               </div>
             </div>
 
@@ -1061,14 +1062,14 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-black text-slate-800">{tm.hours.toFixed(1)}</span>
+                      <span className="text-lg font-black text-slate-800">{formatHrsMins(tm.hours * 60)}</span>
                       <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
                       <p className="text-[10px] text-slate-400">{tm.minutes} min</p>
                       {!tm.isDriver && tm.cleanMinutes !== undefined && (
                         <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                          <span className="text-green-600 font-bold">{Math.round((tm.cleanMinutes / 60) * 10) / 10}h</span> clean
+                          <span className="text-green-600 font-bold">{formatHrsMins(tm.cleanMinutes || 0)}</span> clean
                           <span className="mx-1">·</span>
-                          <span className="text-amber-600 font-bold">{Math.round(((tm.travelMinutes ?? 0) / 60) * 10) / 10}h</span> travel
+                          <span className="text-amber-600 font-bold">{formatHrsMins(tm.travelMinutes || 0)}</span> travel
                         </p>
                       )}
                     </div>
