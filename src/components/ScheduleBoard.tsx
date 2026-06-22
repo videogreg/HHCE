@@ -573,25 +573,26 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       </div>
 
       {viewMode === 'day' && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {regularDrivers.map(driver => {
-              const driverVisits = dayVisits.filter(v => {
-                if (v.cancelled) return false;
-                let ids = v.assignedCleanerIds || [];
-                if (ids.length === 0) {
-                  const t = teams.find(tm => tm.id === v.assignedTeamId);
-                  if (t) ids = t.cleanerIds;
-                }
-                return ids.includes(driver.id);
-              });
-              return (
-                <button
-                  key={driver.id}
-                  onClick={() => setActiveRoutePlanner({ type: 'driver', driver, date: dateStr })}
-                  className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px]"
-                >
+        <>
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Driver Routes</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {regularDrivers.map(driver => {
+                const driverVisits = dayVisits.filter(v => {
+                  if (v.cancelled) return false;
+                  let ids = v.assignedCleanerIds || [];
+                  if (ids.length === 0) {
+                    const t = teams.find(tm => tm.id === v.assignedTeamId);
+                    if (t) ids = t.cleanerIds;
+                  }
+                  return ids.includes(driver.id);
+                });
+                return (
+                  <button
+                    key={driver.id}
+                    onClick={() => setActiveRoutePlanner({ type: 'driver', driver, date: dateStr })}
+                    className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px]"
+                  >
                   <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
                     <Car size={16} className="text-blue-600" />
                   </div>
@@ -646,6 +647,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             />
           </div>
         )}
+      </>
       )}
 
       {viewMode === 'day' && (
