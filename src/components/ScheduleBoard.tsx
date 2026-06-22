@@ -4,7 +4,8 @@ import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
 import { RoutePlanner } from './RoutePlanner';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus, CheckCircle, LogIn } from 'lucide-react';
+import { CleanerDayView } from './CleanerDayView';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus, CheckCircle, LogIn, User } from 'lucide-react';
 import type { Visit, Cleaner, ConstraintViolation } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
@@ -29,6 +30,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
   const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner; date: string } | { type: 'relief'; date: string } | null>(null);
+  const [activeCleanerView, setActiveCleanerView] = useState<Cleaner | null>(null);
   const [routeRefreshKey, setRouteRefreshKey] = useState(0);
 
   // Scroll to top whenever admin switches view or date so alerts are always visible first
@@ -63,6 +65,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
       }, 50);
     }
   }, [activeRoutePlanner]);
+
+  // Scroll to cleaner day view when a non-driver is opened
+  useEffect(() => {
+    if (activeCleanerView) {
+      setTimeout(() => {
+        document.getElementById('cleaner-day-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+  }, [activeCleanerView]);
 
   const allViolations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
   const violations = allViolations.filter((v: any) => {
@@ -277,6 +288,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     });
     return cleaners.filter(c => driverIds.has(c.id));
   }, [dayVisits, cleaners, teams]);
+
+  const nonDriverCleaners = useMemo(() => {
+    return cleaners.filter(c => c.active && !c.isDriver);
+  }, [cleaners]);
 
   const reliefRouteInfo = useMemo(() => {
     try {
@@ -590,7 +605,10 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                 return (
                   <button
                     key={driver.id}
-                    onClick={() => setActiveRoutePlanner({ type: 'driver', driver, date: dateStr })}
+                    onClick={() => {
+                      setActiveRoutePlanner({ type: 'driver', driver, date: dateStr });
+                      setActiveCleanerView(null);
+                    }}
                     className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px]"
                   >
                   <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -644,6 +662,67 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
               initialDriver={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver : undefined}
               initialReliefDate={activeRoutePlanner.type === 'relief' ? activeRoutePlanner.date : undefined}
               initialDate={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.date : undefined}
+            />
+          </div>
+        )}
+        {/* Cleaner Schedules — non-driver cleaner day view */}
+        {nonDriverCleaners.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">Cleaner Schedules</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {nonDriverCleaners.map(cleaner => {
+                const cleanerVisits = dayVisits.filter(v => {
+                  if (v.cancelled) return false;
+                  let ids = v.assignedCleanerIds || [];
+                  if (ids.length === 0) {
+                    const t = teams.find(tm => tm.id === v.assignedTeamId);
+                    if (t) ids = t.cleanerIds;
+                  }
+                  return ids.includes(cleaner.id);
+                });
+                return (
+                  <button
+                    key={cleaner.id}
+                    onClick={() => {
+                      setActiveCleanerView(cleaner);
+                      setActiveRoutePlanner(null);
+                    }}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border hover:shadow-sm transition-all active:scale-95 shrink-0 min-w-[140px] ${
+                      activeCleanerView?.id === cleaner.id
+                        ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                        : 'bg-green-50 text-green-800 border-green-200 hover:border-green-300'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                      activeCleanerView?.id === cleaner.id ? 'bg-white/20' : 'bg-green-100'
+                    }`}>
+                      <User size={16} className={activeCleanerView?.id === cleaner.id ? 'text-white' : 'text-green-600'} />
+                    </div>
+                    <div className="text-left">
+                      <p className={`text-xs font-bold ${activeCleanerView?.id === cleaner.id ? 'text-white' : 'text-slate-800'}`}>
+                        {cleaner.name}
+                      </p>
+                      <p className={`text-[10px] ${activeCleanerView?.id === cleaner.id ? 'text-green-100' : 'text-slate-500'}`}>
+                        {cleanerVisits.length} visit{cleanerVisits.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {activeCleanerView && (
+          <div id="cleaner-day-view" className="animate-slide-up">
+            <CleanerDayView
+              cleaner={activeCleanerView}
+              date={dateStr}
+              visits={visits}
+              cleaners={cleaners}
+              clients={clients}
+              teams={teams}
+              onClose={() => setActiveCleanerView(null)}
             />
           </div>
         )}
