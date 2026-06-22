@@ -230,14 +230,39 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
 
     setRouteStops(stops);
 
-    // Solo non-drivers are paid only for actual clean time, not travel/wait between cleans
+    // Calculate actual Google Maps travel between consecutive cleans
+    let totalTravelMinutes = 0;
+    let totalTravelKm = 0;
+    const validLocs = stops.map(s => s.latLng).filter(Boolean);
+    if (validLocs.length >= 2) {
+      const origin = validLocs[0];
+      const destination = validLocs[validLocs.length - 1];
+      const waypoints = validLocs.slice(1, -1);
+      const routeResult = await calculateRoute(origin, destination, waypoints);
+      if (routeResult && routeResult.routes?.[0]?.legs) {
+        const legs = routeResult.routes[0].legs;
+        for (let i = 1; i < stops.length; i++) {
+          const leg = legs[i - 1];
+          if (leg) {
+            stops[i].legDistanceKm = leg.distance.value / 1000;
+            stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+            totalTravelMinutes += stops[i].legDurationMin || 0;
+            totalTravelKm += stops[i].legDistanceKm || 0;
+          }
+        }
+      }
+    }
+
+    // Solo non-drivers: paid = clean duration + actual Google Maps travel time (no wait)
     const totalCleanMinutes = myVisits.reduce((sum, v) => sum + v.durationMinutes, 0);
+    const paidMinutes = totalCleanMinutes + totalTravelMinutes;
+    const paidHrs = Math.round((paidMinutes / 60) * 10) / 10;
     const cleanHrs = Math.round((totalCleanMinutes / 60) * 10) / 10;
     setDriverHours(0);
     setCleanHours(cleanHrs);
-    setActualDriveMinutes(0);
-    setTotalKm(0);
-    setTeamHours([{ name: cleaner.name, minutes: totalCleanMinutes, hours: cleanHrs, isDriver: false, cleanMinutes: totalCleanMinutes, travelMinutes: 0, waitMinutes: 0 }]);
+    setActualDriveMinutes(totalTravelMinutes);
+    setTotalKm(totalTravelKm);
+    setTeamHours([{ name: cleaner.name, minutes: paidMinutes, hours: paidHrs, isDriver: false, cleanMinutes: totalCleanMinutes, travelMinutes: totalTravelMinutes, waitMinutes: 0 }]);
     setLoading(false);
   };
 
