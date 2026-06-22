@@ -39,6 +39,7 @@ interface TeamMemberHours {
   isDriver: boolean;
   cleanMinutes?: number;
   travelMinutes?: number;
+  travelDistanceKm?: number;
   waitMinutes?: number;
 }
 
@@ -381,7 +382,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
           const leg = legs[i - 1];
           if (leg) {
             stops[i].legDistanceKm = leg.distance.value / 1000;
-            stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+            stops[i].legDurationMin = Math.round(leg.duration.value / 60);
             totalTravelMinutes += stops[i].legDurationMin || 0;
             totalTravelKm += stops[i].legDistanceKm || 0;
           }
@@ -643,7 +644,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       runningTime = new Date(runningTime.getTime() + driveMs);
 
       stops[i].legDistanceKm = leg.distance.value / 1000;
-      stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+      stops[i].legDurationMin = Math.round(leg.duration.value / 60);
       stops[i].arrivalTime = format(runningTime, 'HH:mm');
 
       if (stops[i].type === 'clean') {
@@ -742,8 +743,10 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         const lastCleanIdx = stops.indexOf(lastClean);
 
         let travelMinutes = 0;
+        let travelDistanceKm = 0;
         for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
           travelMinutes += stops[i].legDurationMin || 0;
+          travelDistanceKm += stops[i].legDistanceKm || 0;
         }
 
         const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
@@ -762,6 +765,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
           isDriver: false,
           cleanMinutes,
           travelMinutes,
+          travelDistanceKm,
           waitMinutes
         };
       } else {
@@ -1101,13 +1105,13 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-blue-800 text-xs font-bold uppercase tracking-wider">Total Distance</span>
                   <span className="text-blue-700 font-black text-xl">
-                    {cleaner.isDriver || !hasDriverPickup ? totalKm.toFixed(1) : '0'} <span className="text-sm">km</span>
+                    {cleaner.isDriver || !hasDriverPickup ? totalKm.toFixed(1) : (myTeamHours?.travelDistanceKm ?? 0).toFixed(1)} <span className="text-sm">km</span>
                   </span>
                 </div>
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-amber-800 text-xs font-bold uppercase tracking-wider">Drive Time</span>
                   <span className="text-amber-700 font-black text-xl">
-                    {cleaner.isDriver || !hasDriverPickup ? formatHrsMins(actualDriveMinutes) : '0 min'}
+                    {cleaner.isDriver || !hasDriverPickup ? formatHrsMins(actualDriveMinutes) : formatHrsMins(myTeamHours?.travelMinutes ?? 0)}
                   </span>
                 </div>
               </div>
