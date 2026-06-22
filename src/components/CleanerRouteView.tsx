@@ -146,12 +146,12 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, cleaner.id, myVisits.length, myDriver?.id]);
 
-  // Render map whenever routeStops changes — useLayoutEffect so mapRef is set after DOM paint
+  // Render map whenever routeStops changes or loading finishes — useLayoutEffect so mapRef is set after DOM paint
   useLayoutEffect(() => {
     if (mapRef.current && routeStops.length > 0 && (window as any).google) {
       renderMap(routeStops, directionsResultRef.current);
     }
-  }, [routeStops]);
+  }, [routeStops, loading]);
 
   const isMapAlive = (): boolean => {
     if (!mapInstance.current) return false;

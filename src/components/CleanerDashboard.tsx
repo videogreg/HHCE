@@ -278,12 +278,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
 
-  // Render map whenever routeStops changes — useLayoutEffect so mapRef is set after DOM paint
+  // Render map whenever routeStops changes or loading finishes — useLayoutEffect so mapRef is set after DOM paint
   useLayoutEffect(() => {
     if (mapRef.current && routeStops.length > 0 && (window as any).google) {
       renderMap(routeStops, directionsResultRef.current);
     }
-  }, [routeStops]);
+  }, [routeStops, loading]);
 
   const clearMap = () => {
     markersRef.current.forEach(m => m.setMap(null));
