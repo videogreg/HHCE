@@ -1100,11 +1100,15 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-blue-800 text-xs font-bold uppercase tracking-wider">Total Distance</span>
-                  <span className="text-blue-700 font-black text-xl">{totalKm.toFixed(1)} <span className="text-sm">km</span></span>
+                  <span className="text-blue-700 font-black text-xl">
+                    {cleaner.isDriver || !hasDriverPickup ? totalKm.toFixed(1) : '0'} <span className="text-sm">km</span>
+                  </span>
                 </div>
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-amber-800 text-xs font-bold uppercase tracking-wider">Drive Time</span>
-                  <span className="text-amber-700 font-black text-xl">{formatHrsMins(actualDriveMinutes)}</span>
+                  <span className="text-amber-700 font-black text-xl">
+                    {cleaner.isDriver || !hasDriverPickup ? formatHrsMins(actualDriveMinutes) : '0 min'}
+                  </span>
                 </div>
               </div>
 
