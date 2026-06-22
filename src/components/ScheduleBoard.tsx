@@ -4,8 +4,8 @@ import { checkConstraints } from '../utils/scheduler';
 import { formatTotalHours, formatOnSiteHours } from '../utils/hours';
 import { VisitDetailModal } from './VisitDetailModal';
 import { RoutePlanner } from './RoutePlanner';
-import { CleanerDayView } from './CleanerDayView';
-import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus, CheckCircle, LogIn, User } from 'lucide-react';
+import { CleanerRouteView } from './CleanerRouteView';
+import { Clock, MapPin, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban, Star, LayoutGrid, CalendarDays, Calendar as CalendarIcon, XCircle, Phone, X, Car, Bus, CheckCircle, LogIn, User, Users } from 'lucide-react';
 import type { Visit, Cleaner, ConstraintViolation } from '../types';
 import {
   format, addDays, subDays, addMonths, subMonths, startOfMonth, endOfMonth,
@@ -31,6 +31,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   const [modalVisitId, setModalVisitId] = useState<string | null>(null);
   const [activeRoutePlanner, setActiveRoutePlanner] = useState<{ type: 'driver'; driver: Cleaner; date: string } | { type: 'relief'; date: string } | null>(null);
   const [activeCleanerView, setActiveCleanerView] = useState<Cleaner | null>(null);
+  const [reassignVisitId, setReassignVisitId] = useState<string | null>(null);
   const [routeRefreshKey, setRouteRefreshKey] = useState(0);
 
   // Scroll to top whenever admin switches view or date so alerts are always visible first
@@ -290,8 +291,21 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   }, [dayVisits, cleaners, teams]);
 
   const nonDriverCleaners = useMemo(() => {
-    return cleaners.filter(c => c.active && !c.isDriver);
-  }, [cleaners]);
+    return cleaners.filter(c => {
+      if (!c.active || c.isDriver) return false;
+      // Only include cleaners with at least 1 visit on the current day
+      const hasVisit = dayVisits.some(v => {
+        if (v.cancelled) return false;
+        let ids = v.assignedCleanerIds || [];
+        if (ids.length === 0) {
+          const t = teams.find(tm => tm.id === v.assignedTeamId);
+          if (t) ids = t.cleanerIds;
+        }
+        return ids.includes(c.id);
+      });
+      return hasVisit;
+    });
+  }, [cleaners, dayVisits, teams]);
 
   const reliefRouteInfo = useMemo(() => {
     try {
@@ -715,7 +729,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
 
         {activeCleanerView && (
           <div id="cleaner-day-view" className="animate-slide-up">
-            <CleanerDayView
+            <CleanerRouteView
               cleaner={activeCleanerView}
               date={dateStr}
               visits={visits}
@@ -907,12 +921,77 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                         )}
                       </div>
 
+                      {/* Inline Reassign Panel */}
+                      {reassignVisitId === visit.id && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
+                          <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Reassign Cleaners</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {cleaners.filter(c => c.active).map(c => {
+                              const isAssigned = (visit.assignedCleanerIds || []).includes(c.id);
+                              return (
+                                <button
+                                  key={c.id}
+                                  onClick={() => {
+                                    const current = visit.assignedCleanerIds || [];
+                                    const updated = current.includes(c.id)
+                                      ? current.filter(id => id !== c.id)
+                                      : [...current, c.id];
+                                    setVisits(visits.map(v => v.id === visit.id ? { ...v, assignedCleanerIds: updated } : v));
+                                  }}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all active:scale-95 flex items-center gap-1 ${
+                                    isAssigned
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300'
+                                  }`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: isAssigned ? 'white' : (c.color || '#94a3b8') }} />
+                                  {c.isDriver && <Car size={8} className={isAssigned ? 'text-blue-200' : 'text-blue-500'} />}
+                                  {c.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                const ids = visit.assignedCleanerIds || [];
+                                const driverCount = ids.filter(id => cleaners.find(c => c.id === id)?.isDriver).length;
+                                if (driverCount === 0) {
+                                  alert('Please select at least one driver');
+                                  return;
+                                }
+                                if (driverCount > 1) {
+                                  alert('Only one driver per clean');
+                                  return;
+                                }
+                                setReassignVisitId(null);
+                              }}
+                              className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 active:scale-95 transition-colors"
+                            >
+                              Save Changes
+                            </button>
+                            <button
+                              onClick={() => setReassignVisitId(null)}
+                              className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-200 active:scale-95 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 pt-2 border-t border-slate-100">
                         <button
                           onClick={() => setModalVisitId(visit.id)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-blue-200 hover:bg-blue-100 transition-colors active:scale-95"
                         >
                           <Phone size={12} /> Details
+                        </button>
+                        <button
+                          onClick={() => setReassignVisitId(reassignVisitId === visit.id ? null : visit.id)}
+                          className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-50 text-purple-700 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-purple-200 hover:bg-purple-100 transition-colors active:scale-95 whitespace-nowrap"
+                        >
+                          <Users size={12} /> Reassign
                         </button>
                         <button
                           onClick={() => cancelVisit(visit.id)}
