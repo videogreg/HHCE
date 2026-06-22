@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner, Visit } from '../types';
 import { loadGoogleMaps, geocodeAddress, calculateRoute, areSameLatLng } from '../utils/maps';
@@ -277,8 +277,8 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
 
-  // Render map whenever routeStops changes (even with null directionsResult)
-  useEffect(() => {
+  // Render map whenever routeStops changes — useLayoutEffect so mapRef is set after DOM paint
+  useLayoutEffect(() => {
     if (mapRef.current && routeStops.length > 0 && (window as any).google) {
       renderMap(routeStops, directionsResultRef.current);
     }
@@ -368,11 +368,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     let totalTravelMinutes = 0;
     let totalTravelKm = 0;
     const validLocs = stops.map(s => s.latLng).filter(Boolean);
+    let routeResult: any = null;
     if (validLocs.length >= 2) {
       const origin = validLocs[0];
       const destination = validLocs[validLocs.length - 1];
       const waypoints = validLocs.slice(1, -1);
-      const routeResult = await calculateRoute(origin, destination, waypoints);
+      routeResult = await calculateRoute(origin, destination, waypoints);
       if (routeResult && routeResult.routes?.[0]?.legs) {
         const legs = routeResult.routes[0].legs;
         for (let i = 1; i < stops.length; i++) {
@@ -386,6 +387,8 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         }
       }
     }
+    // Store route result so renderMap can draw the polyline
+    directionsResultRef.current = routeResult;
 
     // Solo non-drivers: paid = clean duration + actual Google Maps travel time (no wait)
     const totalCleanMinutes = myVisits.reduce((sum, v) => sum + v.durationMinutes, 0);
