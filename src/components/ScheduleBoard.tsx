@@ -55,6 +55,15 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
     }
   }, [focusVisitId, dayVisits, onFocusClear]);
 
+  // Scroll to route planner when a driver route is opened
+  useEffect(() => {
+    if (activeRoutePlanner) {
+      setTimeout(() => {
+        document.getElementById('route-planner-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+  }, [activeRoutePlanner]);
+
   const allViolations = useMemo(() => checkConstraints(dayVisits, cleaners, clients, teams), [dayVisits, cleaners, clients, teams]);
   const violations = allViolations.filter((v: any) => {
     const visit = dayVisits.find(dv => dv.id === v.visitId);
@@ -621,6 +630,22 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             </button>
           </div>
         </div>
+
+        {/* Route Planner — opens inline below driver routes */}
+        {activeRoutePlanner && (
+          <div id="route-planner-panel" className="animate-slide-up">
+            <RoutePlanner
+              key={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver.id : 'relief'}
+              onClose={() => {
+                setActiveRoutePlanner(null);
+                setRouteRefreshKey(k => k + 1);
+              }}
+              initialDriver={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver : undefined}
+              initialReliefDate={activeRoutePlanner.type === 'relief' ? activeRoutePlanner.date : undefined}
+              initialDate={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.date : undefined}
+            />
+          </div>
+        )}
       )}
 
       {viewMode === 'day' && (
@@ -909,17 +934,6 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
         />
       )}
 
-      {activeRoutePlanner && (
-        <RoutePlanner
-          onClose={() => {
-            setActiveRoutePlanner(null);
-            setRouteRefreshKey(k => k + 1);
-          }}
-          initialDriver={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.driver : undefined}
-          initialReliefDate={activeRoutePlanner.type === 'relief' ? activeRoutePlanner.date : undefined}
-          initialDate={activeRoutePlanner.type === 'driver' ? activeRoutePlanner.date : undefined}
-        />
-      )}
     </div>
   );
 };
