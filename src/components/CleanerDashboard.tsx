@@ -363,17 +363,15 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     }
 
     setRouteStops(stops);
-    const first = stops[0];
-    const last = stops[stops.length - 1];
-    const start = parse(first.arrivalTime, 'HH:mm', new Date());
-    const end = parse(last.departTime || last.arrivalTime, 'HH:mm', new Date());
-    const mins = Math.round((end.getTime() - start.getTime()) / 60000);
-    const cleanHrs = Math.round((mins / 60) * 10) / 10;
+
+    // Solo non-drivers are paid only for actual clean time, not travel/wait between cleans
+    const totalCleanMinutes = myVisits.reduce((sum, v) => sum + v.durationMinutes, 0);
+    const cleanHrs = Math.round((totalCleanMinutes / 60) * 10) / 10;
     setDriverHours(0);
     setCleanHours(cleanHrs);
     setActualDriveMinutes(0);
     setTotalKm(0);
-    setTeamHours([{ name: cleaner.name, minutes: mins, hours: cleanHrs, isDriver: false, cleanMinutes: mins, travelMinutes: 0, waitMinutes: 0 }]);
+    setTeamHours([{ name: cleaner.name, minutes: totalCleanMinutes, hours: cleanHrs, isDriver: false, cleanMinutes: totalCleanMinutes, travelMinutes: 0, waitMinutes: 0 }]);
     setLoading(false);
   };
 
