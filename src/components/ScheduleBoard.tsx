@@ -953,19 +953,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                           </div>
                           <div className="flex gap-2">
                             <button
-                              onClick={() => {
-                                const ids = visit.assignedCleanerIds || [];
-                                const driverCount = ids.filter(id => cleaners.find(c => c.id === id)?.isDriver).length;
-                                if (driverCount === 0) {
-                                  alert('Please select at least one driver');
-                                  return;
-                                }
-                                if (driverCount > 1) {
-                                  alert('Only one driver per clean');
-                                  return;
-                                }
-                                setReassignVisitId(null);
-                              }}
+                              onClick={() => setReassignVisitId(null)}
                               className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 active:scale-95 transition-colors"
                             >
                               Save Changes
