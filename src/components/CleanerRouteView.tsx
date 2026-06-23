@@ -68,7 +68,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
   // Route state (mirrors CleanerDashboard / RoutePlanner)
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
-  const [driverHours, setDriverHours] = useState(0);
   const [driverTotalMinutes, setDriverTotalMinutes] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);
   const [actualDriveMinutes, setActualDriveMinutes] = useState(0);
@@ -128,7 +127,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
       setRouteStops([]);
       setTotalKm(0);
       setDriverTotalMinutes(0);
-      setDriverHours(0);
       setCleanHours(0);
       setActualDriveMinutes(0);
       setTeamHours([]);
@@ -266,7 +264,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     const paidHrs = Math.round((paidMinutes / 60) * 10) / 10;
     const cleanHrs = Math.round((totalCleanMinutes / 60) * 10) / 10;
     setDriverTotalMinutes(0);
-    setDriverHours(0);
     setCleanHours(cleanHrs);
     setActualDriveMinutes(totalTravelMinutes);
     setTotalKm(totalTravelKm);
@@ -554,7 +551,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     const endTime = parse(lastStop.departTime || lastStop.arrivalTime, 'HH:mm', new Date());
     const rawDriverMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
     const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
-    const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
 
     const cleanTotalMinutes = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
     const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
@@ -675,7 +671,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
 
     setTotalKm(Math.round(totalDist / 100) / 10);
     setDriverTotalMinutes(driverTotalMinutes);
-    setDriverHours(driverTotalHours);
     setCleanHours(cleanTotalHours);
     setActualDriveMinutes(actualDriveMin);
     setTeamHours(memberHours);
