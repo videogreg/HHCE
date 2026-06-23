@@ -48,7 +48,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
   const affectedVisits = useMemo(() => {
     if (!issueType) return [];
     if (issueType.startsWith('client-')) {
-      return dayVisits.filter(v => selectedIds.includes(v.clientId));
+      return dayVisits.filter(v => selectedIds.includes(v.id));
     }
     return dayVisits.filter(v => {
       const ids = v.assignedCleanerIds || [];
@@ -1011,23 +1011,15 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
 
               {issueType?.startsWith('client') && (
                 <div className="space-y-2">
-                  {(() => {
-                    const seen = new Set<string>();
-                    const unique = dayVisits.filter(v => {
-                      if (seen.has(v.clientId)) return false;
-                      seen.add(v.clientId);
-                      return true;
-                    });
-                    return unique.map(v => (
-                      <label key={v.clientId} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedIds.includes(v.clientId) ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
-                        <input type="checkbox" checked={selectedIds.includes(v.clientId)} onChange={() => toggleSelected(v.clientId)} className="w-5 h-5 rounded border-slate-300 text-red-600" />
-                        <div className="flex-1">
-                          <p className="text-sm font-bold text-slate-800">{v.clientName}</p>
-                          <p className="text-xs text-slate-500">{v.startTime} • {v.clientAddress}</p>
-                        </div>
-                      </label>
-                    ));
-                  })()}
+                  {dayVisits.map(v => (
+                    <label key={v.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedIds.includes(v.id) ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                      <input type="checkbox" checked={selectedIds.includes(v.id)} onChange={() => toggleSelected(v.id)} className="w-5 h-5 rounded border-slate-300 text-red-600" />
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-slate-800">{v.clientName}</p>
+                        <p className="text-xs text-slate-500">{v.startTime} • {v.clientAddress}</p>
+                      </div>
+                    </label>
+                  ))}
                   {dayVisits.length === 0 && <p className="text-sm text-slate-500 text-center py-4">No visits today.</p>}
                 </div>
               )}
