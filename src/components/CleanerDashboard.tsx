@@ -680,16 +680,6 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const actualDriveMin = stops.slice(1).reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
     const driverTotalMinutes = actualDriveMin + cleanTotalMinutes;
 
-    // DEBUG: Log each stop's legDurationMin to trace discrepancy
-    console.log('=== DRIVER ROUTE DEBUG ===');
-    stops.forEach((s, i) => {
-      console.log(`Stop ${i}: ${s.type} | legDurationMin=${s.legDurationMin} | durationMin=${s.durationMin}`);
-    });
-    console.log('actualDriveMin (sum of legDurationMin):', actualDriveMin);
-    console.log('cleanTotalMinutes (sum of clean durations):', cleanTotalMinutes);
-    console.log('driverTotalMinutes (drive + clean):', driverTotalMinutes);
-    console.log('========================');
-
     // Team member hours (same logic as RoutePlanner)
     const allTeamMemberIds = new Set<string>();
     data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
@@ -1093,11 +1083,6 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                     {cleaner.isDriver || !hasDriverPickup ? formatHrsMins(actualDriveMinutes) : formatHrsMins(myTeamHours?.travelMinutes ?? 0)}
                   </span>
                 </div>
-              </div>
-
-              {/* DEBUG: Show raw state values */}
-              <div className="bg-red-50 border border-red-200 rounded-xl p-2 text-[10px] font-mono text-red-700">
-                DEBUG: driverTotalMinutes={driverTotalMinutes} | cleanTotalMinutes={cleanTotalMinutes} | actualDriveMinutes={actualDriveMinutes} | sum={cleanTotalMinutes + actualDriveMinutes}
               </div>
 
               {routeUrl && (

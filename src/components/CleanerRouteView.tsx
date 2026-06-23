@@ -546,16 +546,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     const actualDriveMin = stops.slice(1).reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
     const driverTotalMinutes = actualDriveMin + cleanTotalMinutes;
 
-    // DEBUG: Log each stop's legDurationMin to trace discrepancy
-    console.log('=== ROUTE VIEW DEBUG ===');
-    stops.forEach((s, i) => {
-      console.log(`Stop ${i}: ${s.type} | legDurationMin=${s.legDurationMin} | durationMin=${s.durationMin}`);
-    });
-    console.log('actualDriveMin (sum of legDurationMin):', actualDriveMin);
-    console.log('cleanTotalMinutes (sum of clean durations):', cleanTotalMinutes);
-    console.log('driverTotalMinutes (drive + clean):', driverTotalMinutes);
-    console.log('========================');
-
     // Team member hours (same logic as RoutePlanner)
     const allTeamMemberIds = new Set<string>();
     data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
@@ -941,11 +931,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
                     {formatHrsMins(cleaner.isDriver ? (actualDriveMinutes + cleanTotalMinutes) : myTeamHours?.minutes ?? 0)}
                   </span>
                 </div>
-                {cleaner.isDriver && (
-                  <span className="text-xs text-red-600 font-mono mt-1">
-                    raw state={driverTotalMinutes} | computed={actualDriveMinutes + cleanTotalMinutes} | diff={driverTotalMinutes - (actualDriveMinutes + cleanTotalMinutes)}
-                  </span>
-                )}
               </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
                 <span className="text-purple-800 text-xs font-bold uppercase tracking-wider">Clean Hours</span>
@@ -966,12 +951,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
                   {cleaner.isDriver || !hasDriverPickup ? formatHrsMins(actualDriveMinutes) : formatHrsMins((myTeamHours?.travelMinutes ?? 0))}
                 </span>
               </div>
-            </div>
-
-            {/* DEBUG: Show raw state values */}
-            <div className="bg-red-100 border-2 border-red-500 rounded-lg p-3 text-sm font-mono text-red-800 my-2">
-              <strong>DEBUG:</strong> driverTotalMinutes={driverTotalMinutes} | cleanTotalMinutes={cleanTotalMinutes} | actualDriveMinutes={actualDriveMinutes}<br/>
-              clean+drive={cleanTotalMinutes + actualDriveMinutes} | diff={driverTotalMinutes - (cleanTotalMinutes + actualDriveMinutes)}
             </div>
 
             {routeUrl && (
