@@ -15,7 +15,7 @@ declare const google: any;
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 interface RouteStop {
-  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home';
+  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'intermediate-pickup' | 'intermediate-dropoff';
   label: string;
   address: string;
   arrivalTime: string;
@@ -30,6 +30,7 @@ interface RouteStop {
   visitId?: string;
   teamMemberId?: string;
   latLng?: any;
+  afterVisitId?: string;
 }
 
 interface TeamMemberHours {
@@ -200,7 +201,7 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
 };
 
 export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onLogout }) => {
-  const { visits, clients, teams, cleaners, setVisits } = useAppContext();
+  const { visits, clients, teams, cleaners, setVisits, routeModifications } = useAppContext();
   const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate(new Date()));
   const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
 
@@ -284,7 +285,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const driver = cleaner.isDriver ? cleaner : myDriver!;
     buildFullRoute(driver);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id]);
+  }, [selectedDate, cleaner.id, myVisits.length, myDriver?.id, JSON.stringify(routeModifications)]);
 
   // Render map whenever routeStops changes or loading finishes — useLayoutEffect so mapRef is set after DOM paint
   useLayoutEffect(() => {
@@ -317,7 +318,13 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     }
   };
 
+  const getRouteKey = (driverId: string, date: string) => `${driverId}_${date}`;
 
+  const getManualStopsForRoute = (): RouteStop[] => {
+    const driver = cleaner.isDriver ? cleaner : myDriver;
+    if (!driver) return [];
+    return routeModifications[getRouteKey(driver.id, selectedDate)] || [];
+  };
 
   const buildSoloRoute = async () => {
     setLoading(true);
@@ -482,7 +489,18 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       latLng: driverHome,
     });
 
+    // Get manual stops for this route
+    const manualStops = getManualStopsForRoute();
+    const cleanersWithIntermediatePickup = new Set(
+      manualStops.filter(s => s.type === 'intermediate-pickup').map(s => s.teamMemberId).filter(Boolean)
+    );
+    const cleanersWithIntermediateDropoff = new Set(
+      manualStops.filter(s => s.type === 'intermediate-dropoff').map(s => s.teamMemberId).filter(Boolean)
+    );
+
+    // Add initial pickups for team members who don't have an intermediate-pickup
     for (const tm of teamMembersWithAddr) {
+      if (cleanersWithIntermediatePickup.has(tm.id)) continue;
       stops.push({
         type: 'pickup',
         label: `Pick up ${tm.name}`,
@@ -492,6 +510,25 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         teamMemberId: tm.id,
         latLng: teamLocs[tm.id],
       });
+    }
+
+    // Insert manual pickups without afterVisitId before first clean
+    const beforeFirstCleanStops = manualStops.filter(s => s.type === 'intermediate-pickup' && !s.afterVisitId);
+    for (const ms of beforeFirstCleanStops) {
+      const cleaner = cleaners.find(c => c.id === ms.teamMemberId);
+      if (cleaner) {
+        const addr = ms.address || cleaner.address;
+        let loc = teamLocs[cleaner.id];
+        if (addr && !loc) {
+          loc = await geocodeAddress(addr);
+        }
+        stops.push({
+          ...ms,
+          label: `Pick up ${cleaner.name}`,
+          address: addr || 'Unknown',
+          latLng: loc,
+        });
+      }
     }
 
     for (const v of driverVisits) {
@@ -506,9 +543,30 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
         visitId: v.id,
         latLng: clientLocs[v.id],
       });
+
+      // Insert any manual stops that should come after this visit
+      const afterStops = manualStops.filter(s => s.afterVisitId === v.id);
+      for (const ms of afterStops) {
+        const cleaner = cleaners.find(c => c.id === ms.teamMemberId);
+        if (cleaner) {
+          const addr = ms.address || cleaner.address;
+          let loc = teamLocs[cleaner.id];
+          if (addr && !loc) {
+            loc = await geocodeAddress(addr);
+          }
+          stops.push({
+            ...ms,
+            label: ms.type === 'intermediate-pickup' ? `Pick up ${cleaner.name}` : `Drop off ${cleaner.name}`,
+            address: addr || 'Unknown',
+            latLng: loc,
+          });
+        }
+      }
     }
 
+    // Add final dropoffs for team members who don't have an intermediate-dropoff
     [...teamMembersWithAddr].reverse().forEach(tm => {
+      if (cleanersWithIntermediateDropoff.has(tm.id)) return;
       stops.push({
         type: 'dropoff',
         label: `Drop off ${tm.name}`,
@@ -687,7 +745,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const actualDriveMin = stops.slice(1).reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
     const driverTotalMinutes = actualDriveMin + cleanTotalMinutes;
 
-    // Team member hours (same logic as RoutePlanner)
+    // Team member hours — handle multiple pickup/dropoff segments per cleaner
     const allTeamMemberIds = new Set<string>();
     data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
 
@@ -695,78 +753,88 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
       const tm = cleaners.find(c => c.id === id);
       if (!tm) return null;
 
-      const pickupIdx = stops.findIndex(s =>
-        (s.type === 'pickup' && s.teamMemberId === id) ||
-        (s.type === 'pickup' && s.label === `Pick up ${tm.name}`)
-      );
-      const dropoffIdx = stops.findIndex(s =>
-        (s.type === 'dropoff' && s.teamMemberId === id) ||
-        (s.type === 'dropoff' && s.label === `Drop off ${tm.name}`)
-      );
-
-      let searchStart = 0;
-      let searchEnd = stops.length;
-      if (pickupIdx >= 0) searchStart = pickupIdx + 1;
-      if (dropoffIdx >= 0) searchEnd = dropoffIdx;
-
-      const candidateCleans = stops.slice(searchStart, searchEnd).filter(s => s.type === 'clean');
-      let relevantCleans: RouteStop[] = [];
-      for (const clean of candidateCleans) {
-        if (!clean.visitId) { relevantCleans.push(clean); continue; }
-        const visit = data.driverVisits.find(v => v.id === clean.visitId);
-        if (visit) {
-          let assignedIds = visit.assignedCleanerIds || [];
-          if (assignedIds.length === 0) {
-            const team = teams.find(t => t.id === visit.assignedTeamId);
-            if (team) assignedIds = team.cleanerIds;
-          }
-          if (assignedIds.includes(id)) relevantCleans.push(clean);
-        }
-      }
-
       const isMainDriver = tm.id === data.driver.id;
 
       if (!isMainDriver) {
-        // Passenger: from arrival at first clean to departure from last clean
-        if (relevantCleans.length === 0) {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
+        // Find all pickup and dropoff events for this cleaner (including intermediate)
+        const pickupEvents = stops.filter(s =>
+          (s.type === 'pickup' || s.type === 'intermediate-pickup') && s.teamMemberId === id
+        );
+        const dropoffEvents = stops.filter(s =>
+          (s.type === 'dropoff' || s.type === 'intermediate-dropoff') && s.teamMemberId === id
+        );
+
+        let totalPaidMinutes = 0;
+        let totalCleanMinutes = 0;
+        let totalTravelMinutes = 0;
+        let totalWaitMinutes = 0;
+
+        for (let segIdx = 0; segIdx < pickupEvents.length; segIdx++) {
+          const pickup = pickupEvents[segIdx];
+          const dropoff = dropoffEvents[segIdx];
+          if (!dropoff) continue;
+
+          const pickupIdx = stops.indexOf(pickup);
+          const dropoffIdx = stops.indexOf(dropoff);
+
+          const candidateCleans = stops.slice(pickupIdx + 1, dropoffIdx).filter(s => s.type === 'clean');
+          let relevantCleans: RouteStop[] = [];
+          for (const clean of candidateCleans) {
+            if (!clean.visitId) { relevantCleans.push(clean); continue; }
+            const visit = data.driverVisits.find(v => v.id === clean.visitId);
+            if (visit) {
+              let assignedIds = visit.assignedCleanerIds || [];
+              if (assignedIds.length === 0) {
+                const team = teams.find(t => t.id === visit.assignedTeamId);
+                if (team) assignedIds = team.cleanerIds;
+              }
+              if (assignedIds.includes(id)) relevantCleans.push(clean);
+            }
+          }
+
+          if (relevantCleans.length === 0) continue;
+
+          const firstClean = relevantCleans[0];
+          const lastClean = relevantCleans[relevantCleans.length - 1];
+          const firstCleanIdx = stops.indexOf(firstClean);
+          const lastCleanIdx = stops.indexOf(lastClean);
+
+          let travelMinutes = 0;
+          let travelDistanceKm = 0;
+          for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
+            travelMinutes += stops[i].legDurationMin || 0;
+            travelDistanceKm += stops[i].legDistanceKm || 0;
+          }
+
+          const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+          const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
+          const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
+          const segmentMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
+          const waitMinutes = Math.max(0, segmentMinutes - cleanMinutes - travelMinutes);
+          const paidMinutes = cleanMinutes + travelMinutes;
+
+          totalPaidMinutes += paidMinutes;
+          totalCleanMinutes += cleanMinutes;
+          totalTravelMinutes += travelMinutes;
+          totalWaitMinutes += waitMinutes;
         }
 
-        const firstClean = relevantCleans[0];
-        const lastClean = relevantCleans[relevantCleans.length - 1];
-
-        const firstCleanIdx = stops.indexOf(firstClean);
-        const lastCleanIdx = stops.indexOf(lastClean);
-
-        let travelMinutes = 0;
-        let travelDistanceKm = 0;
-        for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
-          travelMinutes += stops[i].legDurationMin || 0;
-          travelDistanceKm += stops[i].legDistanceKm || 0;
+        if (totalPaidMinutes === 0) {
+          return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, travelDistanceKm: 0, waitMinutes: 0 };
         }
-
-        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
-
-        const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
-        const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
-        const totalMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
-
-        const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
-        const paidMinutes = cleanMinutes + travelMinutes;
 
         return {
           name: tm.name,
-          minutes: paidMinutes,
-          hours: Math.round((paidMinutes / 60) * 10) / 10,
+          minutes: totalPaidMinutes,
+          hours: Math.round((totalPaidMinutes / 60) * 10) / 10,
           isDriver: false,
-          cleanMinutes,
-          travelMinutes,
-          travelDistanceKm,
-          waitMinutes
+          cleanMinutes: totalCleanMinutes,
+          travelMinutes: totalTravelMinutes,
+          travelDistanceKm: totalTravelMinutes,
+          waitMinutes: totalWaitMinutes
         };
       } else {
-        // Main driver: door-to-door (use pre-computed driverTotalMinutes for consistency)
-        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+        const cleanMinutes = stops.filter(s => s.type === 'clean').reduce((sum, c) => sum + (c.durationMin || 0), 0);
         const travelMinutes = Math.max(0, driverTotalMinutes - cleanMinutes);
 
         return {
@@ -863,8 +931,10 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
       if (stop.type === 'depart') { labelText = 'S'; color = '#2563eb'; zIndex = 8; }
       else if (stop.type === 'pickup') { labelText = `P${++pickupCount}`; color = '#059669'; zIndex = 7; }
+      else if (stop.type === 'intermediate-pickup') { labelText = `P${++pickupCount}`; color = '#10b981'; zIndex = 7; }
       else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; zIndex = 10; }
       else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
+      else if (stop.type === 'intermediate-dropoff') { labelText = `D${++dropoffCount}`; color = '#f59e0b'; zIndex = 6; }
       else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
 
       const marker = new (window as any).google.maps.Marker({
@@ -1117,9 +1187,9 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
 
                 {routeStops.map((stop, idx) => {
                   const isMyStop = stop.type === 'clean' && myVisits.some(v => v.id === stop.visitId);
-                  const isMyPickup = stop.type === 'pickup' && stop.teamMemberId === cleaner.id;
-                  const isMyDropoff = stop.type === 'dropoff' && stop.teamMemberId === cleaner.id;
-                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || cleaner.isDriver || stop.type === 'depart' || stop.type === 'home';
+                  const isMyPickup = (stop.type === 'pickup' || stop.type === 'intermediate-pickup') && stop.teamMemberId === cleaner.id;
+                  const isMyDropoff = (stop.type === 'dropoff' || stop.type === 'intermediate-dropoff') && stop.teamMemberId === cleaner.id;
+                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || cleaner.isDriver || stop.type === 'depart' || stop.type === 'home' || stop.type === 'intermediate-pickup' || stop.type === 'intermediate-dropoff';
                   const isFirst = idx === 0;
                   const isLast = idx === routeStops.length - 1;
 
@@ -1129,10 +1199,12 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                         ${isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
                           isLast ? 'bg-slate-500 border-slate-500 text-white' :
                           stop.type === 'pickup' ? 'bg-green-600 border-green-600 text-white' :
+                          stop.type === 'intermediate-pickup' ? 'bg-emerald-500 border-emerald-500 text-white' :
                           stop.type === 'dropoff' ? 'bg-amber-600 border-amber-600 text-white' :
+                          stop.type === 'intermediate-dropoff' ? 'bg-orange-500 border-orange-500 text-white' :
                           stop.type === 'clean' ? 'bg-purple-600 border-purple-600 text-white' :
                           'bg-white border-slate-300 text-slate-500'}`}>
-                        {isFirst ? 'S' : isLast ? 'E' : stop.type === 'pickup' ? 'P' : stop.type === 'dropoff' ? 'D' : stop.type === 'clean' ? 'C' : ''}
+                        {isFirst ? 'S' : isLast ? 'E' : stop.type === 'pickup' || stop.type === 'intermediate-pickup' ? 'P' : stop.type === 'dropoff' || stop.type === 'intermediate-dropoff' ? 'D' : stop.type === 'clean' ? 'C' : ''}
                       </div>
 
                       <div 
@@ -1162,6 +1234,11 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                               {stop.isLate && (
                                 <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
                                   LATE {stop.lateMin}m
+                                </span>
+                              )}
+                              {(stop.type === 'intermediate-pickup' || stop.type === 'intermediate-dropoff') && (
+                                <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
+                                  MANUAL
                                 </span>
                               )}
                             </div>
