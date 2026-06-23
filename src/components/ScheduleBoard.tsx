@@ -260,7 +260,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
   };
 
   const markCleanerSick = (cleanerId: string) => {
-    if (confirm('Mark this cleaner as sick/inactive for today?')) {
+    if (confirm('Mark this cleaner as unavailable for today?')) {
       setCleaners(cleaners.map(c => c.id === cleanerId ? { ...c, active: false } : c));
     }
   };
@@ -338,7 +338,7 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
             </div>
           </div>
           <p className="text-xs text-red-100 mb-3 leading-relaxed">
-            Tap any visit card below to see details, or use the quick actions to mark sick cleaners or cancel visits.
+            Tap any visit card below to see details, or use the quick actions to mark unavailable cleaners or cancel visits.
           </p>
         </div>
       )}
@@ -896,11 +896,11 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                                   : 'bg-slate-100 text-slate-600 border-transparent hover:border-red-200'
                               }`}
-                              title="Tap to mark sick"
+                              title="Tap to mark unavailable"
                             >
                               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c!.active ? (c!.color || '#94a3b8') : '#ef4444' }} />
                               {c!.name}
-                              {!c!.active && <span className="text-red-600 font-black">(SICK)</span>}
+                              {!c!.active && <span className="text-red-600 font-black">(Unavailable)</span>}
                               {isFinished && (
                                 <span className="flex items-center gap-0.5 text-green-700 ml-0.5">
                                   <CheckCircle size={12} />
