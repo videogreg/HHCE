@@ -173,7 +173,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 500);
 
     return () => clearTimeout(timeout);
-  }, [cleaners, clients, visits, teams, loaded]);
+  }, [cleaners, clients, visits, teams, routeModifications, loaded]);
 
   const resetAllData = () => {
     if (confirm('Erase ALL data from Supabase? This cannot be undone.')) {
@@ -181,6 +181,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setClients([]);
       setVisits([]);
       setTeams([]);
+      setRouteModifications({});
       supabase.from('app_state').update({ data: {}, updated_at: new Date().toISOString() }).eq('key', 'main');
     }
   };
