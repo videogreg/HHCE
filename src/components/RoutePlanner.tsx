@@ -39,6 +39,7 @@ interface TeamMemberHours {
   isDriver: boolean;
   cleanMinutes?: number;
   travelMinutes?: number;
+  travelDistanceKm?: number;
   waitMinutes?: number;
 }
 
@@ -79,8 +80,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   // Route state (mirrors RoutePlanner)
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
-  const [driverHours, setDriverHours] = useState(0);
-  const [cleanHours, setCleanHours] = useState(0);
+  const [driverTotalMinutes, setDriverTotalMinutes] = useState(0);
+  const [cleanTotalMinutes, setCleanTotalMinutes] = useState(0);
   const [actualDriveMinutes, setActualDriveMinutes] = useState(0);
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
   const [loading, setLoading] = useState(false);
@@ -137,8 +138,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     if (myVisits.length === 0) {
       setRouteStops([]);
       setTotalKm(0);
-      setDriverHours(0);
-      setCleanHours(0);
+      setDriverTotalMinutes(0);
+      setCleanTotalMinutes(0);
       setActualDriveMinutes(0);
       setTeamHours([]);
       setRouteUrl('');
@@ -212,8 +213,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const start = parse(first.arrivalTime, 'HH:mm', new Date());
     const end = parse(last.departTime || last.arrivalTime, 'HH:mm', new Date());
     const mins = Math.round((end.getTime() - start.getTime()) / 60000);
-    setDriverHours(0);
-    setCleanHours(Math.round((mins / 60) * 10) / 10);
+    setDriverTotalMinutes(0);
+    setCleanTotalMinutes(mins);
     setActualDriveMinutes(0);
     setTotalKm(0);
     setTeamHours([]);
@@ -422,7 +423,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     let totalDist = 0;
-    let actualDriveSeconds = 0;
 
     // Find first clean anchor
     const firstCleanIdx = stops.findIndex(s => s.type === 'clean');
@@ -456,12 +456,11 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     for (let i = 1; i < stops.length; i++) {
       const leg = legs[i - 1];
       totalDist += leg.distance.value;
-      actualDriveSeconds += leg.duration.value;
       const driveMs = leg.duration.value * 1000;
       runningTime = new Date(runningTime.getTime() + driveMs);
 
       stops[i].legDistanceKm = leg.distance.value / 1000;
-      stops[i].legDurationMin = Math.ceil(leg.duration.value / 60);
+      stops[i].legDurationMin = Math.round(leg.duration.value / 60);
       stops[i].arrivalTime = format(runningTime, 'HH:mm');
 
       if (stops[i].type === 'clean') {
@@ -495,18 +494,9 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
 
     // Stats
-    const totalWaitMin = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.waitMin || 0), 0);
-    const firstStop = stops[0];
-    const lastStop = stops[stops.length - 1];
-    const startTime = parse(firstStop.arrivalTime, 'HH:mm', new Date());
-    const endTime = parse(lastStop.departTime || lastStop.arrivalTime, 'HH:mm', new Date());
-    const rawDriverMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-    const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
-    const driverTotalHours = Math.round((driverTotalMinutes / 60) * 10) / 10;
-
     const cleanTotalMinutes = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
-    const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
-    const actualDriveMin = Math.round(actualDriveSeconds / 60);
+    const actualDriveMin = stops.slice(1).reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
+    const driverTotalMinutes = actualDriveMin + cleanTotalMinutes;
 
     // Team member hours (same logic as RoutePlanner)
     const allTeamMemberIds = new Set<string>();
@@ -583,33 +573,14 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
           waitMinutes
         };
       } else {
-        // Main driver: door-to-door
-        let startTime: Date;
-        let endTime: Date;
-        if (pickupIdx >= 0) {
-          startTime = parse(stops[pickupIdx].arrivalTime, 'HH:mm', new Date());
-        } else if (relevantCleans.length > 0) {
-          startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
-        } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-        if (dropoffIdx >= 0) {
-          endTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
-        } else if (relevantCleans.length > 0) {
-          endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
-        } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-        const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-        const minutes = rawMinutes - totalWaitMin;
-
+        // Main driver: door-to-door (use pre-computed driverTotalMinutes for consistency)
         const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
-        const travelMinutes = Math.max(0, minutes - cleanMinutes);
+        const travelMinutes = Math.max(0, driverTotalMinutes - cleanMinutes);
 
         return {
           name: tm.name,
-          minutes,
-          hours: Math.round((minutes / 60) * 10) / 10,
+          minutes: driverTotalMinutes,
+          hours: Math.round((driverTotalMinutes / 60) * 10) / 10,
           isDriver: true,
           cleanMinutes,
           travelMinutes,
@@ -619,8 +590,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }).filter(Boolean) as TeamMemberHours[];
 
     setTotalKm(Math.round(totalDist / 100) / 10);
-    setDriverHours(driverTotalHours);
-    setCleanHours(cleanTotalHours);
+    setDriverTotalMinutes(driverTotalMinutes);
+    setCleanTotalMinutes(cleanTotalMinutes);
     setActualDriveMinutes(actualDriveMin);
     setTeamHours(memberHours);
     setRouteStops(stops);
@@ -898,12 +869,12 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                     {selectedDriver?.isDriver ? 'Driver Hours' : 'Paid Hours'}
                   </span>
                   <span className="text-green-700 font-black text-2xl">
-                    {formatHrsMins(selectedDriver?.isDriver ? driverHours * 60 : myPaidHours * 60)}
+                    {formatHrsMins(selectedDriver?.isDriver ? driverTotalMinutes : myPaidHours * 60)}
                   </span>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-purple-800 text-xs font-bold uppercase tracking-wider">Clean Hours</span>
-                  <span className="text-purple-700 font-black text-2xl">{formatHrsMins(cleanHours * 60)}</span>
+                  <span className="text-purple-700 font-black text-2xl">{formatHrsMins(cleanTotalMinutes)}</span>
                 </div>
               </div>
 
