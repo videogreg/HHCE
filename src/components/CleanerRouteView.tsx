@@ -938,12 +938,12 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
                     {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
                   </span>
                   <span className="text-green-700 font-black text-2xl">
-                    {formatHrsMins(cleaner.isDriver ? driverTotalMinutes : myTeamHours?.minutes ?? 0)}
+                    {formatHrsMins(cleaner.isDriver ? (actualDriveMinutes + cleanTotalMinutes) : myTeamHours?.minutes ?? 0)}
                   </span>
                 </div>
                 {cleaner.isDriver && (
                   <span className="text-xs text-red-600 font-mono mt-1">
-                    DEBUG: total={driverTotalMinutes} clean={cleanTotalMinutes} drive={actualDriveMinutes} sum={cleanTotalMinutes + actualDriveMinutes} diff={driverTotalMinutes - (cleanTotalMinutes + actualDriveMinutes)}
+                    raw state={driverTotalMinutes} | computed={actualDriveMinutes + cleanTotalMinutes} | diff={driverTotalMinutes - (actualDriveMinutes + cleanTotalMinutes)}
                   </span>
                 )}
               </div>
