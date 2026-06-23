@@ -6,12 +6,12 @@ import { ClientManager } from './components/ClientManager';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 import { FixModal } from './components/FixModal';
-import { SearchBar } from './components/SearchBar';
+import { Reports } from './components/Reports';
 import ToastContainer from './components/ToastContainer';
 import { CleanerLogin } from './components/CleanerLogin';
 import { CleanerDashboard } from './components/CleanerDashboard';
 import type { Cleaner } from './types';
-import { LayoutDashboard, Users, UserCheck, Wrench, Sparkles, CalendarPlus, Shield, User } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, Wrench, Sparkles, CalendarPlus, Shield, User, BarChart3 } from 'lucide-react';
 
 function App() {
   return (
@@ -102,7 +102,7 @@ function AppRouter() {
 }
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'builder' | 'cleaners' | 'clients' | 'reports'>('dashboard');
   const [focusId, setFocusId] = useState<string | null>(null);
   const [showFixModal, setShowFixModal] = useState(false);
 
@@ -133,7 +133,7 @@ function AppContent() {
       </header>
 
       <SearchBar onNavigate={(tab, id) => {
-        if (tab === 'dashboard' || tab === 'builder' || tab === 'cleaners' || tab === 'clients') {
+        if (tab === 'dashboard' || tab === 'builder' || tab === 'cleaners' || tab === 'clients' || tab === 'reports') {
           setActiveTab(tab);
           setFocusId(id || null);
         }
@@ -144,6 +144,7 @@ function AppContent() {
         {activeTab === 'builder' && <ScheduleBuilder />}
         {activeTab === 'cleaners' && <CleanerManager focusId={focusId} onFocusClear={() => setFocusId(null)} />}
         {activeTab === 'clients' && <ClientManager focusId={focusId} onFocusClear={() => setFocusId(null)} />}
+        {activeTab === 'reports' && <Reports />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 sm:px-6 py-2 flex justify-around items-center shadow-[0_-4px_24px_-6px_rgba(0,0,0,0.12)] z-30">
@@ -170,6 +171,12 @@ function AppContent() {
           onClick={() => setActiveTab('clients')}
           icon={<Users size={20} />}
           label="Clients"
+        />
+        <NavButton
+          active={activeTab === 'reports'}
+          onClick={() => setActiveTab('reports')}
+          icon={<BarChart3 size={20} />}
+          label="Reports"
         />
       </nav>
 

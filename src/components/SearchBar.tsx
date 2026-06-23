@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { Search, X, User, Users, Calendar } from 'lucide-react';
 
 interface SearchBarProps {
-  onNavigate: (tab: 'dashboard' | 'builder' | 'cleaners' | 'clients' | 'nightmare', itemId?: string) => void;
+  onNavigate: (tab: 'dashboard' | 'builder' | 'cleaners' | 'clients' | 'reports' | 'nightmare', itemId?: string) => void;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({ onNavigate }) => {
