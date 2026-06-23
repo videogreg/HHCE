@@ -201,6 +201,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
+  const [driverTotalMinutes, setDriverTotalMinutes] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);
   const [actualDriveMinutes, setActualDriveMinutes] = useState(0);
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
@@ -258,6 +259,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     if (myVisits.length === 0) {
       setRouteStops([]);
       setTotalKm(0);
+      setDriverTotalMinutes(0);
       setDriverHours(0);
       setCleanHours(0);
       setActualDriveMinutes(0);
@@ -397,6 +399,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     const paidMinutes = totalCleanMinutes + totalTravelMinutes;
     const paidHrs = Math.round((paidMinutes / 60) * 10) / 10;
     const cleanHrs = Math.round((totalCleanMinutes / 60) * 10) / 10;
+    setDriverTotalMinutes(0);
     setDriverHours(0);
     setCleanHours(cleanHrs);
     setActualDriveMinutes(totalTravelMinutes);
@@ -805,6 +808,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     }).filter(Boolean) as TeamMemberHours[];
 
     setTotalKm(Math.round(totalDist / 100) / 10);
+    setDriverTotalMinutes(driverTotalMinutes);
     setDriverHours(driverTotalHours);
     setCleanHours(cleanTotalHours);
     setActualDriveMinutes(actualDriveMin);
@@ -1091,7 +1095,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                     {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
                   </span>
                   <span className="text-green-700 font-black text-2xl">
-                    {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myTeamHours?.minutes ?? 0)}
+                    {formatHrsMins(cleaner.isDriver ? driverTotalMinutes : myTeamHours?.minutes ?? 0)}
                   </span>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">

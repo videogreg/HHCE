@@ -69,6 +69,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverHours, setDriverHours] = useState(0);
+  const [driverTotalMinutes, setDriverTotalMinutes] = useState(0);
   const [cleanHours, setCleanHours] = useState(0);
   const [actualDriveMinutes, setActualDriveMinutes] = useState(0);
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
@@ -126,6 +127,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     if (myVisits.length === 0) {
       setRouteStops([]);
       setTotalKm(0);
+      setDriverTotalMinutes(0);
       setDriverHours(0);
       setCleanHours(0);
       setActualDriveMinutes(0);
@@ -263,6 +265,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     const paidMinutes = totalCleanMinutes + totalTravelMinutes;
     const paidHrs = Math.round((paidMinutes / 60) * 10) / 10;
     const cleanHrs = Math.round((totalCleanMinutes / 60) * 10) / 10;
+    setDriverTotalMinutes(0);
     setDriverHours(0);
     setCleanHours(cleanHrs);
     setActualDriveMinutes(totalTravelMinutes);
@@ -671,6 +674,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     }).filter(Boolean) as TeamMemberHours[];
 
     setTotalKm(Math.round(totalDist / 100) / 10);
+    setDriverTotalMinutes(driverTotalMinutes);
     setDriverHours(driverTotalHours);
     setCleanHours(cleanTotalHours);
     setActualDriveMinutes(actualDriveMin);
@@ -824,7 +828,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
           <div>
             <h3 className="text-sm font-bold text-slate-800">{cleaner.name}</h3>
             <p className="text-[10px] text-slate-500 font-medium">
-              {myVisits.length} visit{myVisits.length !== 1 ? 's' : ''} • {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myTeamHours?.minutes ?? 0)} • {startTime} – {endTime}
+              {myVisits.length} visit{myVisits.length !== 1 ? 's' : ''} • {formatHrsMins(cleaner.isDriver ? driverTotalMinutes : myTeamHours?.minutes ?? 0)} • {startTime} – {endTime}
             </p>
           </div>
         </div>
@@ -928,7 +932,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
                   {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
                 </span>
                 <span className="text-green-700 font-black text-2xl">
-                  {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myTeamHours?.minutes ?? 0)}
+                  {formatHrsMins(cleaner.isDriver ? driverTotalMinutes : myTeamHours?.minutes ?? 0)}
                 </span>
               </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
