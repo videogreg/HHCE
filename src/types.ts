@@ -52,6 +52,8 @@ export interface Visit {
   notes?: string;
   checkedInCleanerIds?: string[]; // Cleaner IDs who have checked in at this visit
   finishedCleanerIds?: string[]; // Cleaner IDs who have marked this visit finished
+  checkInTimes?: Record<string, string>; // cleanerId → ISO timestamp
+  finishTimes?: Record<string, string>; // cleanerId → ISO timestamp
   dismissedViolations?: string[]; // IDs of alerts the user has dismissed for this visit
 }
 

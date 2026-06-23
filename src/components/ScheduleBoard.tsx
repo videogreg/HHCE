@@ -921,6 +921,29 @@ export const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ focusVisitId, onFo
                         )}
                       </div>
 
+                      {/* Check-in / Finish Timestamps */}
+                      {(visit.checkInTimes || visit.finishTimes) && (
+                        <div className="flex flex-wrap gap-2 text-[9px] text-slate-500">
+                          {assignedCleaners.map(c => {
+                            const checkInTime = visit.checkInTimes?.[c!.id];
+                            const finishTime = visit.finishTimes?.[c!.id];
+                            if (!checkInTime && !finishTime) return null;
+                            const fmt = (iso: string) => {
+                              const d = new Date(iso);
+                              return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            };
+                            return (
+                              <span key={c!.id} className="flex items-center gap-1">
+                                <span className="font-bold text-slate-600">{c!.name}:</span>
+                                {checkInTime && <span className="text-blue-600">In {fmt(checkInTime)}</span>}
+                                {checkInTime && finishTime && <span className="text-slate-300">→</span>}
+                                {finishTime && <span className="text-green-600">Done {fmt(finishTime)}</span>}
+                              </span>
+                            );
+                          }).filter(Boolean)}
+                        </div>
+                      )}
+
                       {/* Inline Reassign Panel */}
                       {reassignVisitId === visit.id && (
                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">

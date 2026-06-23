@@ -116,7 +116,9 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
         if (v.id !== visitId) return v;
         const current = new Set(v.checkedInCleanerIds || []);
         current.delete(cleanerId);
-        return { ...v, checkedInCleanerIds: Array.from(current) };
+        const times = { ...(v.checkInTimes || {}) };
+        delete times[cleanerId];
+        return { ...v, checkedInCleanerIds: Array.from(current), checkInTimes: times };
       }));
       setConflictMsg(null);
       return;
@@ -130,7 +132,9 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
       if (v.id !== visitId) return v;
       const current = new Set(v.checkedInCleanerIds || []);
       current.add(cleanerId);
-      return { ...v, checkedInCleanerIds: Array.from(current) };
+      const times = { ...(v.checkInTimes || {}) };
+      times[cleanerId] = new Date().toISOString();
+      return { ...v, checkedInCleanerIds: Array.from(current), checkInTimes: times };
     }));
     setConflictMsg(null);
   };
@@ -139,12 +143,15 @@ const CleanerCheckInButtons: React.FC<CleanerCheckInButtonsProps> = ({ visitId, 
     setVisits(prev => prev.map(v => {
       if (v.id !== visitId) return v;
       const current = new Set(v.finishedCleanerIds || []);
+      const times = { ...(v.finishTimes || {}) };
       if (current.has(cleanerId)) {
         current.delete(cleanerId);
+        delete times[cleanerId];
       } else {
         current.add(cleanerId);
+        times[cleanerId] = new Date().toISOString();
       }
-      return { ...v, finishedCleanerIds: Array.from(current) };
+      return { ...v, finishedCleanerIds: Array.from(current), finishTimes: times };
     }));
   };
 
