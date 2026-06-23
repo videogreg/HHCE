@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Cleaner } from '../types';
+import { isCleanerActiveOnDate } from '../utils/scheduler';
+import { format } from 'date-fns';
 import { ArrowLeft, LogIn, User } from 'lucide-react';
 
 interface CleanerLoginProps {
@@ -14,7 +16,7 @@ export const CleanerLogin: React.FC<CleanerLoginProps> = ({ onLogin, onBack }) =
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const activeCleaners = cleaners.filter(c => c.active).sort((a, b) => a.name.localeCompare(b.name));
+  const activeCleaners = cleaners.filter(c => isCleanerActiveOnDate(c, format(new Date(), 'yyyy-MM-dd'))).sort((a, b) => a.name.localeCompare(b.name));
 
   const handleLogin = () => {
     const cleaner = cleaners.find(c => c.id === selectedId);

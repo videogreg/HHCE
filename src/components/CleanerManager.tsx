@@ -307,6 +307,22 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                 <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Car size={14} /> Driver</span>
               </label>
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={newCleaner.active} onChange={e => setNewCleaner({ ...newCleaner, active: e.target.checked })} />
+                <span className="text-sm font-medium text-slate-700">Active</span>
+              </label>
+              {!newCleaner.active && (
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={newCleaner.inactiveUntil || ''}
+                  onChange={e => setNewCleaner({ ...newCleaner, inactiveUntil: e.target.value || undefined })}
+                  placeholder="Return date (optional)"
+                />
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -378,6 +394,11 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                     <div className="flex items-center gap-2 mt-0.5">
                       {cleaner.isDriver && <span className="text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-bold">DRIVER</span>}
                       <span className="text-[10px] text-slate-500 font-medium">{cleaner.canStartAt}-{cleaner.mustBeOffBy}</span>
+                      {!cleaner.active && (
+                        <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                          OFF{cleaner.inactiveUntil ? ` until ${cleaner.inactiveUntil}` : ' — unknown return'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -495,7 +516,7 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                           value={editForm.mustBeOffBy || ''} onChange={e => setEditForm({ ...editForm, mustBeOffBy: e.target.value })} />
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 py-1">
+                    <div className="flex items-center gap-4 py-1 flex-wrap">
                       <label className="inline-flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600"
                           checked={!!editForm.isDriver} onChange={e => setEditForm({ ...editForm, isDriver: e.target.checked })} />
@@ -506,6 +527,15 @@ export const CleanerManager: React.FC<CleanerManagerProps> = ({ focusId, onFocus
                           checked={!!editForm.active} onChange={e => setEditForm({ ...editForm, active: e.target.checked })} />
                         <span className="text-xs font-medium text-slate-700">Active</span>
                       </label>
+                      {!editForm.active && (
+                        <input
+                          type="date"
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={editForm.inactiveUntil || ''}
+                          onChange={e => setEditForm({ ...editForm, inactiveUntil: e.target.value || undefined })}
+                          placeholder="Return date"
+                        />
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>

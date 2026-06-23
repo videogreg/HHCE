@@ -371,7 +371,7 @@ export const ScheduleBuilder: React.FC = () => {
   // Cleaner status helpers
   const getCleanerStatus = (cleaner: Cleaner): { label: string; color: string; icon?: string } => {
     if (selectedClient?.avoidCleaners.includes(cleaner.id)) return { label: 'Avoided by client', color: 'bg-red-100 text-red-600 border-red-200', icon: 'ban' };
-    if (!cleaner.active) return { label: 'Inactive', color: 'bg-slate-100 text-slate-400 border-slate-200', icon: 'ban' };
+    if (!cleaner.active) return { label: cleaner.inactiveUntil ? `Off until ${cleaner.inactiveUntil}` : 'Inactive — no return date', color: 'bg-slate-100 text-slate-400 border-slate-200', icon: 'ban' };
 
     const cleanerVisits = dayVisits.filter(v => !v.cancelled && (v.assignedCleanerIds || []).includes(cleaner.id));
     if (cleanerVisits.length === 0) {

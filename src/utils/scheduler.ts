@@ -1,6 +1,13 @@
 import type { Cleaner, Client, Visit, Team, ConstraintViolation, ScheduleChange, CallItem } from '../types';
 import { parse, isBefore, isAfter, addMinutes, format } from 'date-fns';
 
+/** Check if a cleaner is effectively active for a given visit date */
+export const isCleanerActiveOnDate = (cleaner: Cleaner, dateStr: string): boolean => {
+  if (cleaner.active) return true;
+  if (cleaner.inactiveUntil && dateStr > cleaner.inactiveUntil) return true;
+  return false;
+};
+
 const timeToDate = (time: string) => parse(time, 'HH:mm', new Date());
 
 /** Simple stable hash for violation IDs */
@@ -30,7 +37,13 @@ export const checkConstraints = (
     if (visitCleanerIds.length === 0 && team) {
       visitCleanerIds = team.cleanerIds;
     }
-    const teamCleaners = cleaners.filter(c => visitCleanerIds.includes(c.id) && c.active);
+    const teamCleaners = cleaners.filter(c => {
+      if (!visitCleanerIds.includes(c.id)) return false;
+      if (c.active) return true;
+      // If inactive but return date is before visit date, they're effectively active
+      if (c.inactiveUntil && visit.date > c.inactiveUntil) return true;
+      return false;
+    });
 
     if (!client) return;
 
@@ -85,13 +98,24 @@ export const checkConstraints = (
     }
 
     if (visitCleanerIds.length > 0) {
-      const inactiveOnTeam = visitCleanerIds.filter(id => !cleaners.find(c => c.id === id)?.active);
+      const inactiveOnTeam = visitCleanerIds.filter(id => {
+        const c = cleaners.find(cl => cl.id === id);
+        if (!c) return false;
+        if (c.active) return false;
+        // If inactiveUntil is set and visit date is after that, they're effectively active
+        if (c.inactiveUntil && visit.date > c.inactiveUntil) return false;
+        return true;
+      });
       if (inactiveOnTeam.length > 0) {
         const names = inactiveOnTeam.map(id => cleaners.find(c => c.id === id)?.name || 'Unknown').join(', ');
+        const returnDates = inactiveOnTeam.map(id => {
+          const c = cleaners.find(cl => cl.id === id);
+          return c?.inactiveUntil ? ` (returns ${c.inactiveUntil})` : ' (no return date)';
+        }).join(', ');
         violations.push({
           id: hashString(`${visit.id}-inactive-${names}`),
           visitId: visit.id,
-          message: `Assigned inactive cleaner(s): ${names}.`,
+          message: `Assigned inactive cleaner(s): ${names}${returnDates}.`,
           severity: 'error'
         });
       }
@@ -207,7 +231,6 @@ export const reoptimizeSchedule = (
   clients: Client[],
   teams: Team[]
 ): { visits: Visit[]; changes: ScheduleChange[] } => {
-  const activeCleaners = cleaners.filter(c => c.active);
   const changes: ScheduleChange[] = [];
 
   const newVisits = currentVisits.map(visit => {
@@ -219,7 +242,7 @@ export const reoptimizeSchedule = (
       visitCleanerIds = currentTeam.cleanerIds;
     }
 
-    const sickIds = visitCleanerIds.filter(id => !cleaners.find(c => c.id === id)?.active);
+    const sickIds = visitCleanerIds.filter(id => !isCleanerActiveOnDate(cleaners.find(c => c.id === id)!, visit.date));
     const hasSickMember = sickIds.length > 0;
     const currentVios = checkConstraints([visit], cleaners, clients, teams);
     const hasErrors = currentVios.some(v => v.severity === 'error');
@@ -231,10 +254,11 @@ export const reoptimizeSchedule = (
 
     // Strategy 1: Replace sick cleaner(s) with a replacement, keep healthy members
     if (hasSickMember && currentTeam) {
-      const healthyIds = visitCleanerIds.filter(id => cleaners.find(c => c.id === id)?.active);
+      const healthyIds = visitCleanerIds.filter(id => isCleanerActiveOnDate(cleaners.find(c => c.id === id)!, visit.date));
       const needsDriver = healthyIds.length > 0 && !cleaners.filter(c => healthyIds.includes(c.id)).some(c => c.isDriver);
 
-      const candidates = activeCleaners.filter(c => {
+      const candidates = cleaners.filter(c => {
+        if (!isCleanerActiveOnDate(c, visit.date)) return false;
         if (visitCleanerIds.includes(c.id)) return false;
         if (client.avoidCleaners.includes(c.id)) return false;
         if (healthyIds.some(hid => {
@@ -258,7 +282,7 @@ export const reoptimizeSchedule = (
             newTeamId: currentTeam.id,
             oldTeamName: `${currentTeam.name} (lost ${sickNames})`,
             newTeamName: `${currentTeam.name} + ${candidate.name}`,
-            reason: `Replaced sick cleaner(s): ${sickNames}`
+            reason: `Replaced inactive cleaner(s): ${sickNames}`
           });
           return tempVisit;
         }
@@ -267,7 +291,7 @@ export const reoptimizeSchedule = (
 
     // Strategy 2: Swap to a completely different active team
     const activeTeams = teams.filter(t =>
-      t.cleanerIds.length > 0 && t.cleanerIds.every(id => activeCleaners.some(ac => ac.id === id))
+      t.cleanerIds.length > 0 && t.cleanerIds.every(id => isCleanerActiveOnDate(cleaners.find(c => c.id === id)!, visit.date))
     );
 
     for (const team of activeTeams) {
@@ -284,7 +308,7 @@ export const reoptimizeSchedule = (
             newTeamId: team.id,
             oldTeamName: currentTeam?.name || 'Unassigned',
             newTeamName: team.name,
-            reason: hasSickMember ? 'Sick cleaner — full team swap' : 'Constraint violation — team swap'
+            reason: hasSickMember ? 'Inactive cleaner — full team swap' : 'Constraint violation — team swap'
           });
         }
         return tempVisit;
@@ -292,7 +316,8 @@ export const reoptimizeSchedule = (
     }
 
     // Strategy 3: Assign a solo cleaner
-    const soloCandidates = activeCleaners.filter(c => {
+    const soloCandidates = cleaners.filter(c => {
+      if (!isCleanerActiveOnDate(c, visit.date)) return false;
       if (client.avoidCleaners.includes(c.id)) return false;
       const tempVisit = { ...visit, assignedCleanerIds: [c.id], assignedTeamId: '' };
       const vios = checkConstraints([tempVisit], cleaners, clients, teams);
@@ -308,7 +333,7 @@ export const reoptimizeSchedule = (
         newTeamId: '',
         oldTeamName: currentTeam?.name || 'Unassigned',
         newTeamName: `Solo: ${best.name}`,
-        reason: hasSickMember ? 'Sick cleaner — assigned solo' : 'Constraint violation — assigned solo'
+        reason: hasSickMember ? 'Inactive cleaner — assigned solo' : 'Constraint violation — assigned solo'
       });
       return { ...visit, assignedCleanerIds: [best.id], assignedTeamId: '' };
     }
@@ -342,7 +367,7 @@ export const generateCallList = (
     if (newTeam) {
       newTeam.cleanerIds.forEach(cid => {
         const cleaner = cleaners.find(c => c.id === cid);
-        if (cleaner && cleaner.active) {
+        if (cleaner) {
           calls.push({
             type: 'cleaner',
             name: cleaner.name,

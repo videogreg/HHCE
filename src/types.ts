@@ -9,6 +9,7 @@ export interface Cleaner {
   cannotWorkWith: string[]; // Cleaner IDs
   unavailableDays: DayOfWeek[]; // Days they cannot work (e.g. religious observance)
   active: boolean;
+  inactiveUntil?: string; // YYYY-MM-DD date when cleaner returns (if active=false)
   phone?: string;
   email?: string;
   address?: string;
