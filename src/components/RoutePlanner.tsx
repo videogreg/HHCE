@@ -6,7 +6,7 @@ import { format, parse, addMinutes as addMinutesDateFns, isAfter, isBefore } fro
 import { formatHrsMins } from '../utils/hours';
 import {
   X, MapPin, Clock, Calendar, Phone, FileText, User, Car, Users,
-  ChevronLeft, ChevronRight, Navigation, AlertTriangle
+  ChevronLeft, ChevronRight, Navigation, AlertTriangle, Plus, Minus
 } from 'lucide-react';
 
 declare const google: any;
@@ -15,7 +15,7 @@ declare const google: any;
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 interface RouteStop {
-  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home';
+  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'intermediate-pickup' | 'intermediate-dropoff';
   label: string;
   address: string;
   arrivalTime: string;
@@ -30,6 +30,7 @@ interface RouteStop {
   visitId?: string;
   teamMemberId?: string;
   latLng?: any;
+  afterVisitId?: string; // For manual stops: insert after this visit
 }
 
 interface TeamMemberHours {
@@ -72,7 +73,7 @@ const dayName = (dateStr: string): string => {
 };
 
 export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriver, initialReliefDate, initialDate }) => {
-  const { visits, clients, teams, cleaners } = useAppContext();
+  const { visits, clients, teams, cleaners, routeModifications, setRouteModifications } = useAppContext();
   const [selectedDate, setSelectedDate] = useState<string>(initialReliefDate || initialDate || formatLocalDate(new Date()));
   const [selectedDriver] = useState<Cleaner | null>(initialDriver || null);
   const [detailVisit, setDetailVisit] = useState<Visit | null>(null);
@@ -87,6 +88,13 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [routeUrl, setRouteUrl] = useState('');
+
+  // Manual stop form state
+  const [showAddStop, setShowAddStop] = useState(false);
+  const [stopType, setStopType] = useState<'intermediate-pickup' | 'intermediate-dropoff'>('intermediate-dropoff');
+  const [stopCleanerId, setStopCleanerId] = useState('');
+  const [stopAfterVisitId, setStopAfterVisitId] = useState('');
+  const [stopAddress, setStopAddress] = useState('');
 
   // Map refs
   const mapRef = useRef<HTMLDivElement>(null);
@@ -132,6 +140,20 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
   const hasDriverPickup = !!myDriver && !selectedDriver?.isDriver;
 
+  // All visits for the driver (used for manual stop form and route building)
+  const driverVisits = useMemo(() => {
+    const driver = selectedDriver?.isDriver ? selectedDriver : myDriver;
+    if (!driver) return [];
+    return dayVisits.filter(v => {
+      let ids = v.assignedCleanerIds || [];
+      if (ids.length === 0) {
+        const team = teams.find(t => t.id === v.assignedTeamId);
+        if (team) ids = team.cleanerIds;
+      }
+      return ids.includes(driver.id);
+    });
+  }, [dayVisits, selectedDriver, myDriver, teams]);
+
   // Build route whenever date, driver, or visits change
   useEffect(() => {
     if (!API_KEY) { setApiError('Google Maps API key not configured'); return; }
@@ -157,7 +179,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const driver = selectedDriver?.isDriver ? selectedDriver : myDriver!;
     buildFullRoute(driver);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selectedDriver?.id, myVisits.length, myDriver?.id]);
+  }, [selectedDate, selectedDriver?.id, myVisits.length, myDriver?.id, JSON.stringify(routeModifications)]);
 
   // Render map whenever routeStops changes (even with null directionsResult)
   useEffect(() => {
@@ -190,7 +212,65 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     }
   };
 
+  const getRouteKey = (driverId: string, date: string) => `${driverId}_${date}`;
 
+  const getManualStopsForRoute = (): RouteStop[] => {
+    if (!selectedDriver) return [];
+    const driver = selectedDriver.isDriver ? selectedDriver : myDriver;
+    if (!driver) return [];
+    return routeModifications[getRouteKey(driver.id, selectedDate)] || [];
+  };
+
+  const addManualStop = async () => {
+    if (!stopCleanerId || !stopAddress) return;
+    const cleaner = cleaners.find(c => c.id === stopCleanerId);
+    if (!cleaner) return;
+
+    const driver = selectedDriver?.isDriver ? selectedDriver : myDriver;
+    if (!driver) return;
+
+    const newStop: RouteStop = {
+      type: stopType,
+      label: stopType === 'intermediate-pickup' ? `Pick up ${cleaner.name}` : `Drop off ${cleaner.name}`,
+      address: stopAddress,
+      arrivalTime: '',
+      durationMin: 5,
+      teamMemberId: cleaner.id,
+      afterVisitId: stopAfterVisitId || undefined,
+    };
+
+    const key = getRouteKey(driver.id, selectedDate);
+    const current = routeModifications[key] || [];
+    setRouteModifications({
+      ...routeModifications,
+      [key]: [...current, newStop],
+    });
+
+    resetStopForm();
+  };
+
+  const removeManualStop = (idx: number) => {
+    const driver = selectedDriver?.isDriver ? selectedDriver : myDriver;
+    if (!driver) return;
+    const key = getRouteKey(driver.id, selectedDate);
+    const current = routeModifications[key] || [];
+    const updated = [...current];
+    updated.splice(idx, 1);
+    if (updated.length === 0) {
+      const { [key]: _, ...rest } = routeModifications;
+      setRouteModifications(rest);
+    } else {
+      setRouteModifications({ ...routeModifications, [key]: updated });
+    }
+  };
+
+  const resetStopForm = () => {
+    setShowAddStop(false);
+    setStopType('intermediate-dropoff');
+    setStopCleanerId('');
+    setStopAfterVisitId('');
+    setStopAddress('');
+  };
 
   const buildSoloRoute = () => {
     // Non-driver with no driver — just their own visits
@@ -230,22 +310,15 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
     await loadGoogleMaps(API_KEY);
 
-    const driverVisits = dayVisits.filter(v => {
-      let ids = v.assignedCleanerIds || [];
-      if (ids.length === 0) {
-        const team = teams.find(t => t.id === v.assignedTeamId);
-        if (team) ids = team.cleanerIds;
-      }
-      return ids.includes(driver.id);
-    });
+    const currentDriverVisits = driverVisits;
 
-    if (driverVisits.length === 0) {
+    if (currentDriverVisits.length === 0) {
       setLoading(false);
       return;
     }
 
     const teamMemberIds = new Set<string>();
-    driverVisits.forEach(v => {
+    currentDriverVisits.forEach(v => {
       let ids = v.assignedCleanerIds || [];
       if (ids.length === 0) {
         const team = teams.find(t => t.id === v.assignedTeamId);
@@ -260,7 +333,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const clientLocs: Record<string, any> = {};
     const teamLocs: Record<string, any> = {};
 
-    for (const v of driverVisits) {
+    for (const v of currentDriverVisits) {
       const client = clients.find(c => c.id === v.clientId);
       const addr = v.clientAddress || client?.address;
       if (addr) {
@@ -275,7 +348,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
     const missing: string[] = [];
     if (!driverHome) missing.push(`${driver.name} home`);
-    driverVisits.forEach(v => { if (!clientLocs[v.id]) missing.push(v.clientName); });
+    currentDriverVisits.forEach(v => { if (!clientLocs[v.id]) missing.push(v.clientName); });
     teamMembersWithAddr.forEach(tm => { if (!teamLocs[tm.id]) missing.push(`${tm.name} pickup`); });
 
     if (missing.length > 0) {
@@ -294,7 +367,18 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       latLng: driverHome,
     });
 
+    // Get manual stops for this route
+    const manualStops = getManualStopsForRoute();
+    const cleanersWithIntermediatePickup = new Set(
+      manualStops.filter(s => s.type === 'intermediate-pickup').map(s => s.teamMemberId).filter(Boolean)
+    );
+    const cleanersWithIntermediateDropoff = new Set(
+      manualStops.filter(s => s.type === 'intermediate-dropoff').map(s => s.teamMemberId).filter(Boolean)
+    );
+
+    // Add initial pickups for team members who don't have an intermediate-pickup
     for (const tm of teamMembersWithAddr) {
+      if (cleanersWithIntermediatePickup.has(tm.id)) continue;
       stops.push({
         type: 'pickup',
         label: `Pick up ${tm.name}`,
@@ -306,7 +390,26 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       });
     }
 
-    for (const v of driverVisits) {
+    // Insert manual pickups without afterVisitId before first clean
+    const beforeFirstCleanStops = manualStops.filter(s => s.type === 'intermediate-pickup' && !s.afterVisitId);
+    for (const ms of beforeFirstCleanStops) {
+      const cleaner = cleaners.find(c => c.id === ms.teamMemberId);
+      if (cleaner) {
+        const addr = ms.address || cleaner.address;
+        let loc = teamLocs[cleaner.id];
+        if (addr && !loc) {
+          loc = await geocodeAddress(addr);
+        }
+        stops.push({
+          ...ms,
+          label: `Pick up ${cleaner.name}`,
+          address: addr || 'Unknown',
+          latLng: loc,
+        });
+      }
+    }
+
+    for (const v of currentDriverVisits) {
       const client = clients.find(c => c.id === v.clientId);
       stops.push({
         type: 'clean',
@@ -318,9 +421,30 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
         visitId: v.id,
         latLng: clientLocs[v.id],
       });
+
+      // Insert any manual stops that should come after this visit
+      const afterStops = manualStops.filter(s => s.afterVisitId === v.id);
+      for (const ms of afterStops) {
+        const cleaner = cleaners.find(c => c.id === ms.teamMemberId);
+        if (cleaner) {
+          const addr = ms.address || cleaner.address;
+          let loc = teamLocs[cleaner.id];
+          if (addr && !loc) {
+            loc = await geocodeAddress(addr);
+          }
+          stops.push({
+            ...ms,
+            label: ms.type === 'intermediate-pickup' ? `Pick up ${cleaner.name}` : `Drop off ${cleaner.name}`,
+            address: addr || 'Unknown',
+            latLng: loc,
+          });
+        }
+      }
     }
 
+    // Add final dropoffs for team members who don't have an intermediate-dropoff
     [...teamMembersWithAddr].reverse().forEach(tm => {
+      if (cleanersWithIntermediateDropoff.has(tm.id)) return;
       stops.push({
         type: 'dropoff',
         label: `Drop off ${tm.name}`,
@@ -343,7 +467,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
     routeDataRef.current = {
       driver,
-      driverVisits,
+      driverVisits: currentDriverVisits,
       teamMembersWithAddr,
       driverHome,
       clientLocs,
@@ -498,7 +622,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
     const actualDriveMin = stops.slice(1).reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
     const driverTotalMinutes = actualDriveMin + cleanTotalMinutes;
 
-    // Team member hours (same logic as RoutePlanner)
+    // Team member hours — handle multiple pickup/dropoff segments per cleaner
     const allTeamMemberIds = new Set<string>();
     data.teamMembersWithAddr.forEach(tm => allTeamMemberIds.add(tm.id));
 
@@ -506,75 +630,88 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
       const tm = cleaners.find(c => c.id === id);
       if (!tm) return null;
 
-      const pickupIdx = stops.findIndex(s =>
-        (s.type === 'pickup' && s.teamMemberId === id) ||
-        (s.type === 'pickup' && s.label === `Pick up ${tm.name}`)
-      );
-      const dropoffIdx = stops.findIndex(s =>
-        (s.type === 'dropoff' && s.teamMemberId === id) ||
-        (s.type === 'dropoff' && s.label === `Drop off ${tm.name}`)
-      );
-
-      let searchStart = 0;
-      let searchEnd = stops.length;
-      if (pickupIdx >= 0) searchStart = pickupIdx + 1;
-      if (dropoffIdx >= 0) searchEnd = dropoffIdx;
-
-      const candidateCleans = stops.slice(searchStart, searchEnd).filter(s => s.type === 'clean');
-      let relevantCleans: RouteStop[] = [];
-      for (const clean of candidateCleans) {
-        if (!clean.visitId) { relevantCleans.push(clean); continue; }
-        const visit = data.driverVisits.find(v => v.id === clean.visitId);
-        if (visit) {
-          let assignedIds = visit.assignedCleanerIds || [];
-          if (assignedIds.length === 0) {
-            const team = teams.find(t => t.id === visit.assignedTeamId);
-            if (team) assignedIds = team.cleanerIds;
-          }
-          if (assignedIds.includes(id)) relevantCleans.push(clean);
-        }
-      }
-
       const isMainDriver = tm.id === data.driver.id;
 
       if (!isMainDriver) {
-        // Passenger: from arrival at first clean to departure from last clean
-        if (relevantCleans.length === 0) {
+        // Find all pickup and dropoff events for this cleaner (including intermediate)
+        const pickupEvents = stops.filter(s =>
+          (s.type === 'pickup' || s.type === 'intermediate-pickup') && s.teamMemberId === id
+        );
+        const dropoffEvents = stops.filter(s =>
+          (s.type === 'dropoff' || s.type === 'intermediate-dropoff') && s.teamMemberId === id
+        );
+
+        let totalPaidMinutes = 0;
+        let totalCleanMinutes = 0;
+        let totalTravelMinutes = 0;
+        let totalWaitMinutes = 0;
+
+        // Pair each pickup with the next dropoff
+        for (let segIdx = 0; segIdx < pickupEvents.length; segIdx++) {
+          const pickup = pickupEvents[segIdx];
+          const dropoff = dropoffEvents[segIdx];
+          if (!dropoff) continue; // No matching dropoff for this segment
+
+          const pickupIdx = stops.indexOf(pickup);
+          const dropoffIdx = stops.indexOf(dropoff);
+
+          // Find cleans between pickup and dropoff that include this cleaner
+          const candidateCleans = stops.slice(pickupIdx + 1, dropoffIdx).filter(s => s.type === 'clean');
+          let relevantCleans: RouteStop[] = [];
+          for (const clean of candidateCleans) {
+            if (!clean.visitId) { relevantCleans.push(clean); continue; }
+            const visit = data.driverVisits.find(v => v.id === clean.visitId);
+            if (visit) {
+              let assignedIds = visit.assignedCleanerIds || [];
+              if (assignedIds.length === 0) {
+                const team = teams.find(t => t.id === visit.assignedTeamId);
+                if (team) assignedIds = team.cleanerIds;
+              }
+              if (assignedIds.includes(id)) relevantCleans.push(clean);
+            }
+          }
+
+          if (relevantCleans.length === 0) continue;
+
+          const firstClean = relevantCleans[0];
+          const lastClean = relevantCleans[relevantCleans.length - 1];
+          const firstCleanIdx = stops.indexOf(firstClean);
+          const lastCleanIdx = stops.indexOf(lastClean);
+
+          let travelMinutes = 0;
+          for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
+            travelMinutes += stops[i].legDurationMin || 0;
+          }
+
+          const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+          const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
+          const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
+          const segmentMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
+          const waitMinutes = Math.max(0, segmentMinutes - cleanMinutes - travelMinutes);
+          const paidMinutes = cleanMinutes + travelMinutes;
+
+          totalPaidMinutes += paidMinutes;
+          totalCleanMinutes += cleanMinutes;
+          totalTravelMinutes += travelMinutes;
+          totalWaitMinutes += waitMinutes;
+        }
+
+        if (totalPaidMinutes === 0) {
           return { name: tm.name, minutes: 0, hours: 0, isDriver: false, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
         }
 
-        const firstClean = relevantCleans[0];
-        const lastClean = relevantCleans[relevantCleans.length - 1];
-
-        const firstCleanIdx = stops.indexOf(firstClean);
-        const lastCleanIdx = stops.indexOf(lastClean);
-
-        let travelMinutes = 0;
-        for (let i = firstCleanIdx + 1; i <= lastCleanIdx; i++) {
-          travelMinutes += stops[i].legDurationMin || 0;
-        }
-
-        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
-
-        const cleanStart = parse(firstClean.arrivalTime, 'HH:mm', new Date());
-        const cleanEnd = parse(lastClean.departTime || lastClean.arrivalTime, 'HH:mm', new Date());
-        const totalMinutes = Math.round((cleanEnd.getTime() - cleanStart.getTime()) / 60000);
-
-        const waitMinutes = Math.max(0, totalMinutes - cleanMinutes - travelMinutes);
-        const paidMinutes = cleanMinutes + travelMinutes;
-
         return {
           name: tm.name,
-          minutes: paidMinutes,
-          hours: Math.round((paidMinutes / 60) * 10) / 10,
+          minutes: totalPaidMinutes,
+          hours: Math.round((totalPaidMinutes / 60) * 10) / 10,
           isDriver: false,
-          cleanMinutes,
-          travelMinutes,
-          waitMinutes
+          cleanMinutes: totalCleanMinutes,
+          travelMinutes: totalTravelMinutes,
+          waitMinutes: totalWaitMinutes
         };
       } else {
-        // Main driver: door-to-door (use pre-computed driverTotalMinutes for consistency)
-        const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
+        // Main driver: door-to-door
+        const cleanMinutes = stops.filter(s => s.type === 'clean').reduce((sum, c) => sum + (c.durationMin || 0), 0);
         const travelMinutes = Math.max(0, driverTotalMinutes - cleanMinutes);
 
         return {
@@ -663,8 +800,10 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
       if (stop.type === 'depart') { labelText = 'S'; color = '#2563eb'; zIndex = 8; }
       else if (stop.type === 'pickup') { labelText = `P${++pickupCount}`; color = '#059669'; zIndex = 7; }
+      else if (stop.type === 'intermediate-pickup') { labelText = `P${++pickupCount}`; color = '#10b981'; zIndex = 7; }
       else if (stop.type === 'clean') { labelText = `${++cleanCount}`; color = '#7c3aed'; zIndex = 10; }
       else if (stop.type === 'dropoff') { labelText = `D${++dropoffCount}`; color = '#d97706'; zIndex = 6; }
+      else if (stop.type === 'intermediate-dropoff') { labelText = `D${++dropoffCount}`; color = '#f59e0b'; zIndex = 6; }
       else if (stop.type === 'home') { labelText = 'E'; color = '#64748b'; zIndex = 5; }
 
       const marker = new (window as any).google.maps.Marker({
@@ -914,79 +1053,235 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
 
                 {routeStops.map((stop, idx) => {
                   const isMyStop = stop.type === 'clean' && myVisits.some(v => v.id === stop.visitId);
-                  const isMyPickup = stop.type === 'pickup' && stop.teamMemberId === selectedDriver?.id;
-                  const isMyDropoff = stop.type === 'dropoff' && stop.teamMemberId === selectedDriver?.id;
-                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || selectedDriver?.isDriver || stop.type === 'depart' || stop.type === 'home';
+                  const isMyPickup = (stop.type === 'pickup' || stop.type === 'intermediate-pickup') && stop.teamMemberId === selectedDriver?.id;
+                  const isMyDropoff = (stop.type === 'dropoff' || stop.type === 'intermediate-dropoff') && stop.teamMemberId === selectedDriver?.id;
+                  const isRelevant = isMyStop || isMyPickup || isMyDropoff || selectedDriver?.isDriver || stop.type === 'depart' || stop.type === 'home' || stop.type === 'intermediate-pickup' || stop.type === 'intermediate-dropoff';
                   const isFirst = idx === 0;
                   const isLast = idx === routeStops.length - 1;
+                  const isClean = stop.type === 'clean';
+                  const nextStop = routeStops[idx + 1];
+                  const isLastClean = isClean && (!nextStop || nextStop.type === 'dropoff' || nextStop.type === 'intermediate-dropoff' || nextStop.type === 'home');
+
+                  const markerColor = isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
+                    isLast ? 'bg-slate-500 border-slate-500 text-white' :
+                    stop.type === 'pickup' ? 'bg-green-600 border-green-600 text-white' :
+                    stop.type === 'intermediate-pickup' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                    stop.type === 'dropoff' ? 'bg-amber-600 border-amber-600 text-white' :
+                    stop.type === 'intermediate-dropoff' ? 'bg-orange-500 border-orange-500 text-white' :
+                    stop.type === 'clean' ? 'bg-purple-600 border-purple-600 text-white' :
+                    'bg-white border-slate-300 text-slate-500';
+
+                  const markerLabel = isFirst ? 'S' : isLast ? 'E' : 
+                    stop.type === 'pickup' || stop.type === 'intermediate-pickup' ? 'P' : 
+                    stop.type === 'dropoff' || stop.type === 'intermediate-dropoff' ? 'D' : 
+                    stop.type === 'clean' ? 'C' : '';
 
                   return (
-                    <div key={idx} className={`relative ${!selectedDriver?.isDriver && !isRelevant ? 'opacity-40' : ''}`}>
-                      <div className={`absolute -left-[25px] top-2 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-black shadow-sm
-                        ${isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
-                          isLast ? 'bg-slate-500 border-slate-500 text-white' :
-                          stop.type === 'pickup' ? 'bg-green-600 border-green-600 text-white' :
-                          stop.type === 'dropoff' ? 'bg-amber-600 border-amber-600 text-white' :
-                          stop.type === 'clean' ? 'bg-purple-600 border-purple-600 text-white' :
-                          'bg-white border-slate-300 text-slate-500'}`}>
-                        {isFirst ? 'S' : isLast ? 'E' : stop.type === 'pickup' ? 'P' : stop.type === 'dropoff' ? 'D' : stop.type === 'clean' ? 'C' : ''}
-                      </div>
-
-                      <div 
-                        onClick={() => {
-                          if (stop.visitId) {
-                            const v = myVisits.find(x => x.id === stop.visitId);
-                            if (v) setDetailVisit(v);
-                          }
-                        }}
-                        className={`bg-white rounded-2xl border border-slate-200 p-3 shadow-sm transition-all ${stop.visitId ? 'cursor-pointer hover:shadow-md active:scale-[0.98]' : ''}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                              <span className={`text-xs font-black px-2 py-0.5 rounded-lg flex items-center gap-1 ${
-                                stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
-                              }`}>
-                                <Clock size={10} />
-                                {stop.arrivalTime || '----'}
-                                {stop.departTime && stop.departTime !== stop.arrivalTime ? ` – ${stop.departTime}` : ''}
-                              </span>
-                              {stop.waitMin && stop.waitMin > 0 && (
-                                <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                                  WAIT {stop.waitMin}m
-                                </span>
-                              )}
-                              {stop.isLate && (
-                                <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
-                                  LATE {stop.lateMin}m
-                                </span>
-                              )}
-                            </div>
-                            <h3 className={`font-bold text-sm mt-0.5 truncate ${selectedDriver?.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
-                              {stop.label}
-                            </h3>
-                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                              <MapPin size={10} className="shrink-0" /> {stop.address}
-                            </p>
-                          </div>
-                          <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold shrink-0">
-                            {stop.durationMin || 0}m
-                          </span>
+                    <div key={idx}>
+                      <div className={`relative ${!selectedDriver?.isDriver && !isRelevant ? 'opacity-40' : ''}`}>
+                        <div className={`absolute -left-[25px] top-2 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-black shadow-sm ${markerColor}`}>
+                          {markerLabel}
                         </div>
 
+                        <div 
+                          onClick={() => {
+                            if (stop.visitId) {
+                              const v = myVisits.find(x => x.id === stop.visitId);
+                              if (v) setDetailVisit(v);
+                            }
+                          }}
+                          className={`bg-white rounded-2xl border border-slate-200 p-3 shadow-sm transition-all ${stop.visitId ? 'cursor-pointer hover:shadow-md active:scale-[0.98]' : ''}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                <span className={`text-xs font-black px-2 py-0.5 rounded-lg flex items-center gap-1 ${
+                                  stop.isLate ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
+                                }`}>
+                                  <Clock size={10} />
+                                  {stop.arrivalTime || '----'}
+                                  {stop.departTime && stop.departTime !== stop.arrivalTime ? ` – ${stop.departTime}` : ''}
+                                </span>
+                                {stop.waitMin && stop.waitMin > 0 && (
+                                  <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                    WAIT {stop.waitMin}m
+                                  </span>
+                                )}
+                                {stop.isLate && (
+                                  <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
+                                    LATE {stop.lateMin}m
+                                  </span>
+                                )}
+                                {(stop.type === 'intermediate-pickup' || stop.type === 'intermediate-dropoff') && (
+                                  <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
+                                    MANUAL
+                                  </span>
+                                )}
+                              </div>
+                              <h3 className={`font-bold text-sm mt-0.5 truncate ${selectedDriver?.isDriver || isMyStop || isMyPickup || isMyDropoff ? 'text-slate-800' : 'text-slate-500'}`}>
+                                {stop.label}
+                              </h3>
+                              <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
+                                <MapPin size={10} className="shrink-0" /> {stop.address}
+                              </p>
+                            </div>
+                            <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold shrink-0">
+                              {stop.durationMin || 0}m
+                            </span>
+                          </div>
 
-                        {idx > 0 && stop.legDistanceKm !== undefined && (
-                          <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
-                            <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km • {Math.round(stop.legDurationMin || 0)} min drive
-                          </p>
-                        )}
-
+                          {idx > 0 && stop.legDistanceKm !== undefined && (
+                            <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
+                              <Navigation size={9} /> {stop.legDistanceKm.toFixed(1)} km • {Math.round(stop.legDurationMin || 0)} min drive
+                            </p>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Add Stop button after each clean stop (for admin/driver view) */}
+                      {isClean && selectedDriver?.isDriver && (
+                        <div className="pl-6 py-2">
+                          <button
+                            onClick={() => {
+                              setShowAddStop(true);
+                              setStopAfterVisitId(stop.visitId || '');
+                              const cleaner = cleaners.find(c => c.id === stop.teamMemberId);
+                              if (cleaner) setStopAddress(cleaner.address || '');
+                            }}
+                            className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                          >
+                            <Plus size={12} /> Add stop after this clean
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
+
+            {/* Manual Stops Management */}
+            {selectedDriver?.isDriver && (
+              <div className="space-y-3">
+                <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <Navigation size={16} className="text-orange-600" /> Route Stops
+                </h2>
+
+                {/* Existing manual stops */}
+                {getManualStopsForRoute().length > 0 && (
+                  <div className="bg-orange-50 rounded-2xl border border-orange-200 p-3 space-y-2">
+                    <p className="text-[10px] font-bold text-orange-700 uppercase tracking-wider">Custom Stops</p>
+                    {getManualStopsForRoute().map((stop, idx) => {
+                      const cleaner = cleaners.find(c => c.id === stop.teamMemberId);
+                      const afterVisit = driverVisits.find(v => v.id === stop.afterVisitId);
+                      return (
+                        <div key={idx} className="flex items-center justify-between bg-white rounded-xl border border-orange-100 p-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-700">
+                              {stop.type === 'intermediate-pickup' ? 'Pick up' : 'Drop off'} {cleaner?.name}
+                            </p>
+                            <p className="text-[10px] text-slate-500">{stop.address}</p>
+                            {afterVisit && (
+                              <p className="text-[10px] text-slate-400">After: {afterVisit.clientName}</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => removeManualStop(idx)}
+                            className="p-1.5 rounded-lg hover:bg-red-100 text-red-500 transition-colors"
+                          >
+                            <Minus size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add Stop Form */}
+                {showAddStop && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+                    <p className="text-xs font-bold text-slate-700">Add Route Stop</p>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Type</label>
+                        <select
+                          value={stopType}
+                          onChange={e => setStopType(e.target.value as 'intermediate-pickup' | 'intermediate-dropoff')}
+                          className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="intermediate-pickup">Pick up cleaner</option>
+                          <option value="intermediate-dropoff">Drop off cleaner</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Cleaner</label>
+                        <select
+                          value={stopCleanerId}
+                          onChange={e => {
+                            setStopCleanerId(e.target.value);
+                            const c = cleaners.find(x => x.id === e.target.value);
+                            if (c?.address) setStopAddress(c.address);
+                          }}
+                          className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select cleaner...</option>
+                          {cleaners.filter(c => c.active && c.id !== selectedDriver.id).map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Address</label>
+                        <input
+                          type="text"
+                          value={stopAddress}
+                          onChange={e => setStopAddress(e.target.value)}
+                          placeholder="Enter address..."
+                          className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">After Visit</label>
+                        <select
+                          value={stopAfterVisitId}
+                          onChange={e => setStopAfterVisitId(e.target.value)}
+                          className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Before first clean</option>
+                          {driverVisits.map(v => (
+                            <option key={v.id} value={v.id}>After {v.clientName} ({v.startTime})</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={addManualStop}
+                        disabled={!stopCleanerId || !stopAddress}
+                        className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Add Stop
+                      </button>
+                      <button
+                        onClick={resetStopForm}
+                        className="px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!showAddStop && (
+                  <button
+                    onClick={() => setShowAddStop(true)}
+                    className="flex items-center gap-2 w-full py-3 bg-orange-50 text-orange-700 rounded-xl text-xs font-bold hover:bg-orange-100 transition-colors border border-orange-200"
+                  >
+                    <Plus size={14} className="ml-3" /> Add Custom Route Stop
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Team hours breakdown */}
             {teamHours.length > 0 && (

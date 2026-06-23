@@ -1,5 +1,23 @@
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
+export interface RouteStop {
+  type: 'depart' | 'pickup' | 'clean' | 'dropoff' | 'home' | 'intermediate-pickup' | 'intermediate-dropoff';
+  label: string;
+  address: string;
+  arrivalTime: string;
+  departTime?: string;
+  durationMin?: number;
+  legDistanceKm?: number;
+  legDurationMin?: number;
+  isLate?: boolean;
+  lateMin?: number;
+  waitMin?: number;
+  actualStartTime?: string;
+  visitId?: string;
+  teamMemberId?: string;
+  latLng?: any;
+}
+
 export interface Cleaner {
   id: string;
   name: string;
@@ -89,3 +107,7 @@ export interface CallItem {
   message: string;
   priority: 'urgent' | 'normal';
 }
+
+// Route modifications: manual stops added to a cleaner's route on a specific date
+// Key format: `${cleanerId}_${date}` (e.g., "c1_2026-07-15")
+export type RouteModifications = Record<string, RouteStop[]>;

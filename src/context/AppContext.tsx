@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import type { Cleaner, Client, Visit, Team } from '../types';
+import type { Cleaner, Client, Visit, Team, RouteModifications } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../utils/supabase';
 
@@ -9,6 +9,7 @@ interface AppState {
   clients: Client[];
   visits: Visit[];
   teams: Team[];
+  routeModifications: RouteModifications;
 }
 
 interface AppContextType extends AppState {
@@ -16,6 +17,7 @@ interface AppContextType extends AppState {
   setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   setVisits: React.Dispatch<React.SetStateAction<Visit[]>>;
   setTeams: React.Dispatch<React.SetStateAction<Team[]>>;
+  setRouteModifications: React.Dispatch<React.SetStateAction<RouteModifications>>;
   resetAllData: () => void;
   loadDemoData: () => void;
   loadDemoCleaners: () => void;
@@ -81,7 +83,7 @@ const createDemoData = (): AppState => {
     { id: uuidv4(), clientId: cl8.id, clientName: cl8.name, clientAddress: cl8.address, clientZone: cl8.zone, date: formatLocalDate(addDays(today, 4)), startTime: '13:00', durationMinutes: 90, assignedTeamId: t2.id, assignedCleanerIds: t2.cleanerIds, cancelled: false, teamName: t2.name, dismissedViolations: [] },
   ];
 
-  return { cleaners, clients, visits, teams };
+  return { cleaners, clients, visits, teams, routeModifications: {} };
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -89,6 +91,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [clients, setClients] = useState<Client[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [routeModifications, setRouteModifications] = useState<RouteModifications>({});
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loaded, setLoaded] = useState(false);
   const skipNextSave = useRef(false);
@@ -120,6 +123,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (parsed.clients) setClients(parsed.clients);
         if (parsed.visits) setVisits(parsed.visits);
         if (parsed.teams) setTeams(parsed.teams);
+        if (parsed.routeModifications) setRouteModifications(parsed.routeModifications);
       }
       setLoaded(true);
     };
@@ -142,6 +146,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (parsed.clients) setClients(parsed.clients);
           if (parsed.visits) setVisits(parsed.visits);
           if (parsed.teams) setTeams(parsed.teams);
+          if (parsed.routeModifications) setRouteModifications(parsed.routeModifications);
         }
       )
       .subscribe();
@@ -158,7 +163,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
-    const data: AppState = { cleaners, clients, visits, teams };
+    const data: AppState = { cleaners, clients, visits, teams, routeModifications };
 
     const timeout = setTimeout(async () => {
       await supabase
@@ -204,6 +209,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       clients, setClients,
       visits, setVisits,
       teams, setTeams,
+      routeModifications, setRouteModifications,
       resetAllData,
       loadDemoData,
       loadDemoCleaners,
