@@ -838,19 +838,50 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
       });
     }
 
-    // ── FIX: Always return exactly 3 proposals ──
-    props.sort((a, b) => b.score - a.score);
-
-    if (props.length > 0 && props.length < 3) {
+    // Add more diverse fallback proposals when we have fewer than 6
+    if (props.length > 0 && props.length < 6) {
       const generic: Proposal[] = [];
       generic.push({
-        id: `fallback_manual_${seed}`,
-        title: 'Manual Reassignment',
-        subtitle: 'Use manual edit to choose your own team & transport',
-        changes: affectedVisits.map(v => `${v.clientName}: manually assign replacements`),
-        calls: [],
+        id: `fallback_swap_${seed}`,
+        title: 'Swap with Another Visit',
+        subtitle: 'Exchange times with another client who can accommodate',
+        changes: affectedVisits.map(v => `${v.clientName}: swap time with another client`),
+        calls: affectedVisits.map(v => ({
+          type: 'client' as const,
+          name: v.clientName,
+          phone: clients.find(c => c.id === v.clientId)?.phone,
+          message: `Can we swap your cleaning time with another client today?`
+        })),
         visitUpdates: [],
         score: 5
+      });
+      generic.push({
+        id: `fallback_shorten_${seed}`,
+        title: 'Shorten Visit Duration',
+        subtitle: 'Reduce clean time to fit the new schedule',
+        changes: affectedVisits.map(v => `${v.clientName}: reduce clean time by 30 min`),
+        calls: affectedVisits.map(v => ({
+          type: 'client' as const,
+          name: v.clientName,
+          phone: clients.find(c => c.id === v.clientId)?.phone,
+          message: `Can we do a shorter clean today to fit your new time?`
+        })),
+        visitUpdates: [],
+        score: 4
+      });
+      generic.push({
+        id: `fallback_nextday_${seed}`,
+        title: 'Move to Next Day',
+        subtitle: 'Reschedule the visit to tomorrow or next available day',
+        changes: affectedVisits.map(v => `${v.clientName}: move to next available day`),
+        calls: affectedVisits.map(v => ({
+          type: 'client' as const,
+          name: v.clientName,
+          phone: clients.find(c => c.id === v.clientId)?.phone,
+          message: `Can we move your cleaning to tomorrow or next week?`
+        })),
+        visitUpdates: [],
+        score: 3
       });
       generic.push({
         id: `fallback_relief_${seed}`,
@@ -868,7 +899,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
           updates: { assignedCleanerIds: [], assignedTeamId: '' }
         })),
         reliefRoute: { name: 'Relief Driver', address: '', date: dateStr, stops: [] },
-        score: 3
+        score: 2
       });
       generic.push({
         id: `fallback_resched_${seed}`,
@@ -884,12 +915,12 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
         visitUpdates: [],
         score: 1
       });
-      while (props.length < 3 && generic.length > 0) {
+      while (props.length < 6 && generic.length > 0) {
         props.push(generic.shift()!);
       }
     }
 
-    return props.slice(0, 3);
+    return props;
   }, [issueType, selectedIds, dayVisits, activeCleaners, clients, dateStr, proposalSet, issueTime, cleaners, driverRoutes]);
 
   const applyProposal = (p: Proposal) => {
@@ -1061,7 +1092,7 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-bold text-slate-700">{proposals.length} suggestion{proposals.length !== 1 ? 's' : ''}</p>
-                  <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">Set {proposalSet + 1}</span>
+                  <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">Page {proposalSet + 1} of {Math.ceil(proposals.length / 3) || 1}</span>
                 </div>
                 <button onClick={() => setStep('affected')} className="text-xs font-bold text-blue-600 hover:underline">Back</button>
               </div>
@@ -1074,12 +1105,12 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
                 </div>
               )}
 
-              {proposals.map((p, idx) => (
+              {proposals.slice(proposalSet * 3, (proposalSet + 1) * 3).map((p, idx) => (
                 <div key={p.id} className="rounded-xl border-2 border-slate-200 overflow-hidden mb-3">
                   <div className={`p-3 ${idx === 0 ? 'bg-green-50 border-b border-green-200' : idx === 1 ? 'bg-blue-50 border-b border-blue-200' : 'bg-amber-50 border-b border-amber-200'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black text-white ${idx === 0 ? 'bg-green-500' : idx === 1 ? 'bg-blue-500' : 'bg-amber-500'}`}>{idx + 1}</span>
+                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black text-white ${idx === 0 ? 'bg-green-500' : idx === 1 ? 'bg-blue-500' : 'bg-amber-500'}`}>{proposalSet * 3 + idx + 1}</span>
                         <div>
                           <p className="text-sm font-bold text-slate-800">{p.title}</p>
                           <p className="text-[10px] text-slate-500">{p.subtitle}</p>
@@ -1126,8 +1157,14 @@ export const FixModal: React.FC<FixModalProps> = ({ onClose }) => {
               ))}
 
               <div className="flex gap-2">
-                <button onClick={() => setProposalSet(s => s + 1)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors active:scale-95 flex items-center justify-center gap-2">
-                  <RotateCcw size={14} /> Next Options (Set {proposalSet + 2})
+                <button 
+                  onClick={() => {
+                    const totalPages = Math.ceil(proposals.length / 3);
+                    setProposalSet(s => totalPages > 1 ? (s + 1) % totalPages : s + 1);
+                  }} 
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-slate-200 transition-colors active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={14} /> Next Options
                 </button>
                 <button onClick={() => {
                   setStep('manual');
