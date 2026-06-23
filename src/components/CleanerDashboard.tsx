@@ -952,7 +952,6 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
     : null;
 
   const myTeamHours = teamHours.find(t => t.name === cleaner.name);
-  const myPaidHours = myTeamHours?.hours ?? 0;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">

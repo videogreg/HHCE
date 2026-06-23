@@ -805,7 +805,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     : null;
 
   const myTeamHours = teamHours.find(t => t.name === cleaner.name);
-  const myPaidHours = myTeamHours?.hours ?? 0;
 
   const firstVisit = myVisits[0];
   const lastVisit = myVisits[myVisits.length - 1];
