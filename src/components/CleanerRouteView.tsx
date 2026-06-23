@@ -793,6 +793,35 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     ? format(addMinutesDateFns(parse(lastVisit.startTime, 'HH:mm', new Date()), lastVisit.durationMinutes), 'HH:mm')
     : '--:--';
 
+  // Defensive fix: ensure driverTotalMinutes always equals actualDriveMinutes + cleanTotalMinutes
+  // This fixes cases where a cached service worker serves old processRoute code
+  useEffect(() => {
+    if (cleaner.isDriver && actualDriveMinutes > 0 && cleanTotalMinutes > 0) {
+      const computed = actualDriveMinutes + cleanTotalMinutes;
+      if (driverTotalMinutes !== computed) {
+        console.error('Driver hours mismatch detected! Overriding:', {
+          driverTotalMinutes,
+          actualDriveMinutes,
+          cleanTotalMinutes,
+          computed,
+          diff: driverTotalMinutes - computed
+        });
+        setDriverTotalMinutes(computed);
+      }
+    }
+  }, [actualDriveMinutes, cleanTotalMinutes, driverTotalMinutes, cleaner.isDriver, setDriverTotalMinutes]);
+
+  // Defensive fix: ensure driverTotalMinutes always equals actualDriveMinutes + cleanTotalMinutes
+  useEffect(() => {
+    if (cleaner.isDriver && actualDriveMinutes > 0 && cleanTotalMinutes > 0) {
+      const computed = actualDriveMinutes + cleanTotalMinutes;
+      if (driverTotalMinutes !== computed) {
+        console.error('Fixing driver hours mismatch:', { driverTotalMinutes, computed, diff: driverTotalMinutes - computed });
+        setDriverTotalMinutes(computed);
+      }
+    }
+  }, [actualDriveMinutes, cleanTotalMinutes, driverTotalMinutes, cleaner.isDriver, setDriverTotalMinutes]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm animate-slide-up max-w-3xl mx-auto">
       {/* Header */}
