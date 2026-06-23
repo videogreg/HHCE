@@ -903,13 +903,20 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex items-center justify-between">
-                <span className="text-green-800 text-xs font-bold uppercase tracking-wider">
-                  {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
-                </span>
-                <span className="text-green-700 font-black text-2xl">
-                  {formatHrsMins(cleaner.isDriver ? driverTotalMinutes : myTeamHours?.minutes ?? 0)}
-                </span>
+              <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-green-800 text-xs font-bold uppercase tracking-wider">
+                    {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
+                  </span>
+                  <span className="text-green-700 font-black text-2xl">
+                    {formatHrsMins(cleaner.isDriver ? driverTotalMinutes : myTeamHours?.minutes ?? 0)}
+                  </span>
+                </div>
+                {cleaner.isDriver && (
+                  <span className="text-xs text-red-600 font-mono mt-1">
+                    DEBUG: total={driverTotalMinutes} clean={cleanTotalMinutes} drive={actualDriveMinutes} sum={cleanTotalMinutes + actualDriveMinutes} diff={driverTotalMinutes - (cleanTotalMinutes + actualDriveMinutes)}
+                  </span>
+                )}
               </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
                 <span className="text-purple-800 text-xs font-bold uppercase tracking-wider">Clean Hours</span>
