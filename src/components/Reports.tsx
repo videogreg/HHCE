@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { formatHrsMins } from '../utils/hours';
 import {
-  BarChart3, Download, Share2, Mail, Phone, Calendar, Clock, MapPin,
-  User, Users, ChevronLeft, FileText, TrendingUp, CheckCircle, X
+  BarChart3, Download, Share2, Mail, Phone, Clock,
+  FileText, TrendingUp, CheckCircle, X
 } from 'lucide-react';
 
 type ReportType = 'team-hours' | 'client-history' | 'analytics';

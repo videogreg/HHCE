@@ -7,6 +7,7 @@ import { ScheduleBoard } from './components/ScheduleBoard';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 import { FixModal } from './components/FixModal';
 import { Reports } from './components/Reports';
+import { SearchBar } from './components/SearchBar';
 import ToastContainer from './components/ToastContainer';
 import { CleanerLogin } from './components/CleanerLogin';
 import { CleanerDashboard } from './components/CleanerDashboard';
