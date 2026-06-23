@@ -1092,7 +1092,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                     {cleaner.isDriver ? 'Driver Hours' : 'Paid Hours'}
                   </span>
                   <span className="text-green-700 font-black text-2xl">
-                    {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myPaidHours * 60)}
+                    {formatHrsMins(cleaner.isDriver ? driverHours * 60 : myTeamHours?.minutes ?? 0)}
                   </span>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
@@ -1244,7 +1244,7 @@ export const CleanerDashboard: React.FC<CleanerDashboardProps> = ({ cleaner, onL
                         </div>
                       </div>
                       <div className="text-right">
-                        <span className="text-lg font-black text-slate-800">{formatHrsMins(tm.hours * 60)}</span>
+                        <span className="text-lg font-black text-slate-800">{formatHrsMins(tm.minutes)}</span>
                         <span className="text-xs font-bold text-slate-500 ml-1">hrs</span>
                         <p className="text-[10px] text-slate-400">{tm.minutes} min</p>
                         {!tm.isDriver && tm.cleanMinutes !== undefined && (
