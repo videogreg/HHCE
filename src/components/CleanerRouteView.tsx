@@ -69,7 +69,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [driverTotalMinutes, setDriverTotalMinutes] = useState(0);
-  const [cleanHours, setCleanHours] = useState(0);
+  const [cleanTotalMinutes, setCleanTotalMinutes] = useState(0);
   const [actualDriveMinutes, setActualDriveMinutes] = useState(0);
   const [teamHours, setTeamHours] = useState<TeamMemberHours[]>([]);
   const [loading, setLoading] = useState(false);
@@ -127,7 +127,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
       setRouteStops([]);
       setTotalKm(0);
       setDriverTotalMinutes(0);
-      setCleanHours(0);
+      setCleanTotalMinutes(0);
       setActualDriveMinutes(0);
       setTeamHours([]);
       setRouteUrl('');
@@ -262,9 +262,8 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     const totalCleanMinutes = myVisits.reduce((sum, v) => sum + v.durationMinutes, 0);
     const paidMinutes = totalCleanMinutes + totalTravelMinutes;
     const paidHrs = Math.round((paidMinutes / 60) * 10) / 10;
-    const cleanHrs = Math.round((totalCleanMinutes / 60) * 10) / 10;
     setDriverTotalMinutes(0);
-    setCleanHours(cleanHrs);
+    setCleanTotalMinutes(totalCleanMinutes);
     setActualDriveMinutes(totalTravelMinutes);
     setTotalKm(totalTravelKm);
     setTeamHours([{ name: cleaner.name, minutes: paidMinutes, hours: paidHrs, isDriver: false, cleanMinutes: totalCleanMinutes, travelMinutes: totalTravelMinutes, waitMinutes: 0 }]);
@@ -553,7 +552,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
 
     const cleanTotalMinutes = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
-    const cleanTotalHours = Math.round((cleanTotalMinutes / 60) * 10) / 10;
     const actualDriveMin = Math.round(actualDriveSeconds / 60);
 
     // Team member hours (same logic as RoutePlanner)
@@ -671,7 +669,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
 
     setTotalKm(Math.round(totalDist / 100) / 10);
     setDriverTotalMinutes(driverTotalMinutes);
-    setCleanHours(cleanTotalHours);
+    setCleanTotalMinutes(cleanTotalMinutes);
     setActualDriveMinutes(actualDriveMin);
     setTeamHours(memberHours);
     setRouteStops(stops);
@@ -932,7 +930,7 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
               </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center justify-between">
                 <span className="text-purple-800 text-xs font-bold uppercase tracking-wider">Clean Hours</span>
-                <span className="text-purple-700 font-black text-2xl">{formatHrsMins(cleanHours * 60)}</span>
+                <span className="text-purple-700 font-black text-2xl">{formatHrsMins(cleaner.isDriver ? cleanTotalMinutes : (myTeamHours?.cleanMinutes ?? 0))}</span>
               </div>
             </div>
 
