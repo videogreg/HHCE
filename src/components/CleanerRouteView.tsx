@@ -932,6 +932,11 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
               </div>
             </div>
 
+            {/* DEBUG: Show raw state values */}
+            <div className="bg-red-50 border border-red-200 rounded-xl p-2 text-[10px] font-mono text-red-700">
+              DEBUG: driverTotalMinutes={driverTotalMinutes} | cleanTotalMinutes={cleanTotalMinutes} | actualDriveMinutes={actualDriveMinutes} | sum={cleanTotalMinutes + actualDriveMinutes}
+            </div>
+
             {routeUrl && (
               <a
                 href={routeUrl}
