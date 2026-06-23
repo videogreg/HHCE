@@ -470,7 +470,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     }
 
     let totalDist = 0;
-    let actualDriveSeconds = 0;
 
     // Find first clean anchor
     const firstCleanIdx = stops.findIndex(s => s.type === 'clean');
@@ -504,7 +503,6 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     for (let i = 1; i < stops.length; i++) {
       const leg = legs[i - 1];
       totalDist += leg.distance.value;
-      actualDriveSeconds += leg.duration.value;
       const driveMs = leg.duration.value * 1000;
       runningTime = new Date(runningTime.getTime() + driveMs);
 
@@ -543,16 +541,10 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
     }
 
     // Stats
-    const totalWaitMin = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.waitMin || 0), 0);
-    const firstStop = stops[0];
-    const lastStop = stops[stops.length - 1];
-    const startTime = parse(firstStop.arrivalTime, 'HH:mm', new Date());
-    const endTime = parse(lastStop.departTime || lastStop.arrivalTime, 'HH:mm', new Date());
-    const rawDriverMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-    const driverTotalMinutes = rawDriverMinutes - totalWaitMin;
 
     const cleanTotalMinutes = stops.filter(s => s.type === 'clean').reduce((sum, s) => sum + (s.durationMin || 0), 0);
-    const actualDriveMin = Math.round(actualDriveSeconds / 60);
+    const actualDriveMin = stops.slice(1).reduce((sum, s) => sum + (s.legDurationMin || 0), 0);
+    const driverTotalMinutes = actualDriveMin + cleanTotalMinutes;
 
     // Team member hours (same logic as RoutePlanner)
     const allTeamMemberIds = new Set<string>();
@@ -632,33 +624,14 @@ export const CleanerRouteView: React.FC<CleanerRouteViewProps> = ({
           waitMinutes
         };
       } else {
-        // Main driver: door-to-door
-        let startTime: Date;
-        let endTime: Date;
-        if (pickupIdx >= 0) {
-          startTime = parse(stops[pickupIdx].arrivalTime, 'HH:mm', new Date());
-        } else if (relevantCleans.length > 0) {
-          startTime = parse(relevantCleans[0].actualStartTime || relevantCleans[0].arrivalTime, 'HH:mm', new Date());
-        } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-        if (dropoffIdx >= 0) {
-          endTime = parse(stops[dropoffIdx].arrivalTime, 'HH:mm', new Date());
-        } else if (relevantCleans.length > 0) {
-          endTime = parse(relevantCleans[relevantCleans.length - 1].departTime || relevantCleans[relevantCleans.length - 1].arrivalTime, 'HH:mm', new Date());
-        } else {
-          return { name: tm.name, minutes: 0, hours: 0, isDriver: true, cleanMinutes: 0, travelMinutes: 0, waitMinutes: 0 };
-        }
-        const rawMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-        const minutes = rawMinutes - totalWaitMin;
-
+        // Main driver: door-to-door (use pre-computed driverTotalMinutes for consistency)
         const cleanMinutes = relevantCleans.reduce((sum, c) => sum + (c.durationMin || 0), 0);
-        const travelMinutes = Math.max(0, minutes - cleanMinutes);
+        const travelMinutes = Math.max(0, driverTotalMinutes - cleanMinutes);
 
         return {
           name: tm.name,
-          minutes,
-          hours: Math.round((minutes / 60) * 10) / 10,
+          minutes: driverTotalMinutes,
+          hours: Math.round((driverTotalMinutes / 60) * 10) / 10,
           isDriver: true,
           cleanMinutes,
           travelMinutes,
