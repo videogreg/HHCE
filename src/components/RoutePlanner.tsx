@@ -1059,8 +1059,6 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({ onClose, initialDriv
                   const isFirst = idx === 0;
                   const isLast = idx === routeStops.length - 1;
                   const isClean = stop.type === 'clean';
-                  const nextStop = routeStops[idx + 1];
-                  const isLastClean = isClean && (!nextStop || nextStop.type === 'dropoff' || nextStop.type === 'intermediate-dropoff' || nextStop.type === 'home');
 
                   const markerColor = isFirst ? 'bg-blue-600 border-blue-600 text-white' : 
                     isLast ? 'bg-slate-500 border-slate-500 text-white' :
